@@ -70,7 +70,9 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .dot.live{background:var(--good);animation:pulse 2s infinite}
 .dot.snap{background:var(--warn)}
 .dot.loading{background:var(--dl-yellow);animation:pulse 1s infinite}
+.dot.partial{background:var(--warn);animation:pulse-warn 2s infinite}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(57,217,138,.5)}70%{box-shadow:0 0 0 1.2cqh rgba(57,217,138,0)}100%{box-shadow:0 0 0 0 rgba(57,217,138,0)}}
+@keyframes pulse-warn{0%{box-shadow:0 0 0 0 rgba(255,176,32,.5)}70%{box-shadow:0 0 0 1.2cqh rgba(255,176,32,0)}100%{box-shadow:0 0 0 0 rgba(255,176,32,0)}}
 
 /* ============ KPI STRIP ============ */
 #kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:1.1cqw}

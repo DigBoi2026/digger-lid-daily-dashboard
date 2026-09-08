@@ -352,12 +352,15 @@ function renderCtx(iso){
 }
 
 /* ---- live upgrade (sheet API; pulse API is a follow-up) ---- */
-function setLive(mode){ const dot=document.getElementById('liveDot'),txt=document.getElementById('liveText');
-  dot.className='dot '+(mode==='live'?'live':mode==='loading'?'loading':'snap');
-  txt.textContent=mode==='live'?'Live':mode==='loading'?'Syncing…':'Snapshot'; }
+function setLive(mode,note){ const dot=document.getElementById('liveDot'),txt=document.getElementById('liveText'),
+    pill=document.getElementById('livePill');
+  const cls=mode==='live'?'live':mode==='loading'?'loading':mode==='partial'?'partial':'snap';
+  dot.className='dot '+cls;
+  txt.textContent=mode==='live'?'Live':mode==='loading'?'Syncing…':mode==='partial'?'Partial':'Snapshot';
+  if(pill) pill.title = note || 'Data source status'; }
 async function tryLive(){
   setLive('loading');
-  let anyLive=false;
+  let sheetLive=false, pulseLive=false;
   const onNewest = S.day===defaultDay();
   // Sheet P&L (Daily Ops source)
   if(SHEET){
@@ -369,7 +372,7 @@ async function tryLive(){
           j.daily.forEach(d=>map.set(d.date,d));
           SHEET.daily=[...map.values()].sort((a,b)=>a.date<b.date?-1:1);
           sheetDates.length=0; sheetDates.push(...SHEET.daily.map(d=>d.date));
-          anyLive=true;
+          sheetLive=true;
         } }
     }catch(e){}
   }
@@ -382,12 +385,21 @@ async function tryLive(){
           PULSE.days=j.days; PULSE.series=j.series;
           if(j.channels && Object.keys(j.channels).length) PULSE.channels=j.channels;
           if(j.meta) PULSE.meta={...PULSE.meta, ...j.meta};
-          anyLive=true;
+          pulseLive=true;
         } }
     }catch(e){}
   }
-  if(anyLive){ rebuildIndexes(); SIGNALS=buildSignals(); if(onNewest) S.day=defaultDay(); render(); setLive('live'); }
-  else setLive('snap');
+  // A source only counts as "expected" if the page actually has that dataset.
+  const want = (SHEET?1:0) + (PULSE?1:0), got = (sheetLive?1:0) + (pulseLive?1:0);
+  if(got){ rebuildIndexes(); SIGNALS=buildSignals(); if(onNewest) S.day=defaultDay(); render(); }
+  if(!got){ setLive('snap'); return; }
+  if(got===want){ setLive('live'); return; }
+  // Partial: at least one source refreshed but another is down. Never claim "Live"
+  // here — the sheet P&L half of this page would be stale or blank while the pill
+  // says otherwise. Name the failed source so the gap is explainable at a glance.
+  const stale = !sheetLive ? 'sheet P&L' : 'site signals';
+  const asOf  = !sheetLive && SHEET && sheetDates.length ? ' (frozen at '+sheetDates[sheetDates.length-1]+')' : '';
+  setLive('partial', 'Partial refresh — '+stale+' unavailable'+asOf+'. Showing the embedded snapshot for that source.');
 }
 
 /* ---- wiring / init ---- */
