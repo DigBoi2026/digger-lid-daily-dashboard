@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DiggerLid — Product Performance</title>
+<link rel="icon" href="./assets/favicon32.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300;400;500;700&family=League+Spartan:wght@400;700;900&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="./styles.css?v=1783856452" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div id="stageWrap">
+  <div id="stage">
+    <!-- HEADER -->
+    <header id="top">
+      <div class="hleft">
+        <div class="brand"><img src="./assets/dl_wordmark.png" alt="DiggerLid" /></div>
+        <nav class="topnav">
+          <a href="index.html">Daily Ops</a>
+          <a href="daily.html">Pulse</a>
+          <a href="performance.html">Performance Marketing</a>
+          <a href="products.html" class="active" aria-current="page">Products</a>
+          <a href="region.html">Region</a>
+        </nav>
+      </div>
+
+      <div class="daynav">
+        <div class="datebox">
+          <div class="d">Product Performance</div>
+          <div class="dow" id="winLabel">LAST 30 DAYS</div>
+        </div>
+        <div class="seg small" id="winSeg" role="group" aria-label="Select trailing period" title="Trailing period, ending yesterday, vs the prior equal period">
+          <button data-win="3" aria-label="3 day trailing period">3D</button>
+          <button data-win="7" aria-label="7 day trailing period">7D</button>
+          <button data-win="30" class="active" aria-label="30 day trailing period">30D</button>
+          <button data-win="90" aria-label="90 day trailing period">90D</button>
+          <button data-win="12M" aria-label="12 month trailing period">12M</button>
+        </div>
+      </div>
+
+      <div class="status">
+        <div class="freshness">
+          <div class="lbl">Shopify · through</div>
+          <div class="val" id="throughVal">—</div>
+        </div>
+        <div class="livepill" id="livePill" title="Data source status">
+          <span class="dot snap" id="liveDot"></span>
+          <span id="liveText">Snapshot</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- KPI STRIP -->
+    <section id="kpis"></section>
+
+    <!-- MAIN -->
+    <section id="p2main">
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Sales by <span>Category</span></div>
+          <div class="p-note" id="catNote">net sales · share · vs 30-day pace</div>
+        </div>
+        <div class="catlist" id="catList"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Product <span>Breakdown</span></div>
+          <div class="p-note" id="prodNote">Top sellers</div>
+        </div>
+        <div class="ptable" id="pTable"></div>
+      </div>
+    </section>
+
+    <!-- BOTTOM -->
+    <section id="p2bottom">
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Category <span>Trends</span></div>
+          <div class="p-head-right">
+            <div class="seg tiny" id="trendMode" role="group" aria-label="Trend metric">
+              <button data-mode="net" class="active" aria-label="Net sales dollars">Net $</button>
+              <button data-mode="share" aria-label="Share of sales percent">Mix %</button>
+            </div>
+            <div class="p-note" id="trendNote">last 12 months</div>
+          </div>
+        </div>
+        <div id="p2trendWrap"><canvas id="trendChart"></canvas></div>
+      </div>
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Top <span>Movers</span></div>
+          <div class="p-note" id="moversNote">run-rate vs 30-day avg</div>
+        </div>
+        <div class="health" id="moversWrap"></div>
+      </div>
+    </section>
+
+    <footer id="foot">
+      <div id="footSource">—</div>
+      <div id="footNote">Read-only · Shopify sales data</div>
+    </footer>
+
+    <div class="err" id="errBox">
+      <div><h2>No data loaded</h2><p>Couldn't find <code>shopify_data.js</code>.</p></div>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/animejs@4.0.0/lib/anime.iife.min.js"></script>
+<script src="./motion.js?v=1783856452"></script>
+<script src="./core.js?v=1783856452"></script>
+<script src="./shopify_data.js?v=1783856452"></script>
+<script src="./products.js?v=1783856452"></script>
+</body>
+</html>

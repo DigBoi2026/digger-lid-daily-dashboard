@@ -1,0 +1,13 @@
+{
+  "name": "diggerlid-daily-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DiggerLid Daily Operations Review dashboard (static + Vercel serverless data API).",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0"
+  }
+}

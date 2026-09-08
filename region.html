@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DiggerLid — Region Performance</title>
+<link rel="icon" href="./assets/favicon32.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300;400;500;700&family=League+Spartan:wght@400;700;900&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="./styles.css?v=1783856452" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div id="stageWrap">
+  <div id="stage">
+    <!-- HEADER -->
+    <header id="top">
+      <div class="hleft">
+        <div class="brand"><img src="./assets/dl_wordmark.png" alt="DiggerLid" /></div>
+        <nav class="topnav">
+          <a href="index.html">Daily Ops</a>
+          <a href="daily.html">Pulse</a>
+          <a href="performance.html">Performance Marketing</a>
+          <a href="products.html">Products</a>
+          <a href="region.html" class="active" aria-current="page">Region</a>
+        </nav>
+      </div>
+
+      <div class="daynav">
+        <div class="datebox">
+          <div class="d">Region Performance</div>
+          <div class="dow" id="winLabel">LAST 12 MONTHS</div>
+        </div>
+        <div class="seg small" id="winSeg" role="group" aria-label="Select trailing period" title="Geographic data is monthly — the period maps to whole months">
+          <button data-win="3" aria-label="3 day trailing period">3D</button>
+          <button data-win="7" aria-label="7 day trailing period">7D</button>
+          <button data-win="30" aria-label="30 day trailing period">30D</button>
+          <button data-win="90" aria-label="90 day trailing period">90D</button>
+          <button data-win="12M" class="active" aria-label="12 month trailing period">12M</button>
+        </div>
+      </div>
+
+      <div class="status">
+        <div class="freshness">
+          <div class="lbl">Shopify · through</div>
+          <div class="val" id="throughVal">—</div>
+        </div>
+        <div class="livepill" id="livePill" title="Data source status">
+          <span class="dot snap" id="liveDot"></span>
+          <span id="liveText">Snapshot</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- KPI STRIP -->
+    <section id="kpis"></section>
+
+    <!-- MAIN -->
+    <section id="rgMain">
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">AU vs <span>International</span></div>
+          <div class="p-head-right">
+            <div class="seg tiny" id="auIntlMode" role="group" aria-label="Breakdown">
+              <button data-mode="split" class="active" aria-label="Australia vs International">AU vs Intl</button>
+              <button data-mode="country" aria-label="Breakdown by country">By Country</button>
+            </div>
+            <div class="p-note" id="auIntlNote">net sales · 12 mo</div>
+          </div>
+        </div>
+        <div id="rgTrendWrap"><canvas id="auIntlChart"></canvas></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">AU by <span>State</span></div>
+          <div class="p-note" id="stateNote">net sales · share · vs prior</div>
+        </div>
+        <div class="catlist" id="stateList"></div>
+      </div>
+    </section>
+
+    <!-- BOTTOM -->
+    <section id="bottom">
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">State <span>Trends</span></div>
+          <div class="p-head-right">
+            <div class="seg tiny" id="stateMode" role="group" aria-label="State trend metric">
+              <button data-mode="net" class="active" aria-label="Net sales dollars">Net $</button>
+              <button data-mode="share" aria-label="Share of total percent">% of total</button>
+            </div>
+            <div class="p-note" id="stateTrendNote">net sales · 12 mo</div>
+          </div>
+        </div>
+        <div id="stateTrendWrap"><canvas id="stateTrend"></canvas></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">NZ <span>Spotlight</span></div>
+          <div class="p-note" id="nzNote">New Zealand growth</div>
+        </div>
+        <div id="nzWrap"><canvas id="nzChart"></canvas></div>
+        <div class="nz-stats" id="nzStats"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">International <span>Mix</span></div>
+          <div class="p-note">non-AU countries · 12 months</div>
+        </div>
+        <div class="catlist" id="intlList"></div>
+      </div>
+    </section>
+
+    <footer id="foot">
+      <div id="footSource">—</div>
+      <div id="footNote">Read-only · Shopify shipping geography</div>
+    </footer>
+
+    <div class="err" id="errBox">
+      <div><h2>No data loaded</h2><p>Couldn't find <code>region_data.js</code>.</p></div>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/animejs@4.0.0/lib/anime.iife.min.js"></script>
+<script src="./motion.js?v=1783856452"></script>
+<script src="./core.js?v=1783856452"></script>
+<script src="./region_data.js?v=1783856452"></script>
+<script src="./region.js?v=1783856452"></script>
+</body>
+</html>
