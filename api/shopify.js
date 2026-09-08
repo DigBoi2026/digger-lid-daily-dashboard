@@ -7,14 +7,32 @@
 
    Required environment variables (Vercel → Settings → Environment Variables):
      SHOPIFY_STORE   your-store            (the *.myshopify.com subdomain, no suffix)
-     SHOPIFY_TOKEN   shpat_...             Admin API access token, scope: read_reports
-                                           (+ read_products / read_orders). Read-only.
-     SHOPIFY_API_VERSION  (optional)       defaults to 2025-01
+     SHOPIFY_API_VERSION  (optional)       defaults to 2026-07
+
+   Plus ONE of these two credential shapes:
+     SHOPIFY_TOKEN   shpat_...             A long-lived Admin API access token, as
+                                           issued to admin-created custom apps.
+                                           Shopify no longer lets you create those,
+                                           but existing ones keep working.
+     SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET
+                                           For an app made with the Shopify CLI or
+                                           Dev Dashboard. Exchanged for a token via
+                                           the client credentials grant, which only
+                                           works when the app and the store are in
+                                           the same Shopify organisation. Those
+                                           tokens last 24h, so they are minted on
+                                           demand and cached below.
+
+   Only scope required is read_reports — every query here is ShopifyQL over
+   `sales`, and nothing else is read. Read-only; never writes to Shopify.
    Categorisation (incl. PRO Mat + Hauler → Mobile Protection) is applied here so
    live data matches the dashboard exactly. Never writes to Shopify.
    ========================================================================= */
 
-const API_VERSION = process.env.SHOPIFY_API_VERSION || '2025-01';
+// 2025-01 is long retired. Shopify 'falls forward' to the oldest accessible
+// version when you name a dead one, so a stale default silently moves target
+// every quarter. Pin a live one; supported until 2027-07.
+const API_VERSION = process.env.SHOPIFY_API_VERSION || '2026-07';
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const KEYS = {covers:'Machine Covers',grease:'Grease',screens:'DiggerShield Screens',drawbar:'Draw Bar Covers',
   shipping:'Shipping Protection',phone:'Phone Cradles',wipes:'Digger Wipes',mobile:'Mobile Protection',
@@ -51,12 +69,52 @@ const addDays = (d, n) => { const x = new Date(d.getTime()); x.setUTCDate(x.getU
 const monthStart = (d, off = 0) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + off, 1));
 const mLabel = d => `${MONTH_ABBR[d.getUTCMonth()]} '${String(d.getUTCFullYear()).slice(2)}`;
 
+// Accept either "digger-lid" or "digger-lid.myshopify.com" (or with https://) for SHOPIFY_STORE.
+function storeDomain() {
+  const store = (process.env.SHOPIFY_STORE || '').trim()
+    .replace(/^https?:\/\//, '').replace(/\.myshopify\.com.*$/, '');
+  if (!store) throw new Error('Missing SHOPIFY_STORE');
+  return `${store}.myshopify.com`;
+}
+
+/* Client-credentials tokens live 24h. Cache across invocations of a warm
+   function so a burst of requests mints one token, not one each. */
+let cachedToken = null, cachedTokenExpiry = 0;
+
+async function accessToken() {
+  // A static token wins if present, so an existing custom app needs no migration.
+  if (process.env.SHOPIFY_TOKEN) return process.env.SHOPIFY_TOKEN;
+
+  const id = process.env.SHOPIFY_CLIENT_ID, secret = process.env.SHOPIFY_CLIENT_SECRET;
+  if (!id || !secret) {
+    throw new Error('Missing SHOPIFY_TOKEN, or SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET');
+  }
+  // Re-use while more than a minute remains, so a token can't expire mid-request.
+  if (cachedToken && Date.now() < cachedTokenExpiry - 60_000) return cachedToken;
+
+  const r = await fetch(`https://${storeDomain()}/admin/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'client_credentials', client_id: id, client_secret: secret,
+    }),
+  });
+  if (!r.ok) {
+    // shop_not_permitted (400) means the app and the store are in different
+    // Shopify organisations — the usual cause, and not a credential typo.
+    throw new Error(`Shopify token HTTP ${r.status} — client credentials require the app `
+      + `and store to be in the same Shopify organisation`);
+  }
+  const j = await r.json();
+  if (!j.access_token) throw new Error('Shopify token response carried no access_token');
+  cachedToken = j.access_token;
+  cachedTokenExpiry = Date.now() + (Number(j.expires_in) || 86399) * 1000;
+  return cachedToken;
+}
+
 async function shopifyql(query) {
-  // Accept either "digger-lid" or "digger-lid.myshopify.com" (or with https://) for SHOPIFY_STORE.
-  const store = (process.env.SHOPIFY_STORE || '').trim().replace(/^https?:\/\//, '').replace(/\.myshopify\.com.*$/, '');
-  const token = process.env.SHOPIFY_TOKEN;
-  if (!store || !token) throw new Error('Missing SHOPIFY_STORE / SHOPIFY_TOKEN');
-  const url = `https://${store}.myshopify.com/admin/api/${API_VERSION}/graphql.json`;
+  const token = await accessToken();
+  const url = `https://${storeDomain()}/admin/api/${API_VERSION}/graphql.json`;
   const body = { query: `{ shopifyqlQuery(query: ${JSON.stringify(query)}) { parseErrors tableData { columns { name } rows } } }` };
   const r = await fetch(url, { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
@@ -175,3 +233,6 @@ module.exports = async (req, res) => {
 };
 
 module.exports.categorize = categorize;   // for offline unit testing
+module.exports.accessToken = accessToken;         // for offline unit testing
+module.exports.storeDomain = storeDomain;         // for offline unit testing
+module.exports.resetTokenCache = () => { cachedToken = null; cachedTokenExpiry = 0; };

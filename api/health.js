@@ -13,16 +13,45 @@ module.exports = async (req, res) => {
   out.checks.sitePassword = { configured: has('SITE_PASSWORD') };
 
   // ---- Shopify ----
-  const shop = { configured: has('SHOPIFY_STORE') && has('SHOPIFY_TOKEN'), reachable: false };
+  // Either credential shape counts as configured: a long-lived SHOPIFY_TOKEN, or
+  // SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET for the client credentials grant.
+  // Reporting only the first would call a correctly-configured CLI app unconfigured.
+  const shopAuth = has('SHOPIFY_TOKEN') ? 'token'
+    : (has('SHOPIFY_CLIENT_ID') && has('SHOPIFY_CLIENT_SECRET')) ? 'client_credentials' : null;
+  const shop = { configured: has('SHOPIFY_STORE') && !!shopAuth, reachable: false };
+  if (shopAuth) shop.auth = shopAuth;
   if (shop.configured) {
     try {
       const store = process.env.SHOPIFY_STORE.trim().replace(/^https?:\/\//, '').replace(/\.myshopify\.com.*$/, '');
       shop.store = store;
-      const ver = process.env.SHOPIFY_API_VERSION || '2025-01';
+      const ver = process.env.SHOPIFY_API_VERSION || '2026-07';
+
+      let token = process.env.SHOPIFY_TOKEN;
+      if (!token) {
+        // Mint one so "reachable" tests the whole chain, grant included.
+        const t = await fetch(`https://${store}.myshopify.com/admin/oauth/access_token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            grant_type: 'client_credentials',
+            client_id: process.env.SHOPIFY_CLIENT_ID,
+            client_secret: process.env.SHOPIFY_CLIENT_SECRET,
+          }),
+        });
+        const tj = await t.json().catch(() => ({}));
+        token = tj.access_token;
+        if (!token) {
+          shop.error = `token grant HTTP ${t.status}`
+            + (tj.error ? ` — ${clip(tj.error)}` : '')
+            + ' (client credentials need the app and store in the same Shopify organisation)';
+        }
+      }
+      if (!token) throw new Error(shop.error || 'no token');
+
       const q = 'FROM sales SHOW net_sales SINCE 2026-01-01 UNTIL 2026-01-02';
       const r = await fetch(`https://${store}.myshopify.com/admin/api/${ver}/graphql.json`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': process.env.SHOPIFY_TOKEN },
+        headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
         body: JSON.stringify({ query: `{ shopifyqlQuery(query: ${JSON.stringify(q)}) { parseErrors tableData { rows } } }` }),
       });
       if (r.status === 401 || r.status === 403) shop.error = `HTTP ${r.status} — token rejected (check the token / scopes).`;
@@ -34,7 +63,7 @@ module.exports = async (req, res) => {
         else if (q2 && q2.parseErrors && q2.parseErrors.length) shop.error = 'ShopifyQL: ' + q2.parseErrors.join('; ');
         else shop.reachable = true;   // a row (or empty rows) came back cleanly
       }
-    } catch (e) { shop.error = clip(e); }
+    } catch (e) { shop.error = shop.error || clip(e); }
     if (shop.error && /access|scope|report|permission/i.test(shop.error))
       shop.hint = 'The token is missing the read_reports scope (required for ShopifyQL).';
   }
