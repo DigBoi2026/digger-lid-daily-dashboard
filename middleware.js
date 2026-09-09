@@ -23,7 +23,27 @@ export const config = {
   matcher: ['/((?!assets/|favicon|api/health|api/ai/).*)'],
 };
 
+/* Prefixes whose routes authenticate themselves, checked here rather than left
+   to config.matcher alone.
+
+   The matcher demonstrably excludes api/health — it answers 200 with no
+   credential — but the same pattern did NOT exclude api/ai/ on this
+   deployment: /api/ai/manifest came back with this file's own Basic challenge
+   ("WWW-Authenticate: Basic realm=\"DiggerLid Dashboard\"") on the commit that
+   added it. Rather than depend on how a negative-lookahead matcher compiles, do
+   the check in code where it is explicit and cannot silently regress.
+
+   These paths are not unprotected: every /api/ai/* route calls the bearer guard
+   in api/ai/_guard.js before doing anything, and returns 503 while AI_TOKENS is
+   unset. That is what lets an AI consumer use its own scoped, revocable token
+   instead of the shared human password. */
+const SELF_AUTHENTICATING = ['/api/ai/'];
+
 export default function middleware(req) {
+  let path = '';
+  try { path = new URL(req.url).pathname; } catch { path = ''; }
+  if (path && SELF_AUTHENTICATING.some(prefix => path.startsWith(prefix))) return;
+
   // Explicit public mode: set SITE_PUBLIC=true in Vercel to disable the gate entirely.
   // (Deliberate opt-out — the financials become visible to anyone with the URL.
   //  Re-enable by deleting the SITE_PUBLIC var and redeploying.)
