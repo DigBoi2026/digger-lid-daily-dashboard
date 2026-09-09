@@ -153,7 +153,7 @@ var DLcore = (function () {
   }
 
   return { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline,
-           pendingOf, isPending, pendingMode, pendingLabel };
+           pendingOf, isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE };
 })();
 
 if (typeof window !== 'undefined') window.DLcore = DLcore;                       // browser

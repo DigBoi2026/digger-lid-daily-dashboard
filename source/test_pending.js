@@ -104,5 +104,67 @@ const g = C.aggregate([{ date: '2026-09-07', revenue: 100, revExGst: 91.83, orde
 ok('gstPct is GST over ex-GST revenue', Math.abs(g.gstPct - 8.90) < 0.02, g.gstPct);
 ok('mer3 is null over a window, not plain MER re-labelled', g.mer3 === null, g.mer3);
 
-console.log(`\npending: ${pass} passed, ${fail} failed`);
+
+/* ---------------- windowEnd: the complete-day anchor (option A) ----------------
+   Extracted from app.js by source, like paceRow in test_pace.js, so the test
+   cannot drift from the shipped function. A short window containing a pending
+   day used to blank its ad metrics; it now ends on the last complete day
+   instead, which is strictly more useful and stays internally consistent. */
+{
+  const fs = require('fs'), path = require('path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  const grab = name => {
+    const i = src.indexOf(`function ${name}(`);
+    if (i < 0) throw new Error(`${name} not found in app.js`);
+    let d = 0, started = false;
+    for (let j = i; j < src.length; j++) {
+      if (src[j] === '{') { d++; started = true; }
+      else if (src[j] === '}') { d--; if (started && d === 0) return src.slice(i, j + 1); }
+    }
+    throw new Error(`${name} not closed`);
+  };
+
+  const SUPPRESS_ABOVE = C.SUPPRESS_ABOVE;
+  let DATA, clampToYesterday;
+  eval(grab('windowEnd'));
+
+  const mk = (n, pendingTail = 0) => {
+    const daily = [];
+    for (let i = 0; i < n; i++) {
+      const day = String(i + 1).padStart(2, '0');
+      daily.push({ date: `2026-07-${day}`, pending: i >= n - pendingTail ? ['adSpend','profit'] : null });
+    }
+    return daily;
+  };
+
+  DATA = { daily: mk(60, 1) };                 // newest day pending
+  clampToYesterday = () => DATA.daily.length - 1;
+  const last = DATA.daily.length - 1;
+
+  ok('3D shifts back off a pending newest day', windowEnd(3) === last - 1, windowEnd(3));
+  ok('7D keeps the freshest day (1 in 7 is below the threshold)', windowEnd(7) === last, windowEnd(7));
+  ok('30D keeps the freshest day', windowEnd(30) === last, windowEnd(30));
+  ok('90D keeps the freshest day', windowEnd(90) === last, windowEnd(90));
+  ok('YTD is unaffected', windowEnd('YTD') === last, windowEnd('YTD'));
+
+  DATA = { daily: mk(60, 0) };                 // nothing pending
+  ok('nothing pending → no shift at any window',
+     [3,7,30,90].every(P => windowEnd(P) === DATA.daily.length - 1));
+
+  DATA = { daily: mk(60, 3) };                 // three pending days
+  const l3 = DATA.daily.length - 1;
+  ok('3 pending days shift 3D back past all of them', windowEnd(3) === l3 - 3, windowEnd(3));
+  ok('3 of 7 pending is at the threshold, so 7D shifts too', windowEnd(7) === l3 - 3, windowEnd(7));
+  ok('3 of 30 stays below it, so 30D holds', windowEnd(30) === l3, windowEnd(30));
+
+  DATA = { daily: mk(4, 4) };                  // every day pending
+  ok('every day pending → keep the natural end rather than return nothing',
+     windowEnd(3) === 3, windowEnd(3));
+
+  DATA = { daily: [] };
+  clampToYesterday = () => -1;
+  ok('an empty dataset does not throw', windowEnd(3) === -1, windowEnd(3));
+}
+
+console.log(`\npending+anchor: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

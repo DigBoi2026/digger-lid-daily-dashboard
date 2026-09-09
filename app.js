@@ -31,7 +31,7 @@ const CONFIG = {
 
 // Shared math/utilities live in core.js (unit-tested by source/test_core.js).
 const { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline,
-        isPending, pendingMode, pendingLabel } = DLcore;
+        isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE } = DLcore;
 
 /* ----------------------------- state ----------------------------------- */
 // Unified period selector: win ∈ {3,7,30,90,'YTD'} (trailing period ending yesterday); off = periods back.
@@ -112,6 +112,40 @@ function periodSub(P, days, off){
   const back = off ? ` · ${off} back` : '';
   return days < P ? `${days} of ${P} days${back}` : `${P}-day period${back}`;
 }
+/* Where a trailing window ends.
+
+   Normally the newest day with data. But a short window that contains a day the
+   sheet has not finished filling loses too much to be worth showing — at three
+   days, one pending day moved the real MER by 12 points and turned a "Hold" into
+   a "Scale", which is why pendingMode blanks it.
+
+   Blanking it is honest but useless. So instead of showing nothing, end the
+   window on the last COMPLETE day: 3D becomes 5-7 Sep rather than a blanked
+   6-8 Sep. One period, every metric consistent with every other, and the header
+   states the dates it actually covers.
+
+   Only windows that would otherwise be blanked shift. 7D and 30D keep the
+   freshest day, because one pending day in seven or thirty moves them by a
+   fraction of a point — they show the figure with a "1 of N days pending"
+   qualifier instead. The threshold is the same one pendingMode uses, so the two
+   decisions can never disagree. */
+// Days the sheet has not finished filling, newest first — needed even when the
+// window has been shifted back past them, so the header can say why.
+function pendingDates(){
+  return DATA.daily.filter(d => d && d.pending).map(d => d.date).sort().reverse();
+}
+
+function windowEnd(P){
+  const end = clampToYesterday();
+  if(P === 'YTD' || end < 0) return end;
+  const start = Math.max(0, end - P + 1);
+  const days = end - start + 1;
+  const pending = DATA.daily.slice(start, end + 1).filter(d => d && d.pending).length;
+  if(!pending || pending / days < SUPPRESS_ABOVE) return end;
+  for(let i = end; i >= 0; i--) if(DATA.daily[i] && !DATA.daily[i].pending) return i;
+  return end;                                  // nothing complete anywhere; keep the natural end
+}
+
 function ctx(){
   if(S.win==='YTD'){                                   // year-to-date — monthly granularity
     const list=DATA.monthly;
@@ -120,13 +154,14 @@ function ctx(){
       title:`${yr} year to date`, sub:`${list.length} month${list.length===1?'':'s'}`,
       periodLabel:`${yr} YTD`, win:'YTD'};
   }
-  const P=S.win, sl=periodSlices(DATA.daily, clampToYesterday(), P, S.off);
+  const P=S.win, wEnd=windowEnd(P), shifted=wEnd !== clampToYesterday();
+  const sl=periodSlices(DATA.daily, wEnd, P, S.off);
   S.off=sl.off;                                          // reflect any clamping back into state
   const cur=sl.cur, prevSeries=sl.prev;
   const rec=aggregate(cur), prev=prevSeries.length?aggregate(prevSeries):null;
   return {rec, prev, series:cur, prevSeries, gran:'day',
     title:fmtRange(cur[0].date,cur[cur.length-1].date),
-    sub:periodSub(P, cur.length, S.off), periodLabel:`vs prior ${P}d`, win:P};
+    sub:periodSub(P, cur.length, S.off), periodLabel:`vs prior ${P}d`, win:P, shifted};
 }
 
 
@@ -166,21 +201,24 @@ function renderHeader(c){
   document.getElementById('navDow').textContent=c.sub;
   const thr=document.getElementById('throughVal');
   thr.textContent=isoToNice(DATA.meta.latestDataDate)+" 2026";
-  /* Say so when the newest day is only half entered. Without this the board
-     looks fully up to date while its ad-spend metrics are running off a blank
-     cell, and the reader has no way to tell. */
-  const pend=c.rec&&c.rec.pending;
-  const note=document.getElementById('pendNote');
-  if(pend){
-    const days=pend.dates.map(d=>isoToNice(d)).join(', ');
-    note.textContent=`ad spend not yet entered for ${days}`;
+  /* Three states, and the reader needs to be able to tell them apart:
+       - the window was pulled back off the freshest day, so say where it ends
+         and why, or "6-8 Sep" silently becoming "5-7 Sep" looks like a fault;
+       - the window still contains a pending day and carries a qualifier;
+       - nothing outstanding. */
+  const note=document.getElementById('pendNote'), pd=pendingDates();
+  if(c.shifted && pd.length){
+    note.textContent=`window ends ${isoToNice(DATA.daily[windowEnd(S.win)].date)} — ${isoToNice(pd[0])} ad spend not yet entered`;
+    note.hidden=false; thr.classList.add('pending');
+  } else if(c.rec && c.rec.pending){
+    note.textContent=`ad spend not yet entered for ${c.rec.pending.dates.map(d=>isoToNice(d)).join(', ')}`;
     note.hidden=false; thr.classList.add('pending');
   } else { note.hidden=true; thr.classList.remove('pending'); }
   // ‹ › step the trailing period back/forward; disabled for YTD (one year of data)
   const prevB=document.getElementById('prevBtn'), nextB=document.getElementById('nextBtn');
   if(S.win==='YTD'){ prevB.disabled=true; nextB.disabled=true; }
   else {
-    const P=S.win, end=clampToYesterday();
+    const P=S.win, end=windowEnd(P);
     nextB.disabled = S.off<=0;
     prevB.disabled = (end-(S.off+1)*P+1) < 0;   // not enough history for an earlier period
   }
@@ -498,9 +536,14 @@ function renderHealth(c){
   });
   // Spend signal from the breakeven-MER band (distinguishes amber "hold" from red "pull back")
   const bk=breakeven(r);
-  if(!bk && adPending) rows.push(`<div class="hrow" role="listitem" aria-label="Spend signal: pending">
+  /* breakeven() is withheld for ANY pending ad spend, not just enough of it to
+     blank the figures — a Scale/Hold/Pull-back call is a directive, and a
+     partial spend total reads as headroom. So the explanatory row has to appear
+     under both modes. Keyed on adPending alone it vanished entirely at 7D and
+     30D: no signal, and no reason given for its absence. */
+  if(!bk && (adPending || adQualified)) rows.push(`<div class="hrow" role="listitem" aria-label="Spend signal: pending">
       <span class="hdot n"></span>
-      <span class="hnm"><span class="hlbl">Spend Signal · MER vs b/e</span><span class="hsub">held back until ad spend is entered — a partial total reads as headroom</span></span>
+      <span class="hnm"><span class="hlbl">Spend Signal · MER vs b/e</span><span class="hsub">held back — ${pendingLabel(r)}; a partial spend total reads as headroom</span></span>
       <small class="hstate n-t" style="grid-column:3 / -1;justify-self:end">PENDING</small></div>`);
   if(bk) rows.push(`<div class="hrow" role="listitem" aria-label="Spend signal: ${bk.signal}">
       <span class="hdot ${bk.zone}"></span>
