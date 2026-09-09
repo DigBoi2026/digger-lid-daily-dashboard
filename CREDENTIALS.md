@@ -24,6 +24,25 @@ not read them back — the store of record is DLkeys, not Vercel.
 | `AI_TOKENS` | Per-consumer AI read tokens | You: `echo "sk_dl_$(openssl rand -hex 24)"` | Remove that entry, re-set the var | `/api/ai/*` returns 503 while unset |
 | ~~`SITE_PUBLIC`~~ | **Must stay deleted.** Set to `true` it disables the gate entirely and the P&L becomes world-readable | — | — | Board open to anyone with the URL |
 
+## Changing `SITE_PASSWORD`
+
+Three steps, and the third is the one that looks like a bug if you skip it.
+
+1. Replace the value in Vercel → Settings → Environment Variables, **Production**
+   scope. It is a `Secret`, so you edit by removing and re-adding, not by reading
+   the old value back.
+2. **Redeploy.** Environment variables are baked in at build time — the running
+   deployment keeps the old password until a new deployment replaces it. Either
+   push a commit (`main` auto-deploys) or use Redeploy on the latest deployment.
+3. **Clear the browser's saved Basic-Auth credentials.** Browsers cache them for
+   the origin and keep sending the old pair, so the board answers `401` and looks
+   broken to the very person who just changed the password. A private window
+   proves whether the new password works; to fix the normal window, clear site
+   data for the origin or fully quit and reopen the browser.
+
+If step 2 is missed the old password still works. If step 3 is missed the new one
+appears not to.
+
 ## Related credentials, not in Vercel
 
 | Credential | Where | Notes |
@@ -38,7 +57,7 @@ not read them back — the store of record is DLkeys, not Vercel.
 | Credential | Action |
 |---|---|
 | Shopify client secret `shpss_02052…` | Rotate in Dev Dashboard. Only used to mint tokens, so nothing breaks; you re-run the grant next time. |
-| `SITE_PASSWORD` | Currently `DL2026-digger-lid-ops`. Six-character variants were also discussed. `middleware.js` has no rate limiting, so a short password is close to no gate. |
+| `SITE_PASSWORD` | Rotated 2026-09-09; the previous value is dead. The live value is deliberately not recorded here — this file is in git, and the old one is still readable in this file's history. Note that any password chosen in a chat session has passed through that transcript too, so rotation moves the exposure rather than ending it. `middleware.js` has no rate limiting, so a short password is close to no gate: an attacker with the URL can try every 8-character candidate unthrottled. |
 
 ## The rule this project learned the hard way
 
