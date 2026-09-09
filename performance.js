@@ -4,7 +4,8 @@
    as Daily Ops, focused on paid-media efficiency. Read-only.
    ========================================================================= */
 // Shared math/utilities from core.js (unit-tested by source/test_core.js).
-const { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline } = DLcore;
+const { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline,
+        isPending, pendingMode, pendingLabel } = DLcore;
 const S = { win:30, off:0, metric:'spend_rev', live:'snap' };   // win ∈ {3,7,30,90,'YTD'}
 const API_URL = '/api/data';          // same backend route Daily Ops reads
 const REFRESH_MINUTES = 30;           // periodic re-pull while the board is open
@@ -80,7 +81,14 @@ function render(){
 function renderHeader(c){
   document.getElementById('navDate').textContent=c.title;
   document.getElementById('navDow').textContent=c.sub;
-  document.getElementById('throughVal').textContent=isoToNice(DATA.meta.latestDataDate)+' 2026';
+  const thr=document.getElementById('throughVal');
+  thr.textContent=isoToNice(DATA.meta.latestDataDate)+' 2026';
+  /* Nearly every tile on this page divides by ad spend, so say plainly when the
+     newest day's spend has not been entered rather than let five tiles read "—". */
+  const pend=c.rec&&c.rec.pending, note=document.getElementById('pendNote');
+  if(pend){ note.textContent=`ad spend not yet entered for ${pend.dates.map(d=>isoToNice(d)).join(', ')}`;
+            note.hidden=false; thr.classList.add('pending'); }
+  else { note.hidden=true; thr.classList.remove('pending'); }
   const prevB=document.getElementById('prevBtn'), nextB=document.getElementById('nextBtn');
   if(S.win==='YTD'){ prevB.disabled=true; nextB.disabled=true; }
   else { const P=S.win, end=clampToYesterday(); nextB.disabled=S.off<=0; prevB.disabled=(end-(S.off+1)*P+1)<0; }
@@ -96,12 +104,25 @@ function renderKPIs(c){
   const per=`<span class="k-per">${c.periodLabel}</span>`, foot=(a,b,k)=>deltaEl(a,b,k)+per;
   const bk=breakeven(r);
   const share=r.metaTotal?(r.metaNew/r.metaTotal*100):0;
+  /* While spend is pending these fields are null by design (api/data.js), so the
+     value renders as "—". Swap the sub-line and the delta for a reason, so the
+     reader knows the number is queued rather than broken. */
+  const adMode=pendingMode(r,'adSpend');
+  const adPending=adMode==='blank';
+  const qual=`<span class="delta flat">—</span><span class="k-per">${pendingLabel(r)}</span>`;
+  const V=v=>adPending?'pending':v;
+  const SUB=t=>adPending?pendingLabel(r):(adMode==='qualify'?t+' · so far':t);
+  const FOOT=(a,b,k)=>adMode?qual:foot(a,b,k);
   el.innerHTML=[
-    kpiTile('Total Meta Spend',money(r.metaTotal,true),`Total ads <b>${money(r.totalAds,true)}</b>`,foot(r.metaTotal,p&&p.metaTotal,'metaTotal'),true,'metaTotal'),
-    kpiTile('Sitewide ROAS',xroas(r.roas),`MER <b>${pct(r.mer)}</b>`,foot(r.roas,p&&p.roas,'roas'),false,'roas'),
-    kpiTile('MER',pct(r.mer),bk?`b/e <b class="${bk.zone}-t">${pct(bk.full,0)}</b>`:'',foot(r.mer,p&&p.mer,'mer'),false,'mer'),
-    kpiTile('New-Cust CPA',money(r.ncpa),`All-cust CPP <b>${money(r.cpp)}</b>`,foot(r.ncpa,p&&p.ncpa,'ncpa'),false,'ncpa'),
-    kpiTile('Prospecting Spend',money(r.metaNew,true),`<b>${pct(share,0)}</b> of Meta spend`,foot(r.metaNew,p&&p.metaNew,'metaNew'),false,'metaNew'),
+    kpiTile('Total Meta Spend',V(money(r.metaTotal,true)),SUB(`Total ads <b>${money(r.totalAds,true)}</b>`),FOOT(r.metaTotal,p&&p.metaTotal,'metaTotal'),true,adPending?null:'metaTotal'),
+    kpiTile('Sitewide ROAS',V(xroas(r.roas)),SUB(`MER <b>${pct(r.mer)}</b>`),FOOT(r.roas,p&&p.roas,'roas'),false,adPending?null:'roas'),
+    // breakeven() is withheld while spend is pending, so the b/e sub-line would
+    // otherwise render empty with no explanation.
+    kpiTile('MER',V(pct(r.mer)),
+      bk?`b/e <b class="${bk.zone}-t">${pct(bk.full,0)}</b>`:(adMode?'b/e held back · '+pendingLabel(r):''),
+      FOOT(r.mer,p&&p.mer,'mer'),false,adPending?null:'mer'),
+    kpiTile('New-Cust CPA',V(money(r.ncpa)),SUB(`All-cust CPP <b>${money(r.cpp)}</b>`),FOOT(r.ncpa,p&&p.ncpa,'ncpa'),false,adPending?null:'ncpa'),
+    kpiTile('Prospecting Spend',V(money(r.metaNew,true)),SUB(`<b>${pct(share,0)}</b> of Meta spend`),FOOT(r.metaNew,p&&p.metaNew,'metaNew'),false,adPending?null:'metaNew'),
     kpiTile('New Customers',numf(r.newOrders),`<b>${pct(r.newPct,0)}</b> of orders`,foot(r.newOrders,p&&p.newOrders,'newOrders'),false,'newOrders'),
   ].join('');
   el.querySelectorAll('canvas.spark').forEach(cv=>{
@@ -132,12 +153,17 @@ function renderBand(c){
       x:{grid:{display:false},ticks:{color:'#9a9193',font:{size:9},maxRotation:0,autoSkip:true,maxTicksLimit:12}}}}};
   if(charts.band) charts.band.destroy();
   charts.band=new Chart(document.getElementById('merBand'),cfg);
-  const bk=breakeven(c.rec);
+  const bk=breakeven(c.rec), adPending=isPending(c.rec,'adSpend');
   document.getElementById('beVal').textContent=bk?pct(bk.full,1):'—';
   const sc=document.getElementById('signalCell'), sv=document.getElementById('signalVal');
-  sv.textContent=bk?bk.signal:'—';
-  sc.className='eq-cell'; if(bk){ sv.className='v '+bk.zone+'-t'; }
-  document.getElementById('bandNote').textContent=bk?`MER ${pct(bk.mer)} · headroom ${bk.headroom>=0?'+':''}${bk.headroom.toFixed(1)}pt`:'MER vs breakeven';
+  /* breakeven() returns null while spend is pending. Held back deliberately: a
+     partial spend total reads as headroom, and this cell said "Scale" on a
+     window whose real MER was 12 points into "Hold". */
+  sv.textContent=bk?bk.signal:(adPending?'pending':'—');
+  sc.className='eq-cell'; sv.className='v '+(bk?bk.zone+'-t':'n-t');
+  document.getElementById('bandNote').textContent = bk
+    ? `MER ${pct(bk.mer)} · headroom ${bk.headroom>=0?'+':''}${bk.headroom.toFixed(1)}pt`
+    : (adPending?'held back — ad spend not yet entered':'MER vs breakeven');
 }
 
 /* ---- trend ---- */
@@ -255,8 +281,9 @@ const roasBarLabels = {
   id:'roasBarLabels',
   afterDatasetsDraw(chart){
     const {ctx}=chart, meta=chart.getDatasetMeta(0);
-    ctx.save(); ctx.fillStyle='#e9e4e5'; ctx.font='700 1.35cqh sans-serif';
-    ctx.textBaseline='middle';
+    // `cqh` is a CSS container unit and is not valid in a canvas font string, so
+    // this assignment silently did nothing; the real font is set per bar below.
+    ctx.save(); ctx.fillStyle='#e9e4e5'; ctx.textBaseline='middle';
     chart.data.datasets[0].data.forEach((v,i)=>{
       const bar=meta.data[i]; if(!bar) return;
       ctx.font=`700 ${Math.round(chart.height*0.075)}px "Roboto Condensed",sans-serif`;

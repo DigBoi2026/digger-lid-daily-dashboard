@@ -37,8 +37,14 @@ function render(){
   document.getElementById('winLabel').textContent = WLABEL[n] || `LAST ${n} MONTHS`;
   document.getElementById('throughVal').textContent = R.months[R.months.length-1];
   document.querySelectorAll('#winSeg button').forEach(b=>b.classList.toggle('active', parseInt(b.dataset.win,10)===n));
+  /* At 12 months there is no prior 12 months in the pull (slices() returns
+     prev=null below 2n), so no row can show a change — the note used to promise
+     "vs prior yr" over a list that had none. Sparklines are always the full 12
+     months regardless of the selector, which is deliberate for trend context but
+     was nowhere stated. */
   document.getElementById('stateNote').textContent =
-    n===12 ? 'net · share · vs prior yr' : `last ${n} mo vs prior ${n}`;
+    (n===12 ? 'net · share · no prior year in this pull' : `net · share · last ${n} mo vs prior ${n}`)
+    + ' · sparkline 12 mo';
   renderKPIs(n); renderStates(n); renderAuIntl(); renderStateTrend(); renderNZ(); renderIntl();
   if(window.DLmotion) DLmotion.countUpAll();
 }
@@ -60,7 +66,12 @@ function renderKPIs(n){
   const el=document.getElementById('kpis');
   const auN=R.au.monthly.map(netOf), auO=R.au.monthly.map(m=>m.orders), tot=R.totalMonthly, nz=R.nz.monthly.map(netOf), nzO=R.nz.monthly.map(m=>m.orders);
   const au=slices(auN,n), to=slices(tot,n), nzs=slices(nz,n), auOr=slices(auO,n), nzOr=slices(nzO,n);
-  const auCur=sum(au.cur), totCur=sum(to.cur), intlCur=totCur-auCur;
+  /* International is total minus Australia, from two separate ShopifyQL queries.
+     It has never gone negative (the smallest month is +$9.7k) but rounding or an
+     attribution change between the two could make it so, and the sparkline below
+     already clamps at zero — do the same here so the tile and its own sparkline
+     cannot disagree about the sign. */
+  const auCur=sum(au.cur), totCur=sum(to.cur), intlCur=Math.max(0, totCur-auCur);
   const auPrev=au.prev?sum(au.prev):null, totPrev=to.prev?sum(to.prev):null, intlPrev=(totPrev!=null&&au.prev)?totPrev-sum(au.prev):null;
   const nzCur=sum(nzs.cur), nzPrev=nzs.prev?sum(nzs.prev):null;
   const auOrders=sum(auOr.cur), auAov=auOrders?auCur/auOrders:0;
@@ -77,7 +88,9 @@ function renderKPIs(n){
     kpiTile('Top State', top?top.abbr:'—', top?`${top.name} · <b>${pct(auCur?top.cur/auCur*100:0)}</b> of AU`:'', '', false),
     kpiTile('New Zealand', money(nzCur), `${numf(sum(nzOr.cur))} orders`, footDelta(nzCur,nzPrev,perLbl), false, 'nz'),
     kpiTile('AU Orders', numf(auOrders), `AOV <b>${money(auAov)}</b>`, footDelta(auOrders, auOr.prev?sum(auOr.prev):null, perLbl), false, 'auOrders'),
-    kpiTile('Countries', numf(R.countries.length)+'+', 'shipped to · 12 mo', '', false),
+    // No "+": api/shopify.js returns every country with net sales above zero, so
+    // this is the exact count, and the suffix read as "at least this many".
+    kpiTile('Countries', numf(R.countries.length), 'shipped to · 12 mo', '', false),
   ].join('');
   el.querySelectorAll('canvas.spark').forEach(cv=>sparkline(cv, sparks[cv.dataset.key], null));
 }
@@ -178,12 +191,14 @@ function renderNZ(){
       plugins:{legend:{display:false}, tooltip:{callbacks:{label:i=>`${money(i.raw)} · ${R.nz.monthly[i.dataIndex].orders} orders`}}}}};
   if(charts.nz) charts.nz.destroy();
   charts.nz=new Chart(document.getElementById('nzChart'), cfg);
-  const tot12=sum(nz), last=nz[nz.length-1], prev=nz[nz.length-2], mom=prev?(last/prev-1)*100:null;
+  const tot12=sum(nz), last=nz[nz.length-1], prev=nz[nz.length-2];
+  const mom=(prev!=null&&prev)?(last/prev-1)*100:null;
   const intl12=sum(R.totalMonthly)-sum(R.au.monthly.map(netOf));
   document.getElementById('nzStats').innerHTML=[
     ['12-mo net', money(tot12), `${pct(intl12?tot12/intl12*100:0)} of intl`],
     ['Latest month', money(last), R.months[R.months.length-1]],
-    ['MoM growth', (mom>=0?'+':'')+pct(mom,0), 'vs prior month'],
+    // `(mom>=0?'+':'')` treated null as >=0 and rendered "+—".
+    ['MoM growth', mom==null?'—':(mom>=0?'+':'')+pct(mom,0), 'vs prior month'],
     ['Orders (12mo)', numf(sum(R.nz.monthly.map(m=>m.orders))), 'shipped to NZ'],
   ].map(([l,v,s])=>`<div class="nzc"><div class="l">${l}</div><div class="v">${v} <small>${s}</small></div></div>`).join('');
 }

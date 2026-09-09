@@ -32,9 +32,34 @@ const dowOf=iso=>DOW[new Date(iso+'T00:00:00Z').getUTCDay()];
    Every signal exposes {dates, vals, dens} — consecutive daily arrays. */
 const sheetDates = SHEET ? SHEET.daily.map(d=>d.date) : [];
 const sheetIdx = new Map(sheetDates.map((d,i)=>[d,i]));
+/* PENDING vs ZERO — the general rule, replacing a guard that covered one metric.
+
+   This used to read `(key==='ncpa' && !v) ? null : v` with the comment "$0 CPA =
+   artifact, not data". That instinct was right and the cause is shared: the P&L
+   sheet is filled in stages, so an ad-spend row that has not been typed in yet
+   makes every formula under it evaluate to $0.00. New-customer CPA was the only
+   metric protected, so it correctly showed "no data" while MER sat at 0.0% and
+   was scored as a 100% IMPROVEMENT, and profit margin — computed without the
+   missing spend — read 18.3%, "+416% vs 3-day avg", on a day that was closer to
+   a 25% loss.
+
+   api/data.js now flags those days (see PENDING vs ZERO there). A flagged value
+   contributes nothing: no baseline, no delta, no verdict. It reads "no data",
+   which is the truth. */
+const PENDING_KEYS = {
+  adSpend: ['mer','mer3','roas','cpv','cpp','ncpa','metaTotal','metaNew','totalAds'],
+  profit:  ['profit','profitPct','totalExp'],
+};
+function isPendingFor(rec, key){
+  if(!rec || !rec.pending) return false;
+  return rec.pending.some(g => (PENDING_KEYS[g]||[]).includes(key));
+}
 const sheetSeries = key => ({ dates: sheetDates,
-  vals: SHEET.daily.map(r=>{ const v=r[key]; if(v==null) return null;
-    return (key==='ncpa' && !v) ? null : v; }),      // $0 CPA = artifact, not data
+  vals: SHEET.daily.map(r=>{
+    if(isPendingFor(r, key)) return null;          // waiting on the sheet, not a zero
+    const v=r[key]; if(v==null) return null;
+    return (key==='ncpa' && !v) ? null : v;        // kept: a $0 CPA is an artifact either way
+  }),
   dens: null });
 
 let pIdx = PULSE ? new Map(PULSE.days.map((d,i)=>[d,i])) : new Map();
@@ -205,9 +230,14 @@ function renderKPIs(iso){
     const cls = t.dir==null ? 'flat' : (d3==null?'flat' : (t.dir==='high'? (d3>=0?'up':'down') : (d3<=0?'up':'down')));
     const ar = d3==null?'—':(d3>=0?'▲':'▼');
     sparks.push({ti, ser});
+    // Distinguish "the sheet hasn't been filled in yet" from "there is no such
+    // number". A bare dash reads as a fault; "pending" reads as a queue.
+    const row = hasSheet ? SHEET.daily[sheetIdx.get(iso)] : null;
+    const waiting = y==null && isPendingFor(row, t.sheet);
     return `<div class="kpi ${t.accent?'accent':''}"><div class="k-head"><div class="k-lbl">${t.lbl}${tag}</div>
-      <div class="k-val">${y==null?'—':t.fmt(y)}</div><div class="k-sub">&nbsp;</div></div>
-      <div class="k-foot"><span class="delta ${cls}">${ar} ${d3==null?'—':Math.abs(d3).toFixed(1)+'%'}</span><span class="k-per">vs 3-day avg</span></div>
+      <div class="k-val">${y==null?(waiting?'pending':'—'):t.fmt(y)}</div>
+      <div class="k-sub">${waiting?'not yet entered':'&nbsp;'}</div></div>
+      <div class="k-foot"><span class="delta ${cls}">${ar} ${d3==null?'—':Math.abs(d3).toFixed(1)+'%'}</span><span class="k-per">${waiting?'awaiting sheet entry':'vs 3-day avg'}</span></div>
       <canvas class="spark" data-ti="${ti}"></canvas></div>`;
   }).join('');
   el.querySelectorAll('canvas.spark').forEach(cv=>{

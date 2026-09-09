@@ -132,7 +132,13 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .pace-row .pr-top{display:flex;justify-content:space-between;align-items:baseline;font-size:1.2cqh}
 .pace-row .pr-top .nm{text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
 .pace-row .pr-top .vv{font-weight:700;font-size:1.6cqh;font-variant-numeric:tabular-nums}
-.track{height:1.5cqh;background:var(--panel-2);border:1px solid var(--line);border-radius:2cqh;overflow:hidden;position:relative;margin-top:.5cqh}
+/* overflow was hidden, which flattened the forecast tick. .fc-mark is sized
+   top:-.35cqh / bottom:-.35cqh precisely so it stands proud of the bar — that
+   protrusion is what marks 100% of target — and the track was clipping it flush.
+   The fill (.track i) carries the same border-radius, so it clips itself and
+   does not need the parent to do it. */
+.track{height:1.5cqh;background:var(--panel-2);border:1px solid var(--line);border-radius:2cqh;overflow:visible;position:relative;margin-top:.5cqh}
+.track i{overflow:hidden}
 .track i{position:absolute;left:0;top:0;bottom:0;border-radius:2cqh}
 .track .fc-mark{position:absolute;top:-.35cqh;bottom:-.35cqh;width:2px;background:var(--dl-white);opacity:.9;
   box-shadow:0 0 0 .2cqh rgba(0,0,0,.35)}
@@ -249,7 +255,11 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
   font-size:1.05cqh;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:.28cqh .7cqw;border-radius:.45cqh;cursor:pointer}
 .seg.tiny button.active{background:var(--dl-yellow);color:var(--dl-black)}
 /* category panel */
-.catlist{display:flex;flex-direction:column;gap:.4cqh;flex:1;min-height:0;overflow:hidden}
+/* Rows carry two lines (name + meta). As flex children they were shrinkable, so
+   a full list squeezed each row to ~13px against ~32px of content and the second
+   line was cut off mid-glyph. Hold the natural height and let the list scroll. */
+.catlist{display:flex;flex-direction:column;gap:.4cqh;flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable}
+.catrow{flex:0 0 auto}
 .catrow{display:grid;grid-template-columns:1fr auto;gap:.6cqw;align-items:center;
   background:var(--panel-2);border:1px solid var(--line);border-radius:.7cqh;padding:.46cqh 1.1cqw;position:relative;overflow:hidden}
 .catrow .bar{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,rgba(245,235,25,.22),rgba(245,235,25,.05));border-right:2px solid var(--dl-yellow)}
@@ -266,7 +276,13 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .warnbox b{color:var(--warn)}
 
 /* product table */
-.ptable{flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+/* Was overflow:hidden. renderProducts writes 15 rows into a box that fits about
+   six, so products 7-15 were rendered and then silently clipped — no scrollbar,
+   no ellipsis, nothing to suggest the list continued. Scroll instead, and keep
+   the header row put so the columns stay labelled while scrolling. */
+.ptable{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;scrollbar-gutter:stable}
+.ptable .thead{position:sticky;top:0;z-index:2;background:var(--panel)}
+.ptable .trow{flex:0 0 auto}
 .ptable .thead,.ptable .trow{display:grid;grid-template-columns:1.6cqw 1fr auto auto auto auto;gap:.7cqw;align-items:center}
 .ptable .thead{font-size:1.2cqh;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;padding:.5cqh .6cqw;border-bottom:1px solid var(--line)}
 .ptable .trow{padding:.42cqh .6cqw;border-bottom:1px solid rgba(255,255,255,.04);font-variant-numeric:tabular-nums}
@@ -281,3 +297,36 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .mom.up{color:var(--good)} .mom.down{color:var(--bad)} .mom.flat{color:var(--muted)}
 
 @media (max-width:700px){ #stage{grid-template-rows:auto;height:auto;overflow:auto} }
+
+
+/* ---------------------------------------------------------------------------
+   PENDING state — a value the sheet has not been given yet.
+
+   Deliberately not red. A pending metric is not a failing metric, and the old
+   health strip rendered every missing value as a red ACT, which made a blank
+   cell look like a business problem. Muted grey, italic, and it never competes
+   with a real alert for attention.
+   --------------------------------------------------------------------------- */
+.freshness .pend{
+  font:italic 400 clamp(8px,1.05cqh,11px)/1.25 "Roboto Condensed",sans-serif;
+  color:var(--warn,#ffb020); margin-top:.15em; max-width:22ch;
+}
+.freshness .val.pending{ color:var(--warn,#ffb020); }
+
+/* neutral dot + text for PENDING / NO DATA rows in the health strip */
+.hdot.n{ background:#4a4445; box-shadow:none; }
+.n-t{ color:var(--muted,#9a9193); font-style:italic; }
+
+/* a KPI tile whose value is the word "pending" rather than a number */
+.kpi .k-val{ overflow-wrap:anywhere; }
+
+
+/* Scrollbars on the panels that can now scroll. Thin and low-contrast: they are
+   an affordance that the list continues, not a piece of chrome. */
+.ptable::-webkit-scrollbar, .catlist::-webkit-scrollbar{width:6px}
+.ptable::-webkit-scrollbar-track, .catlist::-webkit-scrollbar-track{background:transparent}
+.ptable::-webkit-scrollbar-thumb, .catlist::-webkit-scrollbar-thumb{
+  background:var(--line); border-radius:3px}
+.ptable::-webkit-scrollbar-thumb:hover, .catlist::-webkit-scrollbar-thumb:hover{
+  background:var(--muted)}
+.ptable, .catlist{scrollbar-width:thin; scrollbar-color:var(--line) transparent}

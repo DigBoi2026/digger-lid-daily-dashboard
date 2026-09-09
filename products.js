@@ -46,11 +46,25 @@ function windowData(W){
   };
 }
 const base12M = () => windowData('12M');
-function momentum(catKey, catNet, W){                     // period run-rate vs 12-month average run-rate
+/* Period run-rate vs the same category's 12-month average run-rate.
+
+   Read this against companyMomentum() below, not on its own. The whole business
+   is currently running 22-39% above its own 12-month pace, so at 90 days 8 of 10
+   categories show an up arrow — that is the rising tide, not ten categories each
+   outperforming. The note under the list now states the company figure so the
+   arrows can be read as "faster or slower than the business as a whole". */
+function momentum(catKey, catNet, W){
   if(W==='12M') return null;
   const b=base12M().categories.find(c=>c.key===catKey);
   if(!b || !b.net) return null;
   return (catNet/PDAYS[W]) / (b.net/365) - 1;
+}
+// The same calculation over every category, i.e. the baseline drift the arrows sit on.
+function companyMomentum(W){
+  if(W==='12M') return null;
+  const cur=windowData(W).net, base=base12M().net;
+  if(!base) return null;
+  return (cur/PDAYS[W]) / (base/365) - 1;
 }
 function momEl(m){
   if(m==null) return '<span class="mom flat">—</span>';
@@ -65,12 +79,29 @@ function totals(){
     const cur=daySlice(W), prev=prevSlice(W);
     orders=sum(cur,'orders'); units=sum(cur,'items'); curSpark=cur;
     if(prev){ prevOrders=sum(prev,'orders'); prevUnits=sum(prev,'items'); prevNet=sum(prev,'net'); prevSpark=prev; }
-  } else {                                                // monthly-based (90D ≈ last 3 months; 12M = last 12)
-    const n=(W===90?3:12), M=D.monthly, cur=M.slice(-n);
-    orders=sum(cur,'orders'); units=sum(cur,'units'); curSpark=cur;
-    if(W===90 && M.length>=2*n){ const prev=M.slice(-2*n,-n); prevOrders=sum(prev,'orders'); prevUnits=sum(prev,'units'); prevNet=sum(prev,'net'); prevSpark=prev; }
+  } else {
+    /* Long windows: the totals now come from the API's own query over exactly
+       this window (winTotals), so orders, units and net all describe the same
+       period. They used to be taken from whole calendar months — "LAST 90 DAYS"
+       counted Jun+Jul+Aug orders against a trailing-90-day net, which made AOV a
+       ratio of two different periods and stopped the order count eight days
+       short of its label.
+
+       Monthly rows are still the sparkline series: they are the only long-run
+       shape available, and a sparkline is a trend, not a total. */
+    const n=(W===90?3:12), M=D.monthly;
+    const t=(D.winTotals||{})[String(W)];
+    curSpark=M.slice(-n);
+    if(t){ orders=t.orders; units=t.units; }
+    else { orders=sum(curSpark,'orders'); units=sum(curSpark,'units'); }   // pre-winTotals payload
+    const pt=(D.winPrevTotals||{})[String(W)];
+    if(pt){ prevOrders=pt.orders; prevUnits=pt.units; prevNet=pt.net; prevSpark=M.slice(-2*n,-n); }
+    else if(W===90 && M.length>=2*n){
+      const prev=M.slice(-2*n,-n); prevOrders=sum(prev,'orders'); prevUnits=sum(prev,'units'); prevNet=sum(prev,'net'); prevSpark=prev;
+    }
   }
-  const net=wd.net;
+  const net=(W===3||W===7||W===30) ? wd.net
+    : (((D.winTotals||{})[String(W)]||{}).net ?? wd.net);   // same period as orders/units
   return {W,wd,net,orders,units,aov:orders?net/orders:0,prevOrders,prevUnits,prevNet,
     prevAov:(prevNet&&prevOrders)?prevNet/prevOrders:null,curSpark,prevSpark};
 }
@@ -129,7 +160,16 @@ function renderKPIs(t){
 function renderCategories(t){
   const wrap=document.getElementById('catList');
   const list=t.wd.categories, maxNet=Math.max(...list.map(c=>c.net||0));
-  document.getElementById('catNote').textContent = S.win==='12M' ? 'net sales · share' : 'net sales · share · vs 12-mo pace';
+  /* "orders" on a category row means orders CONTAINING that category, so the
+     rows do not add up to the order count in the KPI strip — 30 days of rows
+     sum to 3,956 against 1,766 real orders, because a three-category order is
+     counted in all three. Net sales and units do partition; say which is which
+     rather than leave a reader to discover it by adding them up. */
+  const cm=companyMomentum(S.win);
+  const cmTxt=cm==null?'' : ` (business ${cm>=0?'+':''}${(cm*100).toFixed(0)}%)`;
+  document.getElementById('catNote').textContent = S.win==='12M'
+    ? 'net sales · share · orders overlap'
+    : `net sales · share · vs 12-mo pace${cmTxt} · orders overlap`;
   wrap.innerHTML = list.map(c=>{
     const share=c.net/t.wd.net*100, w=maxNet?(c.net/maxNet*100):0;
     const mom = (S.win==='12M'||c.key==='other') ? '' : ' · '+momEl(momentum(c.key,c.net,S.win));
@@ -144,7 +184,12 @@ function renderCategories(t){
 }
 function renderProducts(t){
   const wrap=document.getElementById('pTable');
-  const rows=t.wd.products.slice(0,15);
+  const CAP=15, all=t.wd.products, rows=all.slice(0,CAP);
+  // The table used to render 15 rows into a box that showed six, with no hint
+  // that it continued. It scrolls now, so state what is in it.
+  document.getElementById('prodNote').textContent = all.length>CAP
+    ? `Top ${CAP} of ${all.length} · scroll for more`
+    : (all.length>6 ? `Top sellers · ${all.length} · scroll for more` : 'Top sellers');
   let html=`<div class="thead"><div>#</div><div>Product</div><div class="num">Net Sales</div><div class="num">Units</div><div class="num">Orders</div><div class="num">Share</div></div>`;
   html+=rows.map((p,i)=>`<div class="trow">
     <div class="rank">${i+1}</div>

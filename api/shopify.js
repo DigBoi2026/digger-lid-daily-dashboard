@@ -156,6 +156,33 @@ async function buildProducts(today) {
       net: n2(r.net_sales), u: +r.net_items_sold || 0, o: +r.orders || 0 }));
   }));
 
+  /* True totals for the long windows.
+
+     The 90-day and 12-month views could not previously state an order count for
+     their own period. Per-product rows carry `orders`, but that is "orders
+     containing this product", so summing them double-counts any multi-product
+     order — the 30-day rows add up to 3,956 against a real 1,766. `daily` only
+     reaches back 62 days, so products.js fell back to whole calendar months:
+     "LAST 90 DAYS" took net sales from a true trailing 90 days and its orders
+     and units from Jun+Jul+Aug, ending 31 August. AOV was a ratio of two
+     different periods, and the order count stopped eight days before its label.
+
+     One ungrouped query per long window fixes it at the source. The short
+     windows keep coming from `daily`, which already covers them exactly and
+     matches the sheet to the order. */
+  const LONG = { 90: win(90), '12M': { since: M.since, until: M.until } };
+  const PREV = { 90: { since: iso(addDays(yest, -179)), until: iso(addDays(yest, -89)) } };
+  const totalsFor = async w => {
+    const r = (await shopifyql(
+      `FROM sales SHOW net_sales, orders, net_items_sold SINCE ${w.since} UNTIL ${w.until}`))[0] || {};
+    return { net: n2(r.net_sales), orders: +r.orders || 0, units: +r.net_items_sold || 0 };
+  };
+  const winTotals = {}, winPrevTotals = {};
+  await Promise.all([
+    ...Object.entries(LONG).map(async ([k, w]) => { winTotals[k] = await totalsFor(w); }),
+    ...Object.entries(PREV).map(async ([k, w]) => { winPrevTotals[k] = await totalsFor(w); }),
+  ]);
+
   // monthly totals + product×month → catMonthly
   const monRows = await shopifyql(
     `FROM sales SHOW net_sales, orders, net_items_sold GROUP BY month SINCE ${M.since} UNTIL ${M.until} ORDER BY month`);
@@ -171,7 +198,7 @@ async function buildProducts(today) {
     const c = categorize(r.product_title); catMonthly[i].cats[c] = n2((catMonthly[i].cats[c] || 0) + n2(r.net_sales)); });
 
   return { meta: { source: 'Shopify · ShopifyQL sales', currency: 'AUD', asOf: iso(today), live: true },
-    keys: KEYS, daily, windows, monthly, catMonthly };
+    keys: KEYS, daily, windows, winTotals, winPrevTotals, monthly, catMonthly };
 }
 
 /* -------------------------------- region -------------------------------- */

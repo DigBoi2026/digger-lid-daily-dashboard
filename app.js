@@ -30,7 +30,8 @@ const CONFIG = {
 };
 
 // Shared math/utilities live in core.js (unit-tested by source/test_core.js).
-const { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline } = DLcore;
+const { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline,
+        isPending, pendingMode, pendingLabel } = DLcore;
 
 /* ----------------------------- state ----------------------------------- */
 // Unified period selector: win ∈ {3,7,30,90,'YTD'} (trailing period ending yesterday); off = periods back.
@@ -163,7 +164,18 @@ function render(){
 function renderHeader(c){
   document.getElementById('navDate').textContent=c.title;
   document.getElementById('navDow').textContent=c.sub;
-  document.getElementById('throughVal').textContent=isoToNice(DATA.meta.latestDataDate)+" 2026";
+  const thr=document.getElementById('throughVal');
+  thr.textContent=isoToNice(DATA.meta.latestDataDate)+" 2026";
+  /* Say so when the newest day is only half entered. Without this the board
+     looks fully up to date while its ad-spend metrics are running off a blank
+     cell, and the reader has no way to tell. */
+  const pend=c.rec&&c.rec.pending;
+  const note=document.getElementById('pendNote');
+  if(pend){
+    const days=pend.dates.map(d=>isoToNice(d)).join(', ');
+    note.textContent=`ad spend not yet entered for ${days}`;
+    note.hidden=false; thr.classList.add('pending');
+  } else { note.hidden=true; thr.classList.remove('pending'); }
   // ‹ › step the trailing period back/forward; disabled for YTD (one year of data)
   const prevB=document.getElementById('prevBtn'), nextB=document.getElementById('nextBtn');
   if(S.win==='YTD'){ prevB.disabled=true; nextB.disabled=true; }
@@ -191,11 +203,30 @@ function renderKPIs(c){
   // every tile shows the comparison-period label next to its arrow
   const per=`<span class="k-per">${c.periodLabel}</span>`;
   const foot=(cur,prev,key)=>deltaEl(cur,prev,key)+per;
+  const adMode=pendingMode(r,'adSpend');          // 'blank' | 'qualify' | null
+  const adPending=adMode==='blank';               // too much missing to show a figure
+  const pendFoot=`<span class="delta flat">—</span><span class="k-per">${pendingLabel(r)}</span>`;
+  // Below the suppression threshold the figure still stands; it just carries how
+  // much of the window is outstanding, so nobody reads it as final.
+  const qFoot=adMode==='qualify'?`<span class="delta flat">—</span><span class="k-per">${pendingLabel(r)}</span>`:null;
   const tiles=[
     kpiTile('Revenue', money(r.revenue,true), money(r.revenue), foot(r.revenue,p&&p.revenue,'revenue'), true,'revenue'),
-    kpiTile('Net Profit', money(r.profit,true), `Margin <b>${pct(r.profitPct)}</b>`, foot(r.profit,p&&p.profit,'profit'), false,'profit'),
-    kpiTile('Meta Ad Spend', money(r.metaTotal,true), `<b>${pct((r.metaTotal/r.revenue)*100)}</b> of revenue`, foot(r.metaTotal,p&&p.metaTotal,'metaTotal'), false,'metaTotal'),
-    kpiTile('Sitewide ROAS', xroas(r.roas), `MER <b>${pct(r.mer)}</b>`, foot(r.roas,p&&p.roas,'roas'), false,'roas'),
+    // Profit IS the sheet's own number, but it was computed without the missing
+    // spend, so it is overstated rather than absent — shown, and labelled.
+    kpiTile('Net Profit', money(r.profit,true),
+      isPending(r,'profit') ? 'provisional — excludes pending spend' : `Margin <b>${pct(r.profitPct)}</b>`,
+      isPending(r,'profit') ? pendFoot : foot(r.profit,p&&p.profit,'profit'), false,'profit'),
+    // Ad spend and everything divided by it are blanked while the sheet is
+    // mid-entry, rather than reported against a partial total.
+    adPending
+      ? kpiTile('Meta Ad Spend', 'pending', 'not yet entered', pendFoot, false, null)
+      : kpiTile('Meta Ad Spend', money(r.metaTotal,true),
+          adMode==='qualify' ? `<b>${pct((r.metaTotal/r.revenue)*100)}</b> of revenue · so far` : `<b>${pct((r.metaTotal/r.revenue)*100)}</b> of revenue`,
+          qFoot||foot(r.metaTotal,p&&p.metaTotal,'metaTotal'), false,'metaTotal'),
+    adPending
+      ? kpiTile('Sitewide ROAS', 'pending', 'MER pending', pendFoot, false, null)
+      : kpiTile('Sitewide ROAS', xroas(r.roas), `MER <b>${pct(r.mer)}</b>`,
+          qFoot||foot(r.roas,p&&p.roas,'roas'), false,'roas'),
     kpiTile('Orders', numf(r.orders), `AOV <b>${money(r.aov)}</b>`, foot(r.orders,p&&p.orders,'orders'), false,'orders'),
     kpiTile('Conversion Rate', pct(r.cvr,2), `Sessions <b>${numf(r.sessions)}</b>`, foot(r.cvr,p&&p.cvr,'cvr'), false,'cvr'),
   ];
@@ -215,12 +246,22 @@ function renderWaterfall(c){
   document.getElementById('eqRev').textContent = money(r.revExGst!=null?r.revExGst:r.revenue);
   const profEl=document.getElementById('eqProfit');
   profEl.textContent = money(r.profit);
+  /* The cascade above is drawn from a partial ad-spend total while spend is
+     pending, so this figure is the sheet's own but provisional. Say so here as
+     well as on the KPI tile — read on its own, a green "= Profit" cell is the
+     most convincing number on the page. */
+  const pl=document.getElementById('eqProfitLbl');
+  if(pl) pl.textContent = isPending(c.rec,'profit') ? 'Net Profit · provisional' : 'Net Profit';
   profEl.parentElement.classList.toggle('profit', true);
   const base = r.revExGst!=null?r.revExGst:r.revenue;
   const ads=r.totalAds||0, vc=r.totalVC||0, fc=r.totalFC||0, profit=r.profit||0;
   const c1=base-ads, c2=c1-vc, c3=c2-fc;
-  const data=[ [0,base], [c1,base], [c2,c1], [c3,c2], [0,Math.max(profit,0)] ];
-  const labels=['Revenue','− Ad Spend','− Variable','− Fixed','= Profit'];
+  /* A loss used to draw nothing: the final bar was [0, max(profit,0)], so a
+     negative profit collapsed to zero height while the label above it printed
+     the negative figure. Draw it downward from zero instead, in red. */
+  const data=[ [0,base], [c1,base], [c2,c1], [c3,c2], profit>=0?[0,profit]:[profit,0] ];
+  const adLbl = isPending(c.rec,'adSpend') ? '− Ad Spend (pending)' : '− Ad Spend';
+  const labels=['Revenue',adLbl,'− Variable','− Fixed','= Profit'];
   const colors=['#f5eb19','#ff5a52','#ff8a4a','#c98bff', profit>=0?'#39d98a':'#ff5a52'];
   const cfg={
     type:'bar',
@@ -284,7 +325,8 @@ function renderTrend(c){
       {type:'line',label:'ROAS',data:Y('roas'),borderColor:'#5ec8ff',yAxisID:'y1',tension:.3,pointRadius:0,borderWidth:2,order:1},
     ];
     scales={y:{position:'left',min:0,max:cap,grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#9a9193',font:{size:9},callback:v=>v+'%'}},
-      y1:{position:'right',grid:{display:false},ticks:{color:'#39d98a',font:{size:9},callback:v=>v+'x'}},x:baseX};
+      // axis colour matches the ROAS line it scales (#5ec8ff), not the breakeven band
+      y1:{position:'right',grid:{display:false},ticks:{color:'#5ec8ff',font:{size:9},callback:v=>v+'x'}},x:baseX};
   } else if(S.metric==='profit'){
     datasets=[
       {type:'bar',label:'Profit',data:Y('profit'),backgroundColor:s.map(d=>d.profit>=0?'rgba(57,217,138,.85)':'rgba(255,90,82,.85)'),yAxisID:'y',borderRadius:3},
@@ -304,7 +346,14 @@ function renderTrend(c){
   if(c.gran==='day' && s.length>=10){
     const rollKey={rev_spend:'revenue',profit:'profit',traffic:'sessions'}[S.metric];
     if(rollKey){
-      datasets.push({type:'line',label:'7-day avg',data:rollingAvg(Y(rollKey),7),
+      /* Feed the mean the 6 days BEFORE the window and drop them from the
+         result, so the first plotted point is a true 7-day average. Computed
+         over the window alone, the first point was a 1-day "average" — 73% high
+         on the 30-day revenue view — and the next five were short. */
+      const LEAD=6, first=DATA.daily.findIndex(d=>d.date===s[0].date);
+      const lead=Math.max(0, Math.min(LEAD, first));
+      const feed=DATA.daily.slice(first-lead, first+s.length).map(d=>d[rollKey]);
+      datasets.push({type:'line',label:'7-day avg',data:rollingAvg(feed,7,lead),
         borderColor:'#ff8a4a',borderDash:[5,4],backgroundColor:'transparent',yAxisID:'y',
         tension:.35,pointRadius:0,borderWidth:2,order:0});
     }
@@ -379,23 +428,40 @@ function renderPace(c){
 /* ------------------------------ health check -------------------------- */
 function renderHealth(c){
   const r=c.rec, wrap=document.getElementById('healthWrap');
+  const AD_KEYS=['mer','roas'];                    // both divide by ad spend
+  /* Withhold the traffic light only when the underlying figure is withheld. With
+     one day of thirty outstanding the MER moves under a point, so a WATCH is
+     still a WATCH — and blanking it would hide a real signal to guard against a
+     rounding error. With one day of three it moved 12 points, which is the case
+     this threshold exists for. */
+  const adPending=pendingMode(r,'adSpend')==='blank';
+  const adQualified=pendingMode(r,'adSpend')==='qualify';
   const rows=Object.entries(CONFIG.health).map(([key,cfg])=>{
     const v=r[key];
-    let status='b';
-    if(v!=null){
+    /* Three states, not two. A metric with no value is not a failing metric:
+       status started at 'b' and only moved if v!=null, so a blank rendered as a
+       red ACT — a false alarm indistinguishable from a real one. Anything
+       waiting on the sheet, or simply absent, is now neutral. */
+    const waiting = adPending && AD_KEYS.includes(key);
+    let status = (v==null || waiting) ? 'n' : null;
+    if(status===null){
       if(cfg.dir==='high') status = v>=cfg.good?'g': v>=cfg.warn?'a':'b';
       else status = v<=cfg.good?'g': v<=cfg.warn?'a':'b';
     }
-    const val = cfg.fmt==='pct'?pct(v): cfg.fmt==='x'?xroas(v): numf(v);
-    const state={g:'OK',a:'WATCH',b:'ACT'}[status];
+    const val = status==='n' ? (waiting?'pending':'—')
+              : cfg.fmt==='pct'?pct(v): cfg.fmt==='x'?xroas(v): numf(v);
+    const state={g:'OK',a:'WATCH',b:'ACT',n:waiting?'PENDING':'NO DATA'}[status];
     // Explain the actual check: the benchmark band, and (when not green) why it tripped.
     const hi = cfg.dir==='high';
     const fmtT = t => cfg.fmt==='pct'?t+'%' : cfg.fmt==='x'? t+'×' : numf(t);
     const band = hi ? `good ≥ ${fmtT(cfg.good)} · watch ≥ ${fmtT(cfg.warn)}`
                     : `good ≤ ${fmtT(cfg.good)} · watch ≤ ${fmtT(cfg.warn)}`;
     const th = status==='a' ? cfg.good : cfg.warn;
-    const sub = status==='g' ? band
-      : `${hi?'below':'above'} the ${fmtT(th)} ${status==='a'?'target':'action line'} · ${band}`;
+    const q = (adQualified && AD_KEYS.includes(key)) ? pendingLabel(r)+' · ' : '';
+    const sub = status==='n'
+        ? (waiting ? 'waiting on ad spend in the sheet · '+band : 'no value for this period · '+band)
+      : status==='g' ? q+band
+      : `${q}${hi?'below':'above'} the ${fmtT(th)} ${status==='a'?'target':'action line'} · ${band}`;
     return `<div class="hrow" role="listitem" aria-label="${cfg.label}: ${val}, ${state}. ${sub}">
       <span class="hdot ${status}"></span>
       <span class="hnm"><span class="hlbl">${cfg.label}</span><span class="hsub">${sub}</span></span>
@@ -404,6 +470,10 @@ function renderHealth(c){
   });
   // Spend signal from the breakeven-MER band (distinguishes amber "hold" from red "pull back")
   const bk=breakeven(r);
+  if(!bk && adPending) rows.push(`<div class="hrow" role="listitem" aria-label="Spend signal: pending">
+      <span class="hdot n"></span>
+      <span class="hnm"><span class="hlbl">Spend Signal · MER vs b/e</span><span class="hsub">held back until ad spend is entered — a partial total reads as headroom</span></span>
+      <small class="hstate n-t" style="grid-column:3 / -1;justify-self:end">PENDING</small></div>`);
   if(bk) rows.push(`<div class="hrow" role="listitem" aria-label="Spend signal: ${bk.signal}">
       <span class="hdot ${bk.zone}"></span>
       <span class="hnm">Spend Signal · MER vs b/e</span>

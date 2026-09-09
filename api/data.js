@@ -163,6 +163,56 @@ function hasData(rec) {
       || (rec.sessions != null && rec.sessions > 0);
 }
 
+/* ------------------------------------------------------------------------
+   PENDING vs ZERO
+
+   The P&L sheet is filled in stages. Revenue, orders and sessions arrive from
+   Shopify and analytics; Meta ad spend is typed in by hand, a day later. An
+   unfilled spend row does NOT read blank — every formula beneath it evaluates
+   to $0.00 — so a day that is only half entered is indistinguishable, cell by
+   cell, from a day that genuinely spent nothing.
+
+   Treating that as a real zero is what made 2026-09-08 report a 0.0% MER, a
+   4.24x ROAS, a "Scale" spend signal, and an 18.3% profit margin (+416% vs the
+   3-day average) on a day that, once its spend is entered, is closer to a 25%
+   LOSS. The board was telling its reader to spend more, off a blank cell.
+
+   So: anything computed from an input that has not been filled in yet is
+   PENDING, not zero. Nothing downstream should average it, sum it, compare it
+   to a baseline, or colour a traffic light with it.
+
+   This generalises a guard that already existed for exactly one metric in
+   daily.js ("$0 CPA = artifact, not data") to every field that shares the
+   cause.
+   ------------------------------------------------------------------------ */
+
+// Inputs that arrive late, and everything that cannot be computed without them.
+const AD_INPUTS  = ['metaNew', 'metaTotal', 'google', 'tiktok', 'totalAds'];
+const AD_DERIVED = ['mer', 'mer3', 'roas', 'cpv', 'cpp', 'ncpa'];
+
+// A day that took money, or had traffic, is a real trading day.
+function isTrading(rec) {
+  return rec.revenue > 0 || rec.orders > 0 || rec.sessions > 0;
+}
+
+/* Flag what a day is still waiting on, and blank the fields that would
+   otherwise carry a fabricated zero.
+
+   PROFIT is deliberately left populated. It is the sheet's own figure and the
+   only one available, but it is computed without the missing spend, so it is
+   overstated rather than absent — it gets flagged, not blanked, and the pages
+   label it provisional. */
+function markPending(rec) {
+  const pending = [];
+  if (isTrading(rec) && !(rec.totalAds > 0)) {
+    pending.push('adSpend', 'profit');
+    AD_INPUTS.forEach(k => { rec[k] = null; });
+    AD_DERIVED.forEach(k => { rec[k] = null; });
+  }
+  rec.pending = pending.length ? pending : null;
+  return rec;
+}
+
 // The newest date that carries real data — NOT simply the last row present.
 function lastDataDate(daily) {
   for (let i = daily.length - 1; i >= 0; i--) if (hasData(daily[i])) return daily[i].date;
@@ -184,7 +234,7 @@ function parseDaily(grid, monthNum) {
       const r = blk.rows[k];
       rec[k] = r == null ? null : num(cellAt(grid, r, ci));
     }
-    if (hasData(rec)) out.push(rec);
+    if (hasData(rec)) out.push(markPending(rec));
   });
   return out;
 }
@@ -391,3 +441,7 @@ module.exports.findBlocks = findBlocks;
 module.exports.chooseBlock = chooseBlock;
 module.exports.blockRows = blockRows;
 module.exports._num = num;
+module.exports.markPending = markPending;
+module.exports.isTrading = isTrading;
+module.exports.AD_INPUTS = AD_INPUTS;
+module.exports.AD_DERIVED = AD_DERIVED;
