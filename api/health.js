@@ -97,7 +97,7 @@ module.exports = async (req, res) => {
       } else {
         const vals = await api.spreadsheets.values.get({
           spreadsheetId: id,
-          range: `'${tab.replace(/'/g, "''")}'!A1:AZ131`,
+          range: `'${tab.replace(/'/g, "''")}'!A1:AZ400`,
           valueRenderOption: 'FORMATTED_VALUE',
         });
         const rows = require('./data.js').parseDaily(vals.data.values, y.getMonth() + 1);

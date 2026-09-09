@@ -114,12 +114,31 @@ function probe(grid) {
     }
   }
 
+  // Every "TOTAL Revenue" row is the head of one block. Report each with the
+  // nearest column-A heading above it and the value in the first day column, so
+  // the right block can be identified against build_data.py's known anchor
+  // (June 1 revenue = 16701.63) instead of guessed at.
+  const header = (grid[0] || []);
+  const firstDayCol = header.findIndex(h => /^\s*\d{1,2}\s+[A-Za-z]{3}\s*$/.test(h || ''));
+  const blocks = [];
+  for (let r = 0; r < grid.length; r++) {
+    if (!/^total\s+revenue\b/i.test(cell(r, 1))) continue;
+    let head = '';
+    for (let b = r - 1; b >= 0 && b > r - 8; b--) { const h = cell(b, 0); if (h) { head = h.slice(0, 40); break; } }
+    blocks.push({
+      revenueRow: r,
+      heading: head,
+      firstDay: firstDayCol >= 0 ? header[firstDayCol] : null,
+      firstDayValue: firstDayCol >= 0 ? cell(r, firstDayCol) : null,
+    });
+  }
+
   const expected = { revenue: ROWS.revenue, sessions: ROWS.sessions, orders: ROWS.orders };
   const revRow = found.revenue && found.revenue.row;
   return {
     gridRows: grid.length,
     dayColumns: (grid[0] || []).filter(h => /^\s*\d{1,2}\s+[A-Za-z]{3}\s*$/.test(h || '')).length,
-    found, expected,
+    found, expected, blocks,
     labelledRows: Object.keys(rowLabels).length,
     rowLabels,
     verdict: !found.revenue
@@ -185,7 +204,9 @@ module.exports = async (req, res) => {
 
     // A1 notation: wrap sheet names in single quotes and DOUBLE any internal apostrophe
     // (tabs are named like  Jun '26  →  'Jun ''26'  ). Without this the batchGet fails.
-    const a1 = name => `'${name.replace(/'/g, "''")}'!A1:AZ131`;
+    // A1:AZ131 stopped mid-way through the third country block, so any
+// consolidated block below it was never read at all.
+const a1 = name => `'${name.replace(/'/g, "''")}'!A1:AZ400`;
     const cleanRanges = tabs.map(m => a1(m.name)).concat(haveMonthly ? [a1(monthlyTab)] : []);
 
     const resp = await sheets.spreadsheets.values.batchGet({

@@ -115,6 +115,24 @@ const REV = 62, SESS = 71, ORD = 68;
   const alt = D.probe(g2);
   ok('probe: picks up Net Sales', alt.found.netSales.row === REV, alt.found.netSales);
 
+  // blocks: each "TOTAL Revenue" row, its heading, and the first day's value —
+  // what identifies the right country block against build_data.py's anchor.
+  // Shaped like the real sheet: headings in column A, metric labels in column B,
+  // day columns from C onward.
+  const bg = [];
+  for (let i = 0; i < 70; i++) bg[i] = ['', '', ''];
+  bg[0] = ['', '', ' 1 Jun ', ' 2 Jun '];
+  bg[1][0] = 'Country 1';
+  bg[4] = ['', 'TOTAL Revenue', '16701.63', '12000.00'];
+  bg[61][0] = 'Country 2';
+  bg[63] = ['', 'TOTAL Revenue', '9999.00', '8888.00'];
+  const bp = D.probe(bg);
+  ok('probe: finds both blocks', bp.blocks.length === 2, bp.blocks.length);
+  ok('probe: block rows', bp.blocks[0].revenueRow === 4 && bp.blocks[1].revenueRow === 63, bp.blocks);
+  ok('probe: block headings', bp.blocks[0].heading === 'Country 1' && bp.blocks[1].heading === 'Country 2', bp.blocks);
+  ok('probe: anchor value surfaced', bp.blocks[0].firstDayValue === '16701.63', bp.blocks[0]);
+  ok('probe: no blocks when no TOTAL Revenue', D.probe(grid(3, {}, {})).blocks.length === 0);
+
   const noLabels = D.probe(grid(30, {}, {}));
   ok('probe: missing labels reported', /read rowLabels/.test(noLabels.verdict), noLabels.verdict);
   ok('probe: empty grid safe', D.probe([]).gridRows === 0);
