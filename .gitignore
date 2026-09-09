@@ -6,3 +6,10 @@ node_modules/
 .DS_Store
 .env*
 !.env.example
+
+data.js
+shopify_data.js
+region_data.js
+pulse_data.js
+source/*.csv
+source/catrows.json
