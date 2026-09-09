@@ -232,6 +232,8 @@ module.exports = async (req, res) => {
   }
 };
 
+module.exports.buildProducts = buildProducts;     // shared with the AI read subsystem
+module.exports.buildRegion = buildRegion;         // shared with the AI read subsystem
 module.exports.categorize = categorize;   // for offline unit testing
 module.exports.accessToken = accessToken;         // for offline unit testing
 module.exports.storeDomain = storeDomain;         // for offline unit testing

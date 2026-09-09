@@ -179,3 +179,16 @@ frozen at the snapshot date.
 
 **Built for the dig.** If a number looks off → check the provenance table first, then the
 snapshot date in the footer.
+
+## Giving an AI access
+
+Hand an agent one URL and one scoped, revocable token:
+
+```
+https://digboi-seven.vercel.app/api/ai/manifest
+Authorization: Bearer sk_dl_…
+```
+
+It discovers the datasets, parameters and field meanings from there. Scopes let
+a media-buying agent read ad spend and MER without ever seeing salaries. Inert
+until `AI_TOKENS` is set. See **[AI-ACCESS.md](AI-ACCESS.md)**.

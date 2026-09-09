@@ -11,8 +11,16 @@
    request (including the /api/* fetches), so the whole site is protected.
    ========================================================================= */
 export const config = {
-  // Protect everything except static assets and the health check.
-  matcher: ['/((?!assets/|favicon|api/health).*)'],
+  /* Protect everything except static assets, the health check, and the AI read
+     subsystem.
+
+     /api/ai/* is NOT unprotected — every one of those routes calls the bearer
+     guard in api/ai/_guard.js before doing anything, and returns 503 when
+     AI_TOKENS is unset. Keeping it out of this matcher is deliberate: an AI
+     consumer authenticates with its own revocable, scoped token and never needs
+     the shared human password. Handing an agent SITE_PASSWORD would give it the
+     whole board with no scope limit and no way to revoke it alone. */
+  matcher: ['/((?!assets/|favicon|api/health|api/ai/).*)'],
 };
 
 export default function middleware(req) {

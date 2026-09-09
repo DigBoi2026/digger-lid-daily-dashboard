@@ -52,8 +52,9 @@ async function hogql(query) {
   return j.results || [];
 }
 
-module.exports = async (req, res) => {
-  try {
+/* Shared by this route and the AI read subsystem. */
+async function buildPulse() {
+
     const [daily, chan] = await Promise.all([hogql(Q_DAILY), hogql(Q_CHAN)]);
     const days = daily.map(r => r[0]);
     const idx = Object.fromEntries(days.map((d, i) => [d, i]));
@@ -76,6 +77,12 @@ module.exports = async (req, res) => {
         note: 'Live daily site signals through yesterday (full days).' },
       days, series, channels,
     };
+  return payload;
+}
+
+module.exports = async (req, res) => {
+  try {
+    const payload = await buildPulse();
     res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1800');
     res.setHeader('Content-Type', 'application/json');
     res.status(200).send(JSON.stringify(payload));
@@ -83,3 +90,5 @@ module.exports = async (req, res) => {
     res.status(500).json({ error: String((err && err.message) || err) });
   }
 };
+
+module.exports.buildPulse = buildPulse;   // shared with the AI read subsystem

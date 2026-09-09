@@ -285,8 +285,10 @@ function probe(grid) {
   };
 }
 
-module.exports = async (req, res) => {
-  try {
+/* The payload builder, shared by this route and the AI read subsystem, so both
+   see exactly the same parsing. */
+async function buildData({ diag = false } = {}) {
+
     const sheetId = process.env.SHEET_ID || DEFAULT_SHEET_ID;
     const sheets = getClient();
 
@@ -357,12 +359,18 @@ const a1 = name => `'${name.replace(/'/g, "''")}'!A1:AZ400`;
 
     // When nothing parsed, say why rather than returning an empty shell that the
     // board renders as blank panels under a green "Live" pill.
-    if (!daily.length || req.query && req.query.diag) {
+    if (!daily.length || diag) {
       payload.diag = { tabsMissing: missing };
       tabs.forEach((m, i) => { payload.diag[m.name] = probe(vr[i] && vr[i].values); });
       if (haveMonthly) payload.diag[monthlyTab] = probe(vr[tabs.length] && vr[tabs.length].values);
     }
 
+  return payload;
+}
+
+module.exports = async (req, res) => {
+  try {
+    const payload = await buildData({ diag: !!(req.query && req.query.diag) });
     // Edge-cache for an hour; serve stale while revalidating.
     res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1800');
     res.setHeader('Content-Type', 'application/json');
@@ -373,6 +381,7 @@ const a1 = name => `'${name.replace(/'/g, "''")}'!A1:AZ400`;
 };
 
 // Exported for offline testing (see source/test_api_parser.js).
+module.exports.buildData = buildData;
 module.exports.parseDaily = parseDaily;
 module.exports.parseMonthly = parseMonthly;
 module.exports.hasData = hasData;
