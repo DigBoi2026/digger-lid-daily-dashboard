@@ -104,6 +104,40 @@ const RAW = JSON.stringify([
   ok('policy: every field marked sensitive is actually withheld', leaked.length === 0, leaked);
 })();
 
+/* ---- diagnose: every failure mode must be distinguishable --------------- */
+(() => {
+  const long = 'a'.repeat(40);
+  const d = raw => A.diagnose(raw);
+
+  ok('diagnose: unset', d(undefined).ok === false && /not set/.test(d(undefined).reason), d(undefined));
+  ok('diagnose: blank is treated as unset', /not set/.test(d('   ').reason), d('   '));
+  ok('diagnose: malformed JSON named', /not valid JSON/.test(d('[{nope').reason), d('[{nope'));
+  ok('diagnose: malformed JSON carries a parse error', !!d('[{nope').parse_error);
+  ok('diagnose: malformed JSON suggests the pipe', /vercel env add/.test(d('[{nope').hint || ''));
+  ok('diagnose: non-array named', /not an array/.test(d('{"a":1}').reason), d('{"a":1}'));
+  ok('diagnose: empty array named', /empty array/.test(d('[]').reason), d('[]'));
+
+  const short = `[{"name":"x","token":"tiny","scopes":["pulse"]}]`;
+  ok('diagnose: short token rejected and counted',
+    d(short).ok === false && d(short).entries_rejected_for_short_or_missing_token === 1, d(short));
+  ok('diagnose: lists the valid scopes when nothing is usable',
+    Array.isArray(d(short).valid_scopes) && d(short).valid_scopes.includes('pnl.topline'), d(short));
+
+  const badScope = `[{"name":"x","token":"${long}","scopes":["nope"]}]`;
+  ok('diagnose: a valid token with no valid scope is ok:true (403 territory, not 503)',
+    d(badScope).ok === true, d(badScope));
+  ok('diagnose: names the scopeless consumer',
+    d(badScope).entries_with_no_valid_scopes.join() === 'x', d(badScope));
+
+  const good = `[{"name":"a","token":"${long}","scopes":["pulse"]},{"name":"b","token":"${'b'.repeat(40)}","scopes":["pnl.full"]}]`;
+  ok('diagnose: healthy config', d(good).ok === true && d(good).entries === 2, d(good));
+  ok('diagnose: healthy config has no complaints', d(good).entries_with_no_valid_scopes.length === 0);
+
+  // A diagnostic that echoed the secret would be worse than the ambiguity it replaced.
+  ok('diagnose: never echoes a token', !JSON.stringify(d(good)).includes(long), d(good));
+  ok('diagnose: never echoes a token when rejecting', !JSON.stringify(d(short)).includes('tiny'), d(short));
+})();
+
 /* ---- schema/scope consistency ------------------------------------------- */
 (() => {
   const known = Object.keys(A.SCOPES);

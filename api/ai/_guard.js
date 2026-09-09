@@ -4,11 +4,13 @@ const A = require('../../lib/ai-access.js');
 
 function guard(req, res) {
   const raw = process.env.AI_TOKENS;
-  if (!raw || !A.parseTokens(raw).length) {
-    res.status(503).json({
-      error: 'ai_subsystem_not_configured',
-      detail: 'AI_TOKENS is unset or holds no valid entries. See /api/ai/llms for the format.',
-    });
+  const diag = A.diagnose(raw);
+  if (!diag.ok) {
+    // Say which failure it is. "unset or invalid" is not actionable, and a
+    // Secret-type env var cannot be read back to check by hand.
+    res.status(503).json(Object.assign({ error: 'ai_subsystem_not_configured' }, diag, {
+      remember: 'Setting the variable is not enough — Vercel needs a redeploy to pick it up.',
+    }));
     return null;
   }
   const caller = A.identify(req.headers && req.headers.authorization, raw);
