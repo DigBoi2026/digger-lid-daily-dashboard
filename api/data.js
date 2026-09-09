@@ -152,7 +152,15 @@ function getClient() {
 // produced 30 rows that looked real, pushed latestDataDate to 30 Sep, and filled
 // every trailing window with nothing. Require an actual trading signal instead.
 function hasData(rec) {
-  return rec.revenue != null || rec.orders != null || (rec.sessions != null && rec.sessions > 0);
+  // Requires a positive trading signal, not merely a non-null cell. The TOTAL
+  // block carries $0.00 rather than a blank for days that have not happened
+  // yet, so accepting a zero here put latestDataDate on 30 Sep — three weeks
+  // into the future — and filled every trailing window with future zeros.
+  // A real day that took no money still records sessions; a future day is 0
+  // across all three.
+  return (rec.revenue != null && rec.revenue > 0)
+      || (rec.orders != null && rec.orders > 0)
+      || (rec.sessions != null && rec.sessions > 0);
 }
 
 // The newest date that carries real data — NOT simply the last row present.

@@ -102,14 +102,13 @@ const day = (n, v) => Array(n).fill(v);
     'GST %': ['9.09%', '9.09%', ''],
   } }]);
   const rows = D.parseDaily(g, 6);
-  ok('parse: three trading days', rows.length === 3, rows.length);
+  ok('parse: two trading days, the all-zero third dropped', rows.length === 2, rows.length);
   ok('parse: currency stripped', rows[0].revenue === 16701.63, rows[0].revenue);
   ok('parse: thousands separator stripped', rows[0].sessions === 1204, rows[0].sessions);
   ok('parse: percent stripped', rows[0].gstPct === 9.09, rows[0].gstPct);
   ok('parse: iso date from month number', rows[0].date === '2026-06-01', rows[0].date);
   ok('parse: dow carried', rows[0].dow === 'Mon', rows[0].dow);
-  ok('parse: zero-revenue day kept when orders/sessions absent but revenue is 0',
-    rows[2].revenue === 0, rows[2].revenue);
+  ok('parse: an all-zero future day is dropped', rows.length === 2 || rows[2] === undefined, rows.length);
 })();
 
 /* ---------- the skeleton-month bug ---------------------------------------- */
@@ -126,12 +125,22 @@ const day = (n, v) => Array(n).fill(v);
   ok('sessions positive → kept', D.parseDaily(g2, 9).length === 1);
   const g3 = sheet(1, [{ start: 240, heading: 'TOTAL', vals: { 'Orders': ['3'] } }]);
   ok('orders alone → kept', D.parseDaily(g3, 9).length === 1);
+  const g4 = sheet(2, [{ start: 240, heading: 'TOTAL', vals: {
+    'TOTAL Revenue': ['$1,000.00', '$0.00'], 'Store Sessions': ['300', '0'], 'Orders': ['5', '0'] } }]);
+  const r4 = D.parseDaily(g4, 9);
+  ok('future all-zero day trimmed from the tail', r4.length === 1, r4.length);
+  ok('latestDataDate lands on the real last day', D.lastDataDate(r4) === '2026-09-01', D.lastDataDate(r4));
 })();
 
 /* ---------- hasData / lastDataDate --------------------------------------- */
 (() => {
   ok('hasData: revenue', D.hasData({ revenue: 1 }) === true);
-  ok('hasData: zero revenue counts', D.hasData({ revenue: 0 }) === true);
+  ok('hasData: all-zero future day rejected',
+    D.hasData({ revenue: 0, orders: 0, sessions: 0 }) === false);
+  ok('hasData: zero revenue but real sessions is a trading day',
+    D.hasData({ revenue: 0, orders: 0, sessions: 412 }) === true);
+  ok('hasData: zero revenue but real orders is a trading day',
+    D.hasData({ revenue: 0, orders: 2, sessions: 0 }) === true);
   ok('hasData: sessions 0 only', D.hasData({ revenue: null, orders: null, sessions: 0 }) === false);
   ok('hasData: sessions positive', D.hasData({ revenue: null, orders: null, sessions: 1 }) === true);
   ok('hasData: nothing', D.hasData({}) === false);
