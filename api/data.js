@@ -17,13 +17,114 @@ const YEAR_LABEL = process.env.SHEET_YEAR || '26';
 const YEAR_FULL = 2000 + parseInt(YEAR_LABEL, 10);
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-// Consolidated ("All Countries") block row indices (0-based) — matches build_data.py.
-const ROWS = {revenue:62,revExGst:65,gstPct:66,orders:68,newOrders:69,items:70,sessions:71,
-  cvr:73,newPct:74,ipo:75,aov:76,cpv:77,rpv:78,cpp:79,ncpa:80,metaNew:83,metaTotal:84,
-  google:85,tiktok:86,totalAds:88,mer:89,mer3:90,prodCost:92,shipCost:93,packaging:95,
-  txnFees:96,merchFees:97,totalVC:98,vcr:99,salaries:101,software:102,office:103,
-  totalFC:104,fcr:105,returns:107,returnsPct:108,totalExp:111,profit:112,profitPct:113,
-  roas:114,fcRev:115,projSpend:119,fcProfit:123};
+/* The sheet is laid out as a stack of 59-row blocks — one per country, plus a
+   consolidated "TOTAL" and a "WHOLESALE" — with the metric labels in column B
+   and the block heading in column A. Row 240 is TOTAL in the 2026 template.
+
+   This used to be a map of fixed row indices calibrated against an older
+   template. Optional rows have since been inserted inside the blocks
+   ("Subscription Revenue", "New Audience" Spend, "Pick Pack (3PL)"), so the map
+   drifted progressively — +1 at Revenue, +2 at Orders, +5 at Meta Spend — and
+   pointed into Country 2's block, which is all zeros. Every figure read as
+   blank while /api/health still reported the sheet reachable.
+
+   Matching on the labels instead means an inserted row cannot break it again. */
+const LABELS = {
+  revenue:    /^TOTAL Revenue$/i,
+  revExGst:   /^Revenue Ex GST/i,
+  gstPct:     /^GST ?%/i,
+  orders:     /^Orders$/i,
+  newOrders:  /^New Customer Orders/i,
+  items:      /^Items Sold/i,
+  sessions:   /^Store Sessions/i,
+  cvr:        /^Conversion Rate/i,
+  newPct:     /^New Customer ?%/i,
+  ipo:        /^Items Per Order/i,
+  aov:        /^Average Order Value/i,
+  cpv:        /^Cost Per Visit/i,
+  rpv:        /^Revenue Per Visit/i,
+  cpp:        /^Cost Per Purchase/i,
+  ncpa:       /^New Customer CPA/i,
+  metaNew:    /New Audience.*Spend/i,
+  metaTotal:  /^Total Meta Ad Spend/i,
+  google:     /^Google Ad Spend/i,
+  tiktok:     /^TikTok Ad Spend/i,
+  totalAds:   /^Total Advertising/i,
+  mer:        /^MER\b/i,
+  mer3:       /^3-day Rolling MER/i,
+  prodCost:   /^Product Cost/i,
+  shipCost:   /^Shipping Cost/i,
+  pickPack:   /^Pick Pack/i,
+  packaging:  /^Packaging/i,
+  txnFees:    /^Transaction Fees/i,
+  merchFees:  /^Merchant Fees/i,
+  totalVC:    /^Total Variable Costs/i,
+  vcr:        /^VCR\b/i,
+  salaries:   /^Salaries/i,
+  software:   /^Subscriptions ?& ?Software/i,
+  office:     /^Office/i,
+  totalFC:    /^Total Fixed Costs/i,
+  fcr:        /^FCR\b/i,
+  returns:    /^Returns$/i,
+  returnsPct: /^Returns ?%/i,
+  totalExp:   /^TOTAL EXPENSES/i,
+  profit:     /^PROFIT$/i,
+  profitPct:  /^Profit ?%/i,
+  roas:       /^Sitewide ROAS/i,
+  fcRev:      /^Forecast Revenue/i,
+  projSpend:  /^Projected Spend/i,
+  fcProfit:   /^Forecast Profit/i,
+};
+
+// Kept only so the drift is legible in diagnostics; nothing reads from it.
+const LEGACY_ROWS = { revenue: 62, sessions: 71, orders: 68 };
+
+const cellAt = (grid, r, c) => String((grid[r] && grid[r][c]) || '').trim();
+
+// Every block head — a column-B "TOTAL Revenue" — with its column-A heading.
+function findBlocks(grid) {
+  const out = [];
+  for (let r = 0; r < grid.length; r++) {
+    if (!/^total\s+revenue\b/i.test(cellAt(grid, r, 1))) continue;
+    let heading = '';
+    for (let b = r - 1; b >= 0 && b > r - 8; b--) {
+      const h = cellAt(grid, b, 0);
+      if (h) { heading = h.split('\n')[0].trim(); break; }
+    }
+    out.push({ row: r, heading });
+  }
+  return out;
+}
+
+/* The consolidated block, which is what the dashboard has always meant to show.
+   Falls back to the first block (Country 1) if no TOTAL heading exists, since a
+   single-market sheet has no consolidated row and Country 1 is then the whole
+   business. */
+function chooseBlock(blocks) {
+  return blocks.find(b => /^total\b/i.test(b.heading)) || blocks[0] || null;
+}
+
+// metric -> grid row, by label, searching only within the chosen block.
+function mapRows(grid, start, end) {
+  const map = {};
+  for (const k in LABELS) map[k] = null;
+  for (let r = start; r < end && r < grid.length; r++) {
+    const label = cellAt(grid, r, 1);
+    if (!label) continue;
+    for (const k in LABELS) if (map[k] === null && LABELS[k].test(label)) map[k] = r;
+  }
+  return map;
+}
+
+// The chosen block's row map for a grid, or null when no block is present.
+function blockRows(grid) {
+  const blocks = findBlocks(grid);
+  const chosen = chooseBlock(blocks);
+  if (!chosen) return null;
+  const next = blocks.find(b => b.row > chosen.row);
+  const end = next ? next.row : chosen.row + 70;
+  return { chosen, blocks, rows: mapRows(grid, chosen.row, end) };
+}
 
 const num = v => {
   if (v == null) return null;
@@ -62,6 +163,8 @@ function lastDataDate(daily) {
 
 function parseDaily(grid, monthNum) {
   if (!grid || !grid.length) return [];
+  const blk = blockRows(grid);
+  if (!blk) return [];
   const header = grid[0] || [], dow = grid[1] || [];
   const out = [];
   header.forEach((h, ci) => {
@@ -69,9 +172,33 @@ function parseDaily(grid, monthNum) {
     const dn = parseInt(h.trim(), 10);
     const iso = `${YEAR_FULL}-${String(monthNum).padStart(2,'0')}-${String(dn).padStart(2,'0')}`;
     const rec = { date: iso, label: h.trim(), dow: (dow[ci] || '').trim() };
-    for (const k in ROWS) { const r = grid[ROWS[k]]; rec[k] = r ? num(r[ci]) : null; }
+    for (const k in blk.rows) {
+      const r = blk.rows[k];
+      rec[k] = r == null ? null : num(cellAt(grid, r, ci));
+    }
     if (hasData(rec)) out.push(rec);
   });
+  return out;
+}
+
+function parseMonthly(grid) {
+  if (!grid || !grid.length) return [];
+  const blk = blockRows(grid);
+  if (!blk) return [];
+  const header = grid[0] || [];
+  const out = [];
+  header.forEach((h, ci) => {
+    const m = /^\s*([A-Za-z]{3})\s*\d{2}\s*$/.exec(h || '');
+    if (!m) return;
+    const abbr = m[1], mn = MONTH_ABBR.indexOf(abbr) + 1;
+    const rec = { month: abbr, monthNum: mn, label: `${abbr} ${YEAR_FULL}` };
+    for (const k in blk.rows) {
+      const r = blk.rows[k];
+      rec[k] = r == null ? null : num(cellAt(grid, r, ci));
+    }
+    if (rec.revenue) out.push(rec);
+  });
+  out.sort((a,b) => a.monthNum - b.monthNum);
   return out;
 }
 
@@ -133,7 +260,7 @@ function probe(grid) {
     });
   }
 
-  const expected = { revenue: ROWS.revenue, sessions: ROWS.sessions, orders: ROWS.orders };
+  const expected = LEGACY_ROWS;
   const revRow = found.revenue && found.revenue.row;
   return {
     gridRows: grid.length,
@@ -148,22 +275,6 @@ function probe(grid) {
         : 'row offsets SHIFTED by ' + (revRow - expected.revenue) + ' (Revenue at grid row ' + revRow
           + ', column ' + found.revenue.col + ') — update ROWS in api/data.js',
   };
-}
-
-function parseMonthly(grid) {
-  if (!grid || !grid.length) return [];
-  const header = grid[0] || [];
-  const cols = {};
-  header.forEach((h, ci) => { const m = /^\s*([A-Za-z]{3})\s*\d{2}\s*$/.exec(h || ''); if (m) cols[ci] = m[1]; });
-  const out = [];
-  for (const ci in cols) {
-    const abbr = cols[ci], mn = MONTH_ABBR.indexOf(abbr) + 1;
-    const rec = { month: abbr, monthNum: mn, label: `${abbr} ${YEAR_FULL}` };
-    for (const k in ROWS) { const r = grid[ROWS[k]]; rec[k] = r ? num(r[ci]) : null; }
-    if (rec.revenue) out.push(rec);
-  }
-  out.sort((a,b) => a.monthNum - b.monthNum);
-  return out;
 }
 
 module.exports = async (req, res) => {
@@ -259,4 +370,7 @@ module.exports.parseMonthly = parseMonthly;
 module.exports.hasData = hasData;
 module.exports.lastDataDate = lastDataDate;
 module.exports.probe = probe;
+module.exports.findBlocks = findBlocks;
+module.exports.chooseBlock = chooseBlock;
+module.exports.blockRows = blockRows;
 module.exports._num = num;
