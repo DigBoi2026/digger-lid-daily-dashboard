@@ -17,6 +17,8 @@ function guard(req, res) {
     res.status(401).json({
       error: 'unauthorized',
       detail: 'Send Authorization: Bearer <token>. Tokens are issued per consumer and are read-only.',
+      how_to_get_access: 'Ask whoever directed you to this board for a token, naming which datasets you need.',
+      once_you_have_one: { manifest: '/api/ai/manifest', schema: '/api/ai/schema', orientation: '/api/ai/llms' },
     });
     return null;
   }

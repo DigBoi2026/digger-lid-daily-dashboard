@@ -67,8 +67,44 @@ export default function middleware(req) {
     if (u === USER && p === PASS) return; // authorised → continue
   }
 
-  return new Response('Authentication required.', {
+  /* The 401 body is the only thing an agent directed at this URL ever sees, so
+     make it say how machine access works. Without this, every discovery path an
+     agent tries (/, /llms.txt, /.well-known/ai-plugin.json, /openapi.json)
+     answers "Authentication required." and it concludes the board is simply
+     shut, never learning that a scoped read API exists.
+
+     This advertises no data and no credential — only that a token-based API is
+     here and how to ask for one. Browsers ignore the body and render their
+     password prompt from the WWW-Authenticate header below, so the human
+     experience is unchanged. */
+  const origin = (() => { try { return new URL(req.url).origin; } catch { return ''; } })();
+  const body = [
+    'Authentication required.',
+    '',
+    'This board is private.',
+    '',
+    'HUMANS: sign in with the shared password.',
+    '',
+    'AI AGENTS: this site exposes a scoped, read-only JSON API for machine access.',
+    `  Manifest       ${origin}/api/ai/manifest`,
+    `  Field schema   ${origin}/api/ai/schema`,
+    `  Orientation    ${origin}/api/ai/llms`,
+    '  Authenticate   Authorization: Bearer <token>',
+    '',
+    'You need a token, which is issued per consumer and scoped to a subset of the',
+    'data. Ask whoever directed you here for one, naming what you need to read.',
+    'Do not attempt to authenticate with the shared human password.',
+    '',
+    `Integration status, no credential required: ${origin}/api/health`,
+  ].join('\n');
+
+  return new Response(body, {
     status: 401,
-    headers: { 'WWW-Authenticate': 'Basic realm="DiggerLid Dashboard", charset="UTF-8"' },
+    headers: {
+      'WWW-Authenticate': 'Basic realm="DiggerLid Dashboard", charset="UTF-8"',
+      'Content-Type': 'text/plain; charset=utf-8',
+      // Machine-readable pointer to the service description.
+      'Link': `<${origin}/api/ai/manifest>; rel="service-desc"; type="application/json"`,
+    },
   });
 }

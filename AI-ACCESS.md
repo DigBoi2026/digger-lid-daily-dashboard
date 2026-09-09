@@ -83,6 +83,28 @@ curl -s -H "Authorization: Bearer $TOK" "$BASE/api/ai/llms"
 curl -s -H "Authorization: Bearer $TOK" "$BASE/api/ai/query?dataset=pnl.daily&since=2026-09-01" | jq '.row_count, .range, .fields_withheld'
 ```
 
+## Being found
+
+An agent handed only the board URL cannot guess that any of this exists, so the
+`401` says so. Every unauthenticated request — `/`, `/llms.txt`,
+`/.well-known/ai-plugin.json`, `/openapi.json`, anything — returns a body naming
+the manifest, the schema, the orientation endpoint and the `Bearer` scheme, plus
+a `Link: …; rel="service-desc"` header. Browsers ignore the body and render the
+password prompt from `WWW-Authenticate`, so nothing changes for a human.
+
+`/api/health` needs no credential and carries the same pointer under `ai`,
+including `enabled` so a caller can tell "no token issued yet" from "wrong
+token".
+
+None of that hands out data or a credential. It only says a token-based API is
+here and how to ask. **A private board cannot be self-serve: the token has to
+come from you.** What this buys is an agent that reports "I need a bearer token
+for /api/ai/manifest" instead of "the site is password-protected, I can't help".
+
+If you would rather it be discoverable with no credential at all, an ungated
+`/llms.txt` is a small change — at the cost of publicly advertising that a P&L
+API lives at this host.
+
 ## Design notes
 
 **The routes reuse the board's own builders.** `/api/ai/query` calls

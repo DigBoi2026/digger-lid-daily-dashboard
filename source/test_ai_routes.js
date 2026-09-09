@@ -150,6 +150,36 @@ const route = n => { delete require.cache[require.resolve('../api/ai/' + n)]; re
     ok('llms: names withheld datasets', /products/.test(res.text));
   }
 
+  /* ---- discoverability: a 401 must teach, not dead-end ------------------ */
+  {
+    const res = mockRes();
+    await route('manifest.js')(mockReq(undefined), res);
+    const b = JSON.stringify(res.body);
+    ok('401 explains how to get access', /Ask whoever directed you/.test(b), res.body);
+    ok('401 names the manifest', /api\/ai\/manifest/.test(b), res.body);
+    ok('401 names the schema', /api\/ai\/schema/.test(b));
+    ok('401 states the auth scheme', /Bearer/.test(b));
+    ok('401 leaks no token', !b.includes(TOK_FULL) && !b.includes(TOK_TOP));
+  }
+
+  /* ---- /api/health advertises the subsystem without a credential -------- */
+  {
+    const h = require('../api/health.js');
+    const res = mockRes();
+    // No integrations configured: the ai block must still be present.
+    for (const k of ['SITE_PASSWORD','SHOPIFY_STORE','SHOPIFY_TOKEN','GOOGLE_SERVICE_ACCOUNT_EMAIL',
+                     'GOOGLE_PRIVATE_KEY','POSTHOG_API_KEY']) delete process.env[k];
+    await h({ headers: {}, query: {} }, res);
+    // health.js replies with res.send(JSON.stringify(...)), not res.json().
+    res.body = res.body || JSON.parse(res.text);
+    ok('health: carries an ai pointer', !!(res.body && res.body.ai), Object.keys(res.body || {}));
+    ok('health: names the manifest', res.body.ai.manifest === '/api/ai/manifest', res.body.ai);
+    ok('health: states the auth scheme', /Bearer/.test(res.body.ai.auth), res.body.ai);
+    ok('health: reports whether tokens are configured', res.body.ai.enabled === true, res.body.ai.enabled);
+    ok('health: ai pointer contains no figures',
+      !/\d{4,}/.test(JSON.stringify(res.body.ai)), res.body.ai);
+  }
+
   console.log(`\nai routes: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

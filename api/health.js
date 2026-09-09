@@ -12,6 +12,19 @@ module.exports = async (req, res) => {
 
   out.checks.sitePassword = { configured: has('SITE_PASSWORD') };
 
+  /* /api/health is the only endpoint reachable without a credential, so it is
+     also the only place an agent can be told that machine access exists at all.
+     Names the endpoints and the scheme; hands out nothing. */
+  out.ai = {
+    manifest: '/api/ai/manifest',
+    schema: '/api/ai/schema',
+    query: '/api/ai/query?dataset=<name>',
+    orientation: '/api/ai/llms',
+    auth: 'Authorization: Bearer <token>',
+    enabled: has('AI_TOKENS'),
+    note: 'Read-only. Tokens are issued per consumer and scoped; ask the board owner.',
+  };
+
   // ---- Shopify ----
   // Either credential shape counts as configured: a long-lived SHOPIFY_TOKEN, or
   // SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET for the client credentials grant.
