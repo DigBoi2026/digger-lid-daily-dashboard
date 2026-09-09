@@ -80,26 +80,54 @@ function parseDaily(grid, monthNum) {
    metric and the route then reads blanks while still reporting "reachable". This
    reads the labels in column A and says whether they are where we expect, so an
    empty result can be told apart from a misaligned one without opening the sheet. */
+const SCAN_COLS = 8;   // labels are not necessarily in column A
+
 function probe(grid) {
   if (!grid || !grid.length) return { gridRows: 0 };
-  const findRow = re => {
-    for (let i = 0; i < grid.length; i++) {
-      const cell = String((grid[i] && grid[i][0]) || '').trim();
-      if (re.test(cell)) return i;
-    }
+  const cell = (r, c) => String((grid[r] && grid[r][c]) || '').trim();
+
+  // Search the leading columns, not just A. The first version of this probe only
+  // looked at column A, reported "different tab layout" for every tab including
+  // Jun '26 (which build_data.py parsed successfully), and so could not say where
+  // the block actually is.
+  const findCell = re => {
+    for (let r = 0; r < grid.length; r++)
+      for (let c = 0; c < SCAN_COLS; c++)
+        if (re.test(cell(r, c))) return { row: r, col: c };
     return null;
   };
-  const found = { revenue: findRow(/^revenue\b/i), sessions: findRow(/^sessions\b/i), orders: findRow(/^orders\b/i) };
+  const found = {
+    revenue:  findCell(/^revenue\b/i),
+    sessions: findCell(/^sessions\b/i),
+    orders:   findCell(/^orders\b/i),
+    netSales: findCell(/^net\s+sales\b/i),
+    totalSales: findCell(/^total\s+sales\b/i),
+  };
+
+  // The first non-empty leading cell of each row: enough to read the tab's real
+  // layout, and text labels only — no figures leave the sheet.
+  const rowLabels = {};
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < SCAN_COLS; c++) {
+      const v = cell(r, c);
+      if (v) { rowLabels[r] = 'c' + c + ':' + v.slice(0, 44); break; }
+    }
+  }
+
   const expected = { revenue: ROWS.revenue, sessions: ROWS.sessions, orders: ROWS.orders };
-  const aligned = Object.keys(expected).every(k => found[k] === null || found[k] === expected[k]);
+  const revRow = found.revenue && found.revenue.row;
   return {
     gridRows: grid.length,
     dayColumns: (grid[0] || []).filter(h => /^\s*\d{1,2}\s+[A-Za-z]{3}\s*$/.test(h || '')).length,
-    found, expected, aligned,
-    verdict: found.revenue === null
-      ? 'no "Revenue" label found in column A — different tab layout'
-      : aligned ? 'row offsets correct — the tab has no figures entered'
-                : `row offsets SHIFTED by ${found.revenue - expected.revenue} — update ROWS in api/data.js`,
+    found, expected,
+    labelledRows: Object.keys(rowLabels).length,
+    rowLabels,
+    verdict: !found.revenue
+      ? 'no Revenue/Net Sales/Total Sales label in the first ' + SCAN_COLS + ' columns — read rowLabels to find the real layout'
+      : revRow === expected.revenue
+        ? 'row offsets correct — the tab has no figures entered'
+        : 'row offsets SHIFTED by ' + (revRow - expected.revenue) + ' (Revenue at grid row ' + revRow
+          + ', column ' + found.revenue.col + ') — update ROWS in api/data.js',
   };
 }
 

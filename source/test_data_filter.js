@@ -84,22 +84,39 @@ const REV = 62, SESS = 71, ORD = 68;
   ok('hasData: nothing', D.hasData({}) === false);
 })();
 
-/* ---- probe tells a blank tab from a shifted one ---- */
+/* ---- probe locates the metric block, in any leading column ---- */
 (() => {
   const labels = { [REV]: 'Revenue', [SESS]: 'Sessions', [ORD]: 'Orders' };
   const aligned = D.probe(grid(30, { [SESS]: Array(30).fill('0') }, labels));
-  ok('probe: aligned offsets detected', aligned.aligned === true, aligned.found);
+  ok('probe: finds Revenue at the expected row', aligned.found.revenue.row === REV, aligned.found.revenue);
+  ok('probe: reports the label column', aligned.found.revenue.col === 0, aligned.found.revenue);
   ok('probe: verdict blames the sheet', /no figures entered/.test(aligned.verdict), aligned.verdict);
   ok('probe: counts day columns', aligned.dayColumns === 30, aligned.dayColumns);
+  ok('probe: dumps row labels', aligned.rowLabels[REV] === 'c0:Revenue', aligned.rowLabels[REV]);
 
   // Same tab with two rows inserted above the block.
   const shiftedLabels = { [REV + 2]: 'Revenue', [SESS + 2]: 'Sessions', [ORD + 2]: 'Orders' };
   const shifted = D.probe(grid(30, { [SESS + 2]: Array(30).fill('0') }, shiftedLabels));
-  ok('probe: shift detected', shifted.aligned === false, shifted.found);
+  ok('probe: shift detected', shifted.found.revenue.row === REV + 2, shifted.found.revenue);
   ok('probe: names the offset', /SHIFTED by 2/.test(shifted.verdict), shifted.verdict);
+  ok('probe: names the row and column', /grid row 64, column 0/.test(shifted.verdict), shifted.verdict);
+
+  // Labels in column C rather than A — the case the first probe was blind to.
+  const g = grid(30, {}, {});
+  g[REV][2] = 'Revenue';
+  const offCol = D.probe(g);
+  ok('probe: finds labels outside column A', offCol.found.revenue.col === 2, offCol.found.revenue);
+  ok('probe: aligned row in another column still reads as no figures',
+    /no figures entered/.test(offCol.verdict), offCol.verdict);
+
+  // Alternative metric naming is reported even when "Revenue" is absent.
+  const g2 = grid(30, {}, {});
+  g2[REV][0] = 'Net Sales';
+  const alt = D.probe(g2);
+  ok('probe: picks up Net Sales', alt.found.netSales.row === REV, alt.found.netSales);
 
   const noLabels = D.probe(grid(30, {}, {}));
-  ok('probe: missing labels reported', /different tab layout/.test(noLabels.verdict), noLabels.verdict);
+  ok('probe: missing labels reported', /read rowLabels/.test(noLabels.verdict), noLabels.verdict);
   ok('probe: empty grid safe', D.probe([]).gridRows === 0);
 })();
 

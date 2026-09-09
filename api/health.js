@@ -79,8 +79,35 @@ module.exports = async (req, res) => {
         ['https://www.googleapis.com/auth/spreadsheets.readonly']);
       const api = google.sheets({ version: 'v4', auth: jwt });
       const id = process.env.SHEET_ID || '1rAut5J3SoDvH0ObdVuTenqGjiO-u7M6cPpRNQ5Hqpnw';
-      await api.spreadsheets.get({ spreadsheetId: id, fields: 'spreadsheetId' });
+      const meta = await api.spreadsheets.get({ spreadsheetId: id, fields: 'sheets.properties.title' });
       sheets.reachable = true;
+
+      // Reading the file is not the same as getting data out of it. This check
+      // used to stop at spreadsheets.get, so it reported reachable:true for
+      // months while /api/data extracted nothing at all. Parse the current
+      // month and report the row count, so green means figures are arriving.
+      const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const yr = process.env.SHEET_YEAR || '26';
+      const y = new Date(); y.setDate(y.getDate() - 1);
+      const tab = `${MONTH_ABBR[y.getMonth()]} '${yr}`;
+      const titles = (meta.data.sheets || []).map(sh => sh.properties && sh.properties.title);
+      if (!titles.includes(tab)) {
+        sheets.rows = 0;
+        sheets.error = `month tab "${tab}" not found`;
+      } else {
+        const vals = await api.spreadsheets.values.get({
+          spreadsheetId: id,
+          range: `'${tab.replace(/'/g, "''")}'!A1:AZ131`,
+          valueRenderOption: 'FORMATTED_VALUE',
+        });
+        const rows = require('./data.js').parseDaily(vals.data.values, y.getMonth() + 1);
+        sheets.tab = tab;
+        sheets.rows = rows.length;
+        if (!rows.length) {
+          sheets.error = 'sheet readable but 0 rows parsed from ' + tab;
+          sheets.hint = 'GET /api/data?diag=1 — the diag block reports where the metric block actually is.';
+        }
+      }
     } catch (e) {
       sheets.error = clip(e);
       if (/permission|not found|403|404/i.test(sheets.error))
