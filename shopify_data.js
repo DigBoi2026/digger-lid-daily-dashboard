@@ -1,0 +1,205 @@
+// Real Shopify snapshot (ShopifyQL `sales`, pulled 2026-07-02). Read-only.
+// Regenerate via the /api/shopify route (Vercel) or a fresh ShopifyQL pull.
+// net_sales = gross − discounts − returns (ex tax/shipping). Money in AUD.
+window.DL_SHOPIFY = {
+  meta: {
+    source: "Shopify · ShopifyQL sales",
+    currency: "AUD",
+    asOf: "2026-07-02",
+    window: "Last 30 days",
+    note: "net_sales excludes tax & shipping; differs from the P&L sheet's gross revenue."
+  },
+
+  // Daily net sales / orders / units — trailing 30 days (incl. partial today).
+  daily: [
+    {date:"2026-05-02",net:14202.3,orders:54,items:476},
+    {date:"2026-05-03",net:14112.28,orders:50,items:547},
+    {date:"2026-05-04",net:15242.15,orders:45,items:604},
+    {date:"2026-05-05",net:12036.19,orders:46,items:409},
+    {date:"2026-05-06",net:15002.4,orders:50,items:461},
+    {date:"2026-05-07",net:12098.54,orders:49,items:457},
+    {date:"2026-05-08",net:10364.15,orders:38,items:435},
+    {date:"2026-05-09",net:6659.06,orders:31,items:264},
+    {date:"2026-05-10",net:9939.26,orders:46,items:329},
+    {date:"2026-05-11",net:14789.04,orders:46,items:672},
+    {date:"2026-05-12",net:14758.78,orders:49,items:511},
+    {date:"2026-05-13",net:15750.64,orders:62,items:539},
+    {date:"2026-05-14",net:15186.43,orders:45,items:506},
+    {date:"2026-05-15",net:13872.88,orders:43,items:432},
+    {date:"2026-05-16",net:12123.51,orders:44,items:462},
+    {date:"2026-05-17",net:16564.36,orders:53,items:515},
+    {date:"2026-05-18",net:21259.12,orders:62,items:773},
+    {date:"2026-05-19",net:11866.43,orders:44,items:511},
+    {date:"2026-05-20",net:7822.54,orders:31,items:302},
+    {date:"2026-05-21",net:8915.01,orders:35,items:294},
+    {date:"2026-05-22",net:13855.39,orders:57,items:608},
+    {date:"2026-05-23",net:10149.72,orders:38,items:442},
+    {date:"2026-05-24",net:8371.95,orders:48,items:326},
+    {date:"2026-05-25",net:16554.98,orders:64,items:664},
+    {date:"2026-05-26",net:13698.49,orders:64,items:504},
+    {date:"2026-05-27",net:9183.75,orders:59,items:312},
+    {date:"2026-05-28",net:16448.85,orders:63,items:700},
+    {date:"2026-05-29",net:13057.58,orders:53,items:467},
+    {date:"2026-05-30",net:12802.94,orders:75,items:441},
+    {date:"2026-05-31",net:10166.88,orders:57,items:327},
+    {date:"2026-06-01",net:14757.27,orders:73,items:462},
+    {date:"2026-06-02",net:15312.5,orders:83,items:593},
+    {date:"2026-06-03",net:18996.52,orders:72,items:490},
+    {date:"2026-06-04",net:15774.11,orders:67,items:544},
+    {date:"2026-06-05",net:13676.99,orders:63,items:354},
+    {date:"2026-06-06",net:10970.75,orders:52,items:455},
+    {date:"2026-06-07",net:11943.89,orders:70,items:469},
+    {date:"2026-06-08",net:13138.28,orders:63,items:497},
+    {date:"2026-06-09",net:16827.08,orders:85,items:569},
+    {date:"2026-06-10",net:26201.25,orders:79,items:1088},
+    {date:"2026-06-11",net:18038.76,orders:96,items:839},
+    {date:"2026-06-12",net:15628.83,orders:73,items:541},
+    {date:"2026-06-13",net:11759.28,orders:72,items:349},
+    {date:"2026-06-14",net:8350.15,orders:52,items:380},
+    {date:"2026-06-15",net:15291.84,orders:57,items:361},
+    {date:"2026-06-16",net:8222.42,orders:49,items:234},
+    {date:"2026-06-17",net:68244.52,orders:228,items:1854},
+    {date:"2026-06-18",net:37159.59,orders:162,items:1153},
+    {date:"2026-06-19",net:30957.77,orders:133,items:909},
+    {date:"2026-06-20",net:22150.89,orders:100,items:743},
+    {date:"2026-06-21",net:27989.25,orders:135,items:1115},
+    {date:"2026-06-22",net:25620.15,orders:128,items:922},
+    {date:"2026-06-23",net:21956.46,orders:118,items:692},
+    {date:"2026-06-24",net:29095.73,orders:116,items:867},
+    {date:"2026-06-25",net:26421.98,orders:101,items:733},
+    {date:"2026-06-26",net:25519.8,orders:91,items:628},
+    {date:"2026-06-27",net:20045.74,orders:90,items:649},
+    {date:"2026-06-28",net:36564.83,orders:127,items:1210},
+    {date:"2026-06-29",net:62897.73,orders:222,items:1612},
+    {date:"2026-06-30",net:108760.15,orders:356,items:2979},
+    {date:"2026-07-01",net:16765.34,orders:57,items:487},
+    {date:"2026-07-02",net:5259.61,orders:17,items:103}
+  ],
+
+  // Sales by category (product_type). `raw` keeps the store's exact tag; null = untagged.
+  // Category display names (products are pre-assigned a category key `k` below).
+  // Categorised in-dashboard: KAJO Grease Packs + guns/adapters → Grease; Package Protection →
+  // Shipping Protection; Boom Opener/Trucker Cap/Beanie → Merch & Apparel; untitled → Other;
+  // PRO Mat + The Hauler Luggage Bag → Mobile Protection. (Dashboard-only — Shopify unchanged.)
+  keys: {covers:"Machine Covers",grease:"Grease",screens:"DiggerShield Screens",drawbar:"Draw Bar Covers",
+    shipping:"Shipping Protection",phone:"Phone Cradles",wipes:"Digger Wipes",mobile:"Mobile Protection",
+    merch:"Merch & Apparel",other:"Other"},
+  // Per-window product rows (net>0), each window ENDING YESTERDAY. {t:title,k:categoryKey,net,u:units,o:orders}
+  windows: {
+    "3": [
+      {t:"KAJO Grease Packs",k:"grease",net:54602.99,u:3760,o:180},
+      {t:"Pro Excavator Enclosure",k:"covers",net:45938.77,u:93,o:85},
+      {t:"PRO Mat",k:"mobile",net:39651.48,u:254,o:202},
+      {t:"1.7 Tonne Excavator Cover",k:"covers",net:14404.02,u:52,o:53},
+      {t:"Battery Grease Gun KAJO Adapter",k:"grease",net:8568.16,u:155,o:136},
+      {t:"Quicky Cover",k:"covers",net:8524.7,u:85,o:74},
+      {t:"DiggerShield Kit",k:"screens",net:5318.19,u:6,o:6},
+      {t:"KAJO Grease Gun",k:"grease",net:4403.91,u:40,o:63},
+      {t:"(untitled)",k:"other",net:3663,u:1,o:1},
+      {t:"Draw Bar Cover",k:"drawbar",net:2711.75,u:31,o:29},
+      {t:"Package Protection",k:"shipping",net:2670.99,u:291,o:292},
+      {t:"Mini Loader Cover",k:"covers",net:2476.34,u:14,o:14},
+      {t:"Quick Release Grease Coupler",k:"grease",net:2331.73,u:125,o:101},
+      {t:"Universal / Engine Covers",k:"covers",net:2082,u:26,o:20},
+      {t:"Excavator Phone Cradle",k:"phone",net:1555.44,u:50,o:43},
+      {t:"Skid Steer Loader Cover",k:"covers",net:1120.92,u:3,o:3},
+      {t:"Hydraulic Coupling Cap Set",k:"covers",net:783.36,u:76,o:30},
+      {t:"Digger Wipes",k:"wipes",net:576.91,u:57,o:38},
+      {t:"The Hauler Luggage Bag",k:"mobile",net:408.18,u:1,o:1},
+      {t:"Drink/ Tool Caddy",k:"covers",net:368.28,u:12,o:11},
+      {t:"Micro Excavator Cover",k:"covers",net:203.64,u:1,o:1},
+      {t:"Excavator Boom Bottle Opener",k:"merch",net:171.24,u:16,o:15},
+      {t:"DIGHEAD  Beanie",k:"merch",net:118.23,u:6,o:5},
+      {t:"Trucker Cap",k:"merch",net:98.19,u:3,o:3}
+    ],
+    "90": [
+      {t:"KAJO Grease Packs",k:"grease",net:537356.97,u:38490,o:1819},{t:"Pro Excavator Enclosure",k:"covers",net:211887.64,u:403,o:396},
+      {t:"PRO Mat",k:"mobile",net:180490.83,u:1087,o:874},{t:"Battery Grease Gun KAJO Adapter",k:"grease",net:100394.52,u:1556,o:1327},
+      {t:"Quick Release Grease Coupler",k:"grease",net:70523.02,u:3320,o:2156},{t:"1.7 Tonne Excavator Cover",k:"covers",net:69261.21,u:222,o:216},
+      {t:"DiggerShield Kit",k:"screens",net:63525.31,u:57,o:57},{t:"Draw Bar Cover",k:"drawbar",net:45054.27,u:455,o:390},
+      {t:"KAJO Grease Gun",k:"grease",net:39967.23,u:328,o:327},{t:"Quicky Cover",k:"covers",net:38795.76,u:400,o:330},
+      {t:"Mini Loader Cover",k:"covers",net:21679,u:101,o:94},{t:"Package Protection",k:"shipping",net:21051.72,u:2294,o:2293},
+      {t:"Skid Steer Loader Cover",k:"covers",net:14648.88,u:39,o:32},{t:"Universal / Engine Covers",k:"covers",net:13645.63,u:152,o:100},
+      {t:"The Hauler Luggage Bag",k:"mobile",net:12550.68,u:26,o:26},{t:"Excavator Phone Cradle",k:"phone",net:8355.23,u:289,o:260},
+      {t:"Digger Wipes",k:"wipes",net:7754.51,u:712,o:262},{t:"(untitled)",k:"other",net:7380.86,u:21,o:19},
+      {t:"Micro Excavator Cover",k:"covers",net:7103.25,u:27,o:27},{t:"Drink/ Tool Caddy",k:"covers",net:5293.42,u:151,o:133},
+      {t:"Hydraulic Coupling Cap Set",k:"covers",net:4612.95,u:436,o:193},{t:"Excavator Boom Bottle Opener",k:"merch",net:2301.92,u:223,o:143},
+      {t:"Trucker Cap",k:"merch",net:1332.54,u:36,o:33},{t:"DIGHEAD Beanie",k:"merch",net:672.98,u:34,o:29},{t:"Work Tee",k:"merch",net:35.45,u:1,o:1}
+    ],
+    "12M": [
+      {t:"KAJO Grease Packs",k:"grease",net:1448026.75,u:98627,o:5126},{t:"Pro Excavator Enclosure",k:"covers",net:815770.14,u:1358,o:1332},
+      {t:"PRO Mat",k:"mobile",net:455002.59,u:2633,o:2122},{t:"Battery Grease Gun KAJO Adapter",k:"grease",net:281829.85,u:4045,o:3520},
+      {t:"1.7 Tonne Excavator Cover",k:"covers",net:225448.1,u:671,o:667},{t:"DiggerShield Kit",k:"screens",net:196952.31,u:164,o:165},
+      {t:"KAJO Grease Gun",k:"grease",net:134263.24,u:1057,o:989},{t:"Quick Release Grease Coupler",k:"grease",net:125311.39,u:5751,o:3920},
+      {t:"Quicky Cover",k:"covers",net:105475.65,u:1067,o:895},{t:"Draw Bar Cover",k:"drawbar",net:96568.73,u:958,o:781},
+      {t:"Mini Loader Cover",k:"covers",net:67352.14,u:293,o:278},{t:"Universal / Engine Covers",k:"covers",net:57321.8,u:603,o:378},
+      {t:"Skid Steer Loader Cover",k:"covers",net:39599.51,u:100,o:90},{t:"Excavator Phone Cradle",k:"phone",net:37418.34,u:1165,o:1021},
+      {t:"Drink/ Tool Caddy",k:"covers",net:31502.6,u:816,o:727},{t:"Package Protection",k:"shipping",net:27494.51,u:2992,o:2991},
+      {t:"Micro Excavator Cover",k:"covers",net:21845.57,u:78,o:79},{t:"Digger Wipes",k:"wipes",net:19519.95,u:1762,o:488},
+      {t:"The Hauler Luggage Bag",k:"mobile",net:17904.81,u:37,o:37},{t:"(untitled)",k:"other",net:15063.66,u:111,o:77},
+      {t:"Hydraulic Coupling Cap Set",k:"covers",net:13154.62,u:1260,o:539},{t:"Excavator Boom Bottle Opener",k:"merch",net:7368.61,u:672,o:448},
+      {t:"Trucker Cap",k:"merch",net:3370.83,u:90,o:82},{t:"PRO Excavator Enclosure (clearance)",k:"covers",net:1813.65,u:6,o:6},
+      {t:"DIGHEAD Beanie",k:"merch",net:1443.35,u:64,o:50},{t:"Work Hoodie",k:"merch",net:304.23,u:4,o:4},{t:"Work Tee",k:"merch",net:103.88,u:3,o:3}
+    ],
+    "7": [
+      {t:"KAJO Grease Packs",k:"grease",net:76910.59,u:5419,o:251},{t:"Pro Excavator Enclosure",k:"covers",net:64331.72,u:132,o:127},
+      {t:"PRO Mat",k:"mobile",net:44314.78,u:297,o:243},{t:"1.7 Tonne Excavator Cover",k:"covers",net:22103.16,u:80,o:75},
+      {t:"Battery Grease Gun KAJO Adapter",k:"grease",net:11019.64,u:206,o:184},{t:"Quicky Cover",k:"covers",net:10231.51,u:110,o:97},
+      {t:"DiggerShield Kit",k:"screens",net:9954.56,u:11,o:11},{t:"Quick Release Grease Coupler",k:"grease",net:5665.43,u:303,o:250},
+      {t:"Draw Bar Cover",k:"drawbar",net:5236.23,u:60,o:57},{t:"Mini Loader Cover",k:"covers",net:4927.76,u:27,o:25},
+      {t:"KAJO Grease Gun",k:"grease",net:4813.37,u:44,o:75},{t:"(untitled)",k:"other",net:4276.82,u:3,o:2},
+      {t:"Package Protection",k:"shipping",net:3893.95,u:425,o:426},{t:"Skid Steer Loader Cover",k:"covers",net:2955.47,u:9,o:6},
+      {t:"Universal / Engine Covers",k:"covers",net:2917.28,u:37,o:27},{t:"Excavator Phone Cradle",k:"phone",net:1850.13,u:67,o:65},
+      {t:"Hydraulic Coupling Cap Set",k:"covers",net:1072.51,u:107,o:45},{t:"Digger Wipes",k:"wipes",net:890.6,u:94,o:67},
+      {t:"Micro Excavator Cover",k:"covers",net:886.57,u:4,o:4},{t:"The Hauler Luggage Bag",k:"mobile",net:816.36,u:2,o:2},
+      {t:"Drink/ Tool Caddy",k:"covers",net:596.47,u:20,o:19},{t:"Excavator Boom Bottle Opener",k:"merch",net:281.72,u:29,o:26},
+      {t:"DIGHEAD Beanie",k:"merch",net:132.68,u:7,o:6},{t:"Trucker Cap",k:"merch",net:130.92,u:4,o:4}
+    ],
+    "30": [
+      {t:"KAJO Grease Packs",k:"grease",net:229421.8,u:16356,o:802},{t:"Pro Excavator Enclosure",k:"covers",net:134399.62,u:268,o:260},
+      {t:"PRO Mat",k:"mobile",net:101914.59,u:661,o:527},{t:"1.7 Tonne Excavator Cover",k:"covers",net:45454.01,u:156,o:149},
+      {t:"DiggerShield Kit",k:"screens",net:42281.04,u:40,o:40},{t:"Battery Grease Gun KAJO Adapter",k:"grease",net:40139.64,u:682,o:596},
+      {t:"Quick Release Grease Coupler",k:"grease",net:39796.01,u:1949,o:1300},{t:"Quicky Cover",k:"covers",net:24085.24,u:252,o:213},
+      {t:"KAJO Grease Gun",k:"grease",net:17426.92,u:155,o:179},{t:"Draw Bar Cover",k:"drawbar",net:16040.28,u:175,o:159},
+      {t:"Mini Loader Cover",k:"covers",net:15120.94,u:75,o:71},{t:"Package Protection",k:"shipping",net:11476.33,u:1250,o:1250},
+      {t:"Universal / Engine Covers",k:"covers",net:8790.04,u:103,o:69},{t:"Skid Steer Loader Cover",k:"covers",net:7694.81,u:24,o:21},
+      {t:"Excavator Phone Cradle",k:"phone",net:5361.59,u:191,o:173},{t:"(untitled)",k:"other",net:5161.09,u:8,o:7},
+      {t:"Micro Excavator Cover",k:"covers",net:4728.42,u:18,o:18},{t:"The Hauler Luggage Bag",k:"mobile",net:3130,u:7,o:7},
+      {t:"Digger Wipes",k:"wipes",net:3076.13,u:295,o:157},{t:"Hydraulic Coupling Cap Set",k:"covers",net:2773.5,u:267,o:122},
+      {t:"Drink/ Tool Caddy",k:"covers",net:2323.3,u:73,o:69},{t:"Excavator Boom Bottle Opener",k:"merch",net:1785.43,u:175,o:101},
+      {t:"Trucker Cap",k:"merch",net:695.51,u:21,o:19},{t:"DIGHEAD Beanie",k:"merch",net:441,u:23,o:20}
+    ]
+  },
+
+  // Monthly net sales — last 12 months (Jul '25 – Jun '26) for the 12M trend view.
+  monthly: [
+    {m:"Jul '25",net:242426.46,orders:670,units:2589},
+    {m:"Aug '25",net:233532.58,orders:694,units:6535},
+    {m:"Sep '25",net:189695,orders:623,units:6019},
+    {m:"Oct '25",net:324727.29,orders:1058,units:10064},
+    {m:"Nov '25",net:650840.68,orders:2162,units:15729},
+    {m:"Dec '25",net:256287.66,orders:925,units:7302},
+    {m:"Jan '26",net:239596.45,orders:778,units:7509},
+    {m:"Feb '26",net:298748.71,orders:996,units:8809},
+    {m:"Mar '26",net:301354.3,orders:1034,units:10380},
+    {m:"Apr '26",net:331417.84,orders:1054,units:13214},
+    {m:"May '26",net:400329.33,orders:1551,units:14854},
+    {m:"Jun '26",net:778274.51,orders:3213,units:24291}
+  ]
+};
+
+/* Category × month net sales (fresh ShopifyQL pull) — powers the Category Trends chart. */
+window.DL_SHOPIFY.catMonthly = [
+  {m:"Jul '25",cats:{covers:113286.5,grease:120378.25,screens:12732.8,drawbar:2663.37,phone:1740.12,merch:688.2,other:236.36}},
+  {m:"Aug '25",cats:{covers:94089.17,grease:113850.35,screens:15634.57,drawbar:3122.97,phone:2919.08,mobile:597.27,merch:787.04,other:2532.13}},
+  {m:"Sep '25",cats:{covers:68907.24,grease:106606.22,screens:8781.83,drawbar:2230.56,phone:1623.74,mobile:796.36,merch:676.33,other:72.72}},
+  {m:"Oct '25",cats:{covers:107888.0,grease:159495.41,screens:12059.41,drawbar:2182.66,phone:6026.04,mobile:35558.95,merch:675.05,other:841.77}},
+  {m:"Nov '25",cats:{covers:293069.24,grease:234495.55,screens:44516.42,drawbar:6074.21,phone:7630.33,mobile:61921.98,merch:2584.66,other:548.29}},
+  {m:"Dec '25",cats:{covers:91177.6,grease:114566.24,screens:14523.88,drawbar:3029.44,phone:2384.18,wipes:459.53,mobile:27672.74,merch:1595.29,other:878.76}},
+  {m:"Jan '26",cats:{covers:74498.52,grease:115252.74,screens:6106.43,drawbar:2199.65,phone:2000.06,wipes:4242.48,mobile:32965.18,merch:341.92,other:1989.47}},
+  {m:"Feb '26",cats:{covers:74827.83,grease:125461.24,screens:13555.88,drawbar:6469.4,phone:2677.5,shipping:1732.27,wipes:4707.21,mobile:69397.37,merch:381.64,other:-461.63}},
+  {m:"Mar '26",cats:{covers:73264.29,grease:142617.71,screens:5551.24,drawbar:22645.47,phone:2067.58,shipping:4432.18,wipes:2214.42,mobile:47181.87,merch:437.07,other:942.47}},
+  {m:"Apr '26",cats:{covers:56978.78,grease:197355.05,screens:8401.87,drawbar:14336.96,phone:1110.71,shipping:4803.28,wipes:2115.34,mobile:44477.36,merch:491.59,other:1346.9}},
+  {m:"May '26",cats:{covers:84755.42,grease:228780.53,screens:12842.4,drawbar:15925.58,phone:1992.87,shipping:5050.45,wipes:2704.84,mobile:46318.19,merch:983.72,other:975.33}},
+  {m:"Jun '26",cats:{covers:250748.53,grease:334001.91,screens:43426.49,drawbar:16040.28,phone:5361.59,shipping:11476.33,wipes:3076.13,mobile:106020.13,merch:2962.03,other:5161.09}}
+];
