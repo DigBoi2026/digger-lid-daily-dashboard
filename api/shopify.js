@@ -112,16 +112,40 @@ async function accessToken() {
   return cachedToken;
 }
 
-async function shopifyql(query) {
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+/* Shopify's GraphQL rate limit is a leaky bucket: 1000 points, refilling ~50 a
+   second, and a shopifyqlQuery costs around 65. This route fires enough queries
+   to empty it during a burst, and a throttled reply is a hard error — the whole
+   dataset comes back as {"error": "...THROTTLED..."} and every page silently
+   falls back to its embedded snapshot. That is the correct fallback, but it
+   should not be reached over a limit that clears itself in a second or two.
+
+   Retry a throttle with a widening pause; anything else fails immediately,
+   because a bad query or a dead token will not fix itself. */
+const THROTTLE_BACKOFF_MS = [700, 1600, 3200];
+
+async function shopifyql(query, attempt = 0) {
   const token = await accessToken();
   const url = `https://${storeDomain()}/admin/api/${API_VERSION}/graphql.json`;
   const body = { query: `{ shopifyqlQuery(query: ${JSON.stringify(query)}) { parseErrors tableData { columns { name } rows } } }` };
   const r = await fetch(url, { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Shopify-Access-Token': token },
     body: JSON.stringify(body) });
+  if (r.status === 429 && attempt < THROTTLE_BACKOFF_MS.length) {
+    await sleep(THROTTLE_BACKOFF_MS[attempt]);
+    return shopifyql(query, attempt + 1);
+  }
   if (!r.ok) throw new Error(`Shopify HTTP ${r.status}`);
   const j = await r.json();
-  if (j.errors) throw new Error('GraphQL: ' + JSON.stringify(j.errors));
+  if (j.errors) {
+    const throttled = JSON.stringify(j.errors).includes('THROTTLED');
+    if (throttled && attempt < THROTTLE_BACKOFF_MS.length) {
+      await sleep(THROTTLE_BACKOFF_MS[attempt]);
+      return shopifyql(query, attempt + 1);
+    }
+    throw new Error('GraphQL: ' + JSON.stringify(j.errors));
+  }
   const q = j.data && j.data.shopifyqlQuery;
   if (q && q.parseErrors && q.parseErrors.length) throw new Error('ShopifyQL: ' + q.parseErrors.join('; '));
   return (q && q.tableData && q.tableData.rows) || [];
@@ -177,11 +201,14 @@ async function buildProducts(today) {
       `FROM sales SHOW net_sales, orders, net_items_sold SINCE ${w.since} UNTIL ${w.until}`))[0] || {};
     return { net: n2(r.net_sales), orders: +r.orders || 0, units: +r.net_items_sold || 0 };
   };
+  /* Sequential, not Promise.all. These three run straight after the five
+     concurrent per-window queries above, and firing all eight at once is what
+     tipped this route past the rate limit — a throttle there loses the entire
+     dataset to the snapshot fallback. Sequencing lets the bucket refill between
+     them; three extra round trips are cheap against a maxDuration of 60s. */
   const winTotals = {}, winPrevTotals = {};
-  await Promise.all([
-    ...Object.entries(LONG).map(async ([k, w]) => { winTotals[k] = await totalsFor(w); }),
-    ...Object.entries(PREV).map(async ([k, w]) => { winPrevTotals[k] = await totalsFor(w); }),
-  ]);
+  for (const [k, w] of Object.entries(LONG)) winTotals[k] = await totalsFor(w);
+  for (const [k, w] of Object.entries(PREV)) winPrevTotals[k] = await totalsFor(w);
 
   // monthly totals + product×month → catMonthly
   const monRows = await shopifyql(
