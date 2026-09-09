@@ -123,7 +123,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
    Retry a throttle with a widening pause; anything else fails immediately,
    because a bad query or a dead token will not fix itself. */
-const THROTTLE_BACKOFF_MS = [700, 1600, 3200];
+const THROTTLE_BACKOFF_MS = [700, 1600, 3200, 6000];   // ~11.5s worst case, against a 60s maxDuration
 
 async function shopifyql(query, attempt = 0) {
   const token = await accessToken();
@@ -170,15 +170,26 @@ async function buildProducts(today) {
   const daily = dailyRows.map(r => ({ date: r.day, net: n2(r.net_sales), orders: +r.orders || 0, items: +r.net_items_sold || 0 }));
 
   // per-window product rows
+  /* Two at a time, not all five at once.
+
+     The rate limit is a leaky bucket that refills ~50 points a second and each
+     of these costs ~65, so five in one burst draws ~325 before any of it comes
+     back. That was survivable until three more queries were added below; past
+     that the route started throttling, and a throttle loses the whole dataset to
+     the snapshot fallback. Pairs keep the peak draw where it was while barely
+     costing wall-clock — the queries take far longer than the gap between them. */
   const WIN = { 3: win(3), 7: win(7), 30: win(30), 90: win(90), '12M': { since: M.since, until: M.until } };
   const windows = {};
-  await Promise.all(Object.entries(WIN).map(async ([k, w]) => {
-    const rows = await shopifyql(
-      `FROM sales SHOW net_sales, orders, net_items_sold GROUP BY product_title SINCE ${w.since} UNTIL ${w.until} ORDER BY net_sales DESC`);
-    windows[k] = rows.filter(r => n2(r.net_sales) > 0).map(r => ({
-      t: r.product_title == null ? '(untitled)' : r.product_title, k: categorize(r.product_title),
-      net: n2(r.net_sales), u: +r.net_items_sold || 0, o: +r.orders || 0 }));
-  }));
+  const winEntries = Object.entries(WIN);
+  for (let i = 0; i < winEntries.length; i += 2) {
+    await Promise.all(winEntries.slice(i, i + 2).map(async ([k, w]) => {
+      const rows = await shopifyql(
+        `FROM sales SHOW net_sales, orders, net_items_sold GROUP BY product_title SINCE ${w.since} UNTIL ${w.until} ORDER BY net_sales DESC`);
+      windows[k] = rows.filter(r => n2(r.net_sales) > 0).map(r => ({
+        t: r.product_title == null ? '(untitled)' : r.product_title, k: categorize(r.product_title),
+        net: n2(r.net_sales), u: +r.net_items_sold || 0, o: +r.orders || 0 }));
+    }));
+  }
 
   /* True totals for the long windows.
 
