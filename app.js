@@ -391,21 +391,42 @@ function renderTrend(c){
 // A "»" overflow marker appears when attainment runs off the visible scale.
 const PACE_LINE = 66.7;                              // forecast (100% attainment) position, % of track
 function paceRow(name, actual, forecast, fmtFn, betterLow=false){
-  const has = forecast!=null && forecast>0;
-  const ratio = has ? actual/forecast : null;
-  const attain = has ? ratio*100 : null;
+  /* A forecast EXISTS whenever the sheet gives a number, including zero and
+     negative ones. This used to require `forecast > 0`, which meant a planned
+     loss was reported as "no forecast": September's profit plan is -$233/day, so
+     the Profit row read "no forecast" while actual profit sat $8.5K AHEAD of
+     plan — good news, hidden by a sign test. */
+  const has = forecast != null;
+  const positive = has && forecast > 0;
   // good = at/above forecast (revenue/profit) OR at/below forecast (spend)
   const good = has ? (betterLow ? actual<=forecast : actual>=forecast) : true;
+
+  /* Where to sit on the track. "% of target" only means something when the
+     target is positive. For a zero or negative target, measure the distance from
+     it in units of its own size, so being exactly on plan still lands on the
+     mark and being ahead still runs past it. */
+  let ratio = null;
+  if (positive) ratio = actual / forecast;
+  else if (has && forecast !== 0) ratio = 1 + (actual - forecast) / Math.abs(forecast);
+  else if (has) ratio = actual > 0 ? 2 : actual < 0 ? 0 : 1;      // a target of exactly zero
+
   const barCol = !has ? 'var(--muted)' : good ? 'var(--good)' : 'var(--warn)';
-  const fillPct = has ? Math.min(100, ratio*PACE_LINE) : 0;
-  const over = has && ratio*PACE_LINE > 100;        // ran off the scale
+  const fillPct = ratio != null ? Math.max(0, Math.min(100, ratio*PACE_LINE)) : 0;
+  const over = ratio != null && ratio*PACE_LINE > 100;        // ran off the scale
   const unit = betterLow ? 'budget' : 'target';
-  const sub = has
-    ? `${fmtFn(actual)} · <b class="${good?'g-t':'a-t'}">${attain.toFixed(0)}% of ${fmtFn(forecast)} ${unit}</b>`
-    : `${fmtFn(actual)} · no forecast`;
+  const cls = good ? 'g-t' : 'a-t';
+  const sub = !has
+      ? `${fmtFn(actual)} · no forecast`
+    : positive
+      ? `${fmtFn(actual)} · <b class="${cls}">${(ratio*100).toFixed(0)}% of ${fmtFn(forecast)} ${unit}</b>`
+      // A percentage of a negative or zero target is nonsense — state the gap.
+      : `${fmtFn(actual)} · <b class="${cls}">${fmtFn(Math.abs(actual-forecast))} ${actual>=forecast?'ahead of':'behind'} a ${fmtFn(forecast)} ${unit}</b>`;
+  const tip = !has ? ''
+    : positive ? `Fill reaches the line at 100% of ${unit} (${fmtFn(forecast)})`
+    : `Fill reaches the line when actual equals the ${unit} of ${fmtFn(forecast)}`;
   return `<div class="pace-row">
     <div class="pr-top"><span class="nm">${name}</span><span class="vv">${fmtFn(actual)}</span></div>
-    <div class="track" title="${has?`Fill reaches the line at 100% of ${unit} (${fmtFn(forecast)})`:''}">
+    <div class="track" title="${tip}">
       <i style="width:${fillPct}%;background:${barCol}"></i>
       <div class="fc-mark" style="left:${PACE_LINE}%"></div>
       ${over?`<span class="ovf">»</span>`:''}
@@ -417,8 +438,15 @@ function renderPace(c){
   const wrap=document.getElementById('paceWrap');
   document.getElementById('paceNote').textContent = c.win==='YTD' ? `${c.periodLabel} vs forecast` : `${c.win}-day period vs forecast`;
   const sum=(k)=>c.series.reduce((a,d)=>a+(d[k]||0),0);
-  const rev=sum('revenue'), revF=sum('fcRev'), spend=sum('metaTotal'), spendF=sum('projSpend'),
-        prof=sum('profit'), profF=sum('fcProfit');
+  /* A forecast row the sheet has never filled sums to 0, which would render as a
+     zero target rather than an absent one — so distinguish "every day is null"
+     from "the days really add to zero". projSpend was null on all 100 days
+     because the label regex never matched "PROJECTED MEDIA SPEND"; had that sum
+     been treated as a target, the Meta Spend row would have claimed the budget
+     was zero and every dollar was an overspend. */
+  const fSum=(k)=>c.series.some(d=>d[k]!=null) ? sum(k) : null;
+  const rev=sum('revenue'), revF=fSum('fcRev'), spend=sum('metaTotal'), spendF=fSum('projSpend'),
+        prof=sum('profit'), profF=fSum('fcProfit');
   wrap.innerHTML =
     paceRow('Revenue', rev, revF, (v)=>money(v,true), false) +
     paceRow('Meta Spend', spend, spendF, (v)=>money(v,true), true) +

@@ -72,7 +72,11 @@ const LABELS = {
   profitPct:  /^Profit ?%/i,
   roas:       /^Sitewide ROAS/i,
   fcRev:      /^Forecast Revenue/i,
-  projSpend:  /^Projected Spend/i,
+  /* The sheet's row is "PROJECTED MEDIA SPEND". /^Projected Spend/ never matched
+     it, so projSpend came back null on every single day and the Meta Spend row
+     of the Pace panel has always read "no forecast" — not because there is no
+     forecast, but because nothing ever looked in the right place. */
+  projSpend:  /^Projected\b.*\bSpend/i,
   fcProfit:   /^Forecast Profit/i,
 };
 
