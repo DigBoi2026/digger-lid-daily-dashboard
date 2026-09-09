@@ -192,3 +192,6 @@ Authorization: Bearer sk_dl_…
 It discovers the datasets, parameters and field meanings from there. Scopes let
 a media-buying agent read ad spend and MER without ever seeing salaries. Inert
 until `AI_TOKENS` is set. See **[AI-ACCESS.md](AI-ACCESS.md)**.
+
+Every credential this board uses, and how to rotate each one, is registered in
+**[CREDENTIALS.md](CREDENTIALS.md)**. No values, only what exists and where.
