@@ -21,6 +21,13 @@ export const config = {
      the shared human password. Handing an agent SITE_PASSWORD would give it the
      whole board with no scope limit and no way to revoke it alone. */
   matcher: ['/((?!assets/|favicon|api/health|api/ai/).*)'],
+
+  /* Node, not edge. Every deploy logged:
+       "middleware.js uses the deprecated 'edge' runtime. Migrate to the Node.js
+        runtime for better performance and reliability."
+     Nothing here needs the edge runtime — the gate only reads a header, decodes
+     base64 and compares two strings. See vercel.com/docs/routing-middleware. */
+  runtime: 'nodejs',
 };
 
 /* Prefixes whose routes authenticate themselves, checked here rather than left
@@ -60,8 +67,16 @@ export default function middleware(req) {
   const header = req.headers.get('authorization') || '';
   const [scheme, encoded] = header.split(' ');
   if (scheme === 'Basic' && encoded) {
+    /* Decode via Buffer on the Node runtime, falling back to atob. A gate that
+       throws here fails closed (401 for everyone, including the owner), so it
+       does not depend on which of the two globals the runtime happens to
+       provide. */
     let decoded = '';
-    try { decoded = atob(encoded); } catch { decoded = ''; }
+    try {
+      decoded = (typeof Buffer !== 'undefined')
+        ? Buffer.from(encoded, 'base64').toString('utf8')
+        : atob(encoded);
+    } catch { decoded = ''; }
     const i = decoded.indexOf(':');
     const u = decoded.slice(0, i), p = decoded.slice(i + 1);
     if (u === USER && p === PASS) return; // authorised → continue

@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300;400;500;700&family=League+Spartan:wght@400;700;900&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="./styles.css?v=1788922410" />
+<link rel="stylesheet" href="./styles.css?v=1788935406" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -33,12 +33,13 @@
           <div class="d">Region Performance</div>
           <div class="dow" id="winLabel">LAST 12 MONTHS</div>
         </div>
-        <div class="seg small" id="winSeg" role="group" aria-label="Select trailing period" title="Geographic data is monthly — the period maps to whole months">
-          <button data-win="3" aria-label="3 day trailing period">3D</button>
-          <button data-win="7" aria-label="7 day trailing period">7D</button>
-          <button data-win="30" aria-label="30 day trailing period">30D</button>
-          <button data-win="90" aria-label="90 day trailing period">90D</button>
-          <button data-win="12M" class="active" aria-label="12 month trailing period">12M</button>
+        <!-- Whole months, not days. Shopify's shipping-geo report returns monthly
+             buckets, so a 3-day or 7-day button here could only ever show a whole
+             month's figures under a day label — which is what it used to do. -->
+        <div class="seg small" id="winSeg" role="group" aria-label="Select trailing period" title="Geographic data arrives in whole months, so the periods here are months">
+          <button data-win="1" aria-label="1 month trailing period">1 MO</button>
+          <button data-win="3" aria-label="3 month trailing period">3 MO</button>
+          <button data-win="12" class="active" aria-label="12 month trailing period">12 MO</button>
         </div>
       </div>
 
@@ -129,9 +130,9 @@
 <div class="tip" id="tip"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/animejs@4.0.0/lib/anime.iife.min.js"></script>
-<script src="./motion.js?v=1788922410"></script>
-<script src="./core.js?v=1788922410"></script>
-<script src="./region_data.js?v=1788922410"></script>
-<script src="./region.js?v=1788922410"></script>
+<script src="./motion.js?v=1788935406"></script>
+<script src="./core.js?v=1788935406"></script>
+<script src="./region_data.js?v=1788935406"></script>
+<script src="./region.js?v=1788935406"></script>
 </body>
 </html>

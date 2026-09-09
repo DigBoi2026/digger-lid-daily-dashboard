@@ -12,8 +12,13 @@ cd "$(dirname "$0")"
 N="${1:-$(date +%s)}"
 FILES=(index.html performance.html products.html region.html daily.html)
 
+# `sed -i` takes a mandatory suffix argument on BSD/macOS and an optional one on
+# GNU/Linux, so `sed -i ''` works on a Mac and makes Linux read '' as the script.
+# Write to a temp file and move it back — identical on both.
 for f in "${FILES[@]}"; do
-  sed -i '' -E "s/\?v=[0-9]+/?v=$N/g" "$f"
+  tmp="$(mktemp "${f}.XXXXXX")"
+  sed -E "s/\?v=[0-9]+/?v=$N/g" "$f" > "$tmp"
+  mv "$tmp" "$f"
 done
 
 echo "Bumped cache versions to ?v=$N across: ${FILES[*]}"

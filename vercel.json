@@ -2,31 +2,24 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "api/data.js": {
-      "memory": 256,
       "maxDuration": 15
     },
     "api/shopify.js": {
-      "memory": 512,
       "maxDuration": 60
     },
     "api/pulse.js": {
-      "memory": 256,
       "maxDuration": 30
     },
     "api/ai/query.js": {
-      "memory": 512,
       "maxDuration": 60
     },
     "api/ai/manifest.js": {
-      "memory": 256,
       "maxDuration": 10
     },
     "api/ai/schema.js": {
-      "memory": 256,
       "maxDuration": 10
     },
     "api/ai/llms.js": {
-      "memory": 256,
       "maxDuration": 10
     }
   },

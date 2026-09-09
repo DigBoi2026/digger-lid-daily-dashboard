@@ -94,7 +94,10 @@ const svals=(list,m)=>(list||[]).map(d=>{
 function render(){
   if(!D){ document.getElementById('errBox').classList.add('show'); return; }
   const t=totals();
-  document.getElementById('throughVal').textContent = nice(D.meta.asOf);
+  // The last day actually included, not meta.asOf. asOf is the date the pull ran,
+  // so it said "9 Sep" while every window ends at yesterday and every other page
+  // said 8 Sep. Windows are anchored on yIdx(), so read the date from there.
+  document.getElementById('throughVal').textContent = nice(D.daily[yIdx()].date);
   document.getElementById('winLabel').textContent = WLABEL[S.win];
   document.querySelectorAll('#winSeg button').forEach(b=>b.classList.toggle('active', b.dataset.win===String(S.win)));
   renderKPIs(t); renderCategories(t); renderProducts(t); renderMovers(t); renderFooter();

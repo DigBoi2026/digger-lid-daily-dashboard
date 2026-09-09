@@ -4,7 +4,7 @@
    Geo data is monthly, so the period selector maps to whole months.
    ========================================================================= */
 let R = window.DL_REGION || null;
-const S = { win: '12M', off: 0, stateMode: 'net', auMode: 'split' };   // default to the 12-month view
+const S = { win: 12, off: 0, stateMode: 'net', auMode: 'split' };     // win = months; default to the 12-month view
 const COUNTRY_COL = {"Australia":'#f5eb19',"United States":'#5ec8ff',"New Zealand":'#39d98a',
   "United Kingdom":'#ff8a4a',"Canada":'#c98bff',"Other":'#7d7576'};
 let charts = { auIntl:null, stateTrend:null, nz:null };
@@ -16,8 +16,13 @@ const money=(n,c=true)=>{ if(n==null||isNaN(n))return '—';
 const numf=n=>n==null||isNaN(n)?'—':Math.round(n).toLocaleString('en-AU');
 const pct=(n,d=0)=>n==null||isNaN(n)?'—':n.toFixed(d)+'%';
 
-const MREG = {3:1, 7:1, 30:1, 90:3, '12M':12};            // period → whole months
-const WLABEL = {3:'LAST 3 DAYS',7:'LAST 7 DAYS',30:'LAST 30 DAYS',90:'LAST 90 DAYS','12M':'LAST 12 MONTHS'};
+/* S.win IS a month count on this page. It used to be a day count mapped onto
+   months by MREG = {3:1, 7:1, 30:1, 90:3, '12M':12}, which collapsed 3D, 7D and
+   30D onto the same single month: all three rendered identical figures under
+   headlines reading "LAST 3 DAYS" and "LAST 7 DAYS". The underlying Shopify
+   shipping-geo report only ever returns whole months, so the day buttons could
+   not be honoured and have been removed rather than relabelled. */
+const WLABEL = {1:'LAST MONTH', 3:'LAST 3 MONTHS', 12:'LAST 12 MONTHS'};
 const STATE_COL = {NSW:'#f5eb19',QLD:'#c98bff',VIC:'#5ec8ff',WA:'#ff8a4a',SA:'#39d98a',TAS:'#ffb020',ACT:'#e0607a',NT:'#9a9193'};
 
 const sum = a => (a||[]).reduce((x,y)=>x+y,0);
@@ -28,12 +33,12 @@ const netOf = m => m.net;
 /* ============================ RENDER ============================ */
 function render(){
   if(!R){ document.getElementById('errBox').classList.add('show'); return; }
-  const n = MREG[S.win] || 12;
-  document.getElementById('winLabel').textContent = WLABEL[S.win];
+  const n = Number(S.win) || 12;
+  document.getElementById('winLabel').textContent = WLABEL[n] || `LAST ${n} MONTHS`;
   document.getElementById('throughVal').textContent = R.months[R.months.length-1];
-  document.querySelectorAll('#winSeg button').forEach(b=>b.classList.toggle('active', b.dataset.win===String(S.win)));
-  const monthly = n===1 ? 'monthly data · ' : '';
-  document.getElementById('stateNote').textContent = monthly + (n===12?'net · share · vs prior yr':`last ${n} mo vs prior ${n}`);
+  document.querySelectorAll('#winSeg button').forEach(b=>b.classList.toggle('active', parseInt(b.dataset.win,10)===n));
+  document.getElementById('stateNote').textContent =
+    n===12 ? 'net · share · vs prior yr' : `last ${n} mo vs prior ${n}`;
   renderKPIs(n); renderStates(n); renderAuIntl(); renderStateTrend(); renderNZ(); renderIntl();
   if(window.DLmotion) DLmotion.countUpAll();
 }
@@ -204,7 +209,7 @@ function setLive(mode){ const dot=document.getElementById('liveDot'),txt=documen
   txt.textContent=mode==='live'?'Live':mode==='loading'?'Syncing…':'Snapshot'; }
 function wire(){
   document.querySelectorAll('#winSeg button').forEach(b=>b.onclick=()=>{
-    const v=b.dataset.win; S.win = v==='12M'?'12M':parseInt(v,10); render();
+    S.win = parseInt(b.dataset.win,10); render();
   });
   document.querySelectorAll('#stateMode button').forEach(b=>b.onclick=()=>{
     S.stateMode=b.dataset.mode;

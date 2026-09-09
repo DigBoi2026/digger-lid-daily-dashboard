@@ -5,7 +5,9 @@
    ========================================================================= */
 // Shared math/utilities from core.js (unit-tested by source/test_core.js).
 const { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline } = DLcore;
-const S = { win:30, off:0, metric:'spend_rev', live:'snap' };   // win ∈ {7,30,90,'12M'}
+const S = { win:30, off:0, metric:'spend_rev', live:'snap' };   // win ∈ {3,7,30,90,'YTD'}
+const API_URL = '/api/data';          // same backend route Daily Ops reads
+const REFRESH_MINUTES = 30;           // periodic re-pull while the board is open
 let DATA = window.DL_DATA || null;
 let charts = { band:null, trend:null, prosp:null, chan:null };
 
@@ -29,24 +31,43 @@ function deltaEl(cur,prev,key){
   const ar=chg>0.05?'▲':chg<-0.05?'▼':'—';
   return `<span class="delta ${cls}">${ar} ${Math.abs(chg).toFixed(1)}%</span>`;
 }
+// Year covered by the monthly roll-up. Monthly rows carry label ("Sep 2026"),
+// not an ISO date, and the year is derived rather than hardcoded so the label
+// stays true when the workbook rolls over.
+function ytdYear(list){
+  for(let i=(list||[]).length-1;i>=0;i--){
+    const m=/\b(20\d{2})\b/.exec(list[i].label||'');
+    if(m) return m[1];
+  }
+  return String(new Date().getFullYear());
+}
 function clampToYesterday(){
   const maxISO=(yesterdayISO()<DATA.meta.latestDataDate)?yesterdayISO():DATA.meta.latestDataDate;
   let idx=DATA.daily.length-1;
   for(let i=DATA.daily.length-1;i>=0;i--){if(DATA.daily[i].date<=maxISO){idx=i;break;}}
   return idx;
 }
+// The oldest period is usually shorter than P days, because periodSlices clamps
+// at the start of the data rather than reaching past it. Say so, instead of
+// labelling an 11-day slice a "30-day period".
+function periodSub(P, days, off){
+  const back = off ? ` · ${off} back` : '';
+  return days < P ? `${days} of ${P} days${back}` : `${P}-day period${back}`;
+}
 function ctx(){
-  if(S.win==='12M'){
+  if(S.win==='YTD'){
     const list=DATA.monthly;
+    const yr=ytdYear(list);
     return {rec:aggregate(list),prev:null,series:list,prevSeries:null,gran:'month',
-      title:'Last 12 months',sub:'2026 YTD',periodLabel:'2026 YTD',win:'12M'};
+      title:`${yr} year to date`,sub:`${list.length} month${list.length===1?'':'s'}`,
+      periodLabel:`${yr} YTD`,win:'YTD'};
   }
   const P=S.win, sl=periodSlices(DATA.daily, clampToYesterday(), P, S.off);
   S.off=sl.off;
   const cur=sl.cur, prevSeries=sl.prev;
   return {rec:aggregate(cur),prev:prevSeries.length?aggregate(prevSeries):null,series:cur,prevSeries,gran:'day',
     title:fmtRange(cur[0].date,cur[cur.length-1].date),
-    sub:`${P}-day period${S.off?` · ${S.off} back`:''}`,periodLabel:`vs prior ${P}d`,win:P};
+    sub:periodSub(P, cur.length, S.off),periodLabel:`vs prior ${P}d`,win:P};
 }
 
 /* ============================ RENDER ============================ */
@@ -61,7 +82,7 @@ function renderHeader(c){
   document.getElementById('navDow').textContent=c.sub;
   document.getElementById('throughVal').textContent=isoToNice(DATA.meta.latestDataDate)+' 2026';
   const prevB=document.getElementById('prevBtn'), nextB=document.getElementById('nextBtn');
-  if(S.win==='12M'){ prevB.disabled=true; nextB.disabled=true; }
+  if(S.win==='YTD'){ prevB.disabled=true; nextB.disabled=true; }
   else { const P=S.win, end=clampToYesterday(); nextB.disabled=S.off<=0; prevB.disabled=(end-(S.off+1)*P+1)<0; }
 }
 function kpiTile(lbl,val,sub,foot,accent,sparkKey){
@@ -147,7 +168,7 @@ function renderTrend(c){
   if(c.gran==='day' && rollKey && s.length>=10){
     ds.push({type:'line',label:'7-day avg',data:rollingAvg(Y(rollKey),7),borderColor:'#ff8a4a',borderDash:[5,4],pointRadius:0,borderWidth:2,tension:.35,order:0});
   }
-  document.getElementById('trendSpan').textContent = c.win==='12M' ? '· last 12 months' : `· ${c.win}-day period`;
+  document.getElementById('trendSpan').textContent = c.win==='YTD' ? '· year to date' : `· ${c.win}-day period`;
   const cfg={data:{labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,animation:{duration:500},
     interaction:{mode:'index',intersect:false},
     plugins:{legend:{display:true,labels:{color:'#c9c1c2',boxWidth:10,font:{size:10},filter:it=>!!it.text}},
@@ -177,8 +198,14 @@ function renderAcq(c){
    The live sheet has no campaign tags, so this panel is sourced from the latest
    Meta Ads Manager export. Rules: TOF | Creative Testing → Prospecting;
    TOM (+ MOF mid-funnel) → Warm Remarketing; BOF → Hot Remarketing. */
+/* A fixed sample of per-campaign Meta results, pasted in when this page was
+   built. There is no Meta Ads credential in this deployment, so these rows
+   cannot follow the period selector and never change. Both panels that render
+   them say so — see NOTE below — because sitting beside a live period selector
+   they would otherwise read as current. */
 const META_CAMPAIGNS = {
   window: "21 Apr – 20 May 2026",
+  NOTE: "fixed sample · does not follow the period selector",
   rows: [
     {name:'THS - AU - Conversions/Sales (NEW)', spend:594.06, rev:4991.78},
     {name:'🦘 AU #5 MOF - All Mid - All Placements', spend:3674.69, rev:18332.27},
@@ -203,7 +230,7 @@ const FUNNEL=[
   {key:'other',name:'Other',tags:'untagged',col:'#7d7576'}
 ];
 function renderFunnel(){
-  document.getElementById('funnelNote').textContent = 'Meta campaigns · '+META_CAMPAIGNS.window;
+  document.getElementById('funnelNote').textContent = 'Meta campaigns · '+META_CAMPAIGNS.window+' · '+META_CAMPAIGNS.NOTE;
   const buck={};
   META_CAMPAIGNS.rows.forEach(r=>{const k=funnelStage(r.name);
     const b=buck[k]||(buck[k]={spend:0,rev:0,n:0}); b.spend+=r.spend; b.rev+=r.rev; b.n++;});
@@ -239,7 +266,7 @@ const roasBarLabels = {
   }
 };
 function renderStageRoas(){
-  document.getElementById('stageRoasNote').textContent = 'Meta campaigns · '+META_CAMPAIGNS.window;
+  document.getElementById('stageRoasNote').textContent = 'Meta campaigns · '+META_CAMPAIGNS.window+' · '+META_CAMPAIGNS.NOTE;
   const buck={};
   META_CAMPAIGNS.rows.forEach(r=>{const k=funnelStage(r.name);
     const b=buck[k]||(buck[k]={spend:0,rev:0,n:0}); b.spend+=r.spend; b.rev+=r.rev; b.n++;});
@@ -275,14 +302,48 @@ function wire(){
   document.getElementById('prevBtn').onclick=()=>{ if(document.getElementById('prevBtn').disabled)return; S.off++; render(); };
   document.getElementById('nextBtn').onclick=()=>{ if(document.getElementById('nextBtn').disabled)return; S.off=Math.max(0,S.off-1); render(); };
   document.querySelectorAll('#winSeg button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('#winSeg button').forEach(x=>x.classList.remove('active'));
-    b.classList.add('active'); const v=b.dataset.win; S.win=v==='12M'?'12M':parseInt(v,10); S.off=0; render(); });
+    b.classList.add('active'); const v=b.dataset.win; S.win=v==='YTD'?'YTD':parseInt(v,10); S.off=0; render(); });
   document.querySelectorAll('#chartTabs button').forEach(b=>b.onclick=()=>{ document.querySelectorAll('#chartTabs button').forEach(x=>x.classList.remove('active'));
     b.classList.add('active'); S.metric=b.dataset.metric; renderTrend(ctx()); });
   window.addEventListener('keydown',e=>{ if(e.key==='ArrowLeft')document.getElementById('prevBtn').click(); if(e.key==='ArrowRight')document.getElementById('nextBtn').click(); });
   window.addEventListener('resize',()=>{clearTimeout(window._rz);window._rz=setTimeout(render,200);});
 }
+/* Upgrade the embedded snapshot to a live pull.
+
+   This page shipped without one: init() hard-set setLive('snap') and never
+   fetched anything, so every window here was sliced out of data.js and the
+   board sat 71 days behind the sheet while Daily Ops next to it read current.
+   The period arithmetic was never wrong — it was windowing frozen data.
+
+   MERGE rather than replace, for the same reason app.js does: /api/data
+   returns only the last few months, and dropping the embedded history would
+   break 90D and the year-to-date roll-up. */
+async function tryLiveRefresh(){
+  setLive('loading');
+  try{
+    const r = await fetch(API_URL);
+    if(!r.ok) throw new Error('http-'+r.status);
+    const j = await r.json();
+    // A 200 carrying no rows is not a live pull. The route can reach the sheet
+    // and still extract nothing, and calling that success would paint a green
+    // "Live" pill over an empty board.
+    if(!(j.daily||[]).length) throw new Error('api-no-rows');
+    const map = new Map(DATA.daily.map(d=>[d.date,d]));
+    (j.daily||[]).forEach(d=>map.set(d.date,d));
+    DATA.daily = [...map.values()].sort((a,b)=>a.date<b.date?-1:1);
+    if(j.monthly && j.monthly.length) DATA.monthly = j.monthly;
+    if(j.meta && j.meta.latestDataDate) DATA.meta.latestDataDate = j.meta.latestDataDate;
+    S.off = 0;                       // a fresh anchor invalidates any period offset
+    setLive('live'); render();
+  }catch(e){
+    setLive('snap');                 // keep showing the snapshot, but say so
+  }
+}
+
 (function init(){
   if(!DATA){document.getElementById('errBox').classList.add('show');return;}
   setLive('snap'); wire(); render();
   if(window.DLmotion) DLmotion.entrance();
+  tryLiveRefresh();
+  setInterval(tryLiveRefresh, REFRESH_MINUTES*60*1000);
 })();

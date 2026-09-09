@@ -5,23 +5,20 @@
    ========================================================================= */
 
 const CONFIG = {
-  sheetId: "1rAut5J3SoDvH0ObdVuTenqGjiO-u7M6cPpRNQ5Hqpnw",
-  // How the dashboard fetches fresh data at runtime:
-  //   'auto'  – try a live gviz CSV pull; fall back to the embedded snapshot
-  //   'api'   – call a backend proxy (the Vercel path; set apiUrl below)
-  //   'off'   – embedded snapshot only
-  liveMode: "api",                  // 'api' = Vercel backend (private); 'auto' = client gviz; 'off' = snapshot only
-  apiUrl: "/api/data",              // served by api/data.js on Vercel; 404s locally → falls back to snapshot
+  sheetId: "1rAut5J3SoDvH0ObdVuTenqGjiO-u7M6cPpRNQ5Hqpnw",   // reference only; the backend reads the sheet
+  /* How the dashboard fetches fresh data at runtime:
+       'api'  – call the backend route (the only supported path)
+       'off'  – embedded snapshot only
+
+     There used to be an 'auto' mode that pulled the sheet straight from the
+     browser over gviz CSV and parsed it with a hardcoded row map. It is gone.
+     It required the sheet to be world-readable, which is the exact exposure the
+     password gate exists to prevent, and its row map had drifted onto an empty
+     country block — the same drift that froze this board. Dead code that
+     silently returns wrong financials is worse than no fallback. */
+  liveMode: "api",
+  apiUrl: "/api/data",              // served by api/data.js; unreachable locally → snapshot
   refreshMinutes: 30,               // periodic re-pull while the board is open
-  // Consolidated ("All Countries") block row indices — must match build_data.py
-  rows: {revenue:62,revExGst:65,gstPct:66,orders:68,newOrders:69,items:70,sessions:71,
-    cvr:73,newPct:74,ipo:75,aov:76,cpv:77,rpv:78,cpp:79,ncpa:80,metaNew:83,metaTotal:84,
-    google:85,tiktok:86,totalAds:88,mer:89,mer3:90,prodCost:92,shipCost:93,packaging:95,
-    txnFees:96,merchFees:97,totalVC:98,vcr:99,salaries:101,software:102,office:103,
-    totalFC:104,fcr:105,returns:107,returnsPct:108,totalExp:111,profit:112,profitPct:113,
-    roas:114,fcRev:115,projSpend:119,fcProfit:123},
-  months:["Jan '26","Feb '26","Mar '26","Apr '26","May '26","Jun '26","Jul '26",
-    "Aug '26","Sep '26","Oct '26","Nov '26","Dec '26"],
   // Health thresholds  [greenIfBetterThan, amberIfBetterThan]  + direction
   health:{
     profitPct:{good:8, warn:3, dir:'high', label:'Profit %', fmt:'pct'},
@@ -36,7 +33,9 @@ const CONFIG = {
 const { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline } = DLcore;
 
 /* ----------------------------- state ----------------------------------- */
-// Unified period selector: win ∈ {7,30,90,'12M'} (trailing period ending yesterday); off = periods back.
+// Unified period selector: win ∈ {3,7,30,90,'YTD'} (trailing period ending yesterday); off = periods back.
+// 'YTD' is not a trailing 12 months: the sheet is a calendar-2026 workbook, so the
+// monthly roll-up only ever holds this year's months. The button says what it does.
 const S = { win:30, off:0, metric:'rev_spend', live:'snap' };
 let DATA = window.DL_DATA || null;
 let charts = { wf:null, trend:null };
@@ -59,87 +58,43 @@ const xroas = (n) => n==null||isNaN(n) ? '—' : n.toFixed(2)+'x';
 function todayISO(){ const t=new Date(); t.setHours(0,0,0,0); return t.toISOString().slice(0,10); }
 function yesterdayISO(){ const t=new Date(); t.setDate(t.getDate()-1); t.setHours(0,0,0,0); return t.toISOString().slice(0,10); }
 
-/* --------------------------- CSV parsing (live) ------------------------ */
-function parseCSV(t){
-  const rows=[]; let cur=[], c='', q=false;
-  for(let i=0;i<t.length;i++){const ch=t[i];
-    if(ch==='"'){ if(q&&t[i+1]==='"'){c+='"';i++;} else q=!q; }
-    else if(ch===','&&!q){cur.push(c);c='';}
-    else if(ch==='\n'&&!q){cur.push(c);rows.push(cur);cur=[];c='';}
-    else if(ch==='\r'){}
-    else c+=ch;}
-  if(c!==''||cur.length){cur.push(c);rows.push(cur);}
-  return rows;
-}
-const toNum = v => { if(v==null) return null; const s=String(v).replace(/[$,%\s]/g,''); if(s===''||s==='-')return null; const n=parseFloat(s); return isNaN(n)?null:Math.round(n*100)/100; };
-
-function parseMonthDaily(rows, monthNum){
-  const header=rows[0]||[], dow=rows[1]||[];
-  const dayCols=[];
-  header.forEach((h,ci)=>{ if(/^\s*\d{1,2}\s+[A-Za-z]{3}\s*$/.test(h)) dayCols.push(ci); });
-  const out=[];
-  for(const ci of dayCols){
-    const dn=parseInt(header[ci].trim(),10);
-    const iso=`2026-${String(monthNum).padStart(2,'0')}-${String(dn).padStart(2,'0')}`;
-    const rec={date:iso,label:header[ci].trim(),dow:(dow[ci]||'').trim()};
-    for(const k in CONFIG.rows){ const r=CONFIG.rows[k]; rec[k]= rows[r]&&ci<rows[r].length ? toNum(rows[r][ci]) : null; }
-    if(rec.revenue||rec.sessions) out.push(rec);
-  }
-  return out;
-}
-
-async function fetchSheet(sheetName){
-  const url=`https://docs.google.com/spreadsheets/d/${CONFIG.sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-  const res=await fetch(url,{credentials:'include'});
-  if(!res.ok) throw new Error('HTTP '+res.status);
-  const txt=await res.text();
-  if(txt.trim().startsWith('<')) throw new Error('not-csv'); // login/redirect page
-  return parseCSV(txt);
-}
-
 async function tryLiveRefresh(manual=false){
   if(CONFIG.liveMode==='off') return;
   setLive('loading');
   try{
-    let daily=[], monthly=DATA.monthly;
-    if(CONFIG.liveMode==='api' && CONFIG.apiUrl){
-      const r=await fetch(CONFIG.apiUrl); if(!r.ok) throw new Error('api');
-      const j=await r.json();
-      // A 200 with no rows is not a live pull. The route can reach the sheet and
-      // still extract nothing (blank month tab, shifted row offsets), and treating
-      // that as success showed a green "Live" pill over empty trailing windows.
-      // Throw so the catch below falls back to the snapshot and says "Snapshot".
-      if(!(j.daily||[]).length) throw new Error('api-no-rows');
-      // MERGE (don't replace): keep the embedded 6-month history so 90D still works,
-      // overlay the freshly-pulled recent days, and refresh monthly + latest-date.
-      const map=new Map(DATA.daily.map(d=>[d.date,d]));
-      (j.daily||[]).forEach(d=>map.set(d.date,d));
-      DATA.daily=[...map.values()].sort((a,b)=>a.date<b.date?-1:1);
-      if(j.monthly&&j.monthly.length) DATA.monthly=j.monthly;
-      if(j.meta&&j.meta.latestDataDate) DATA.meta.latestDataDate=j.meta.latestDataDate;
-      afterData('live'); return;
-    }
-    // auto: pull the two most-recent months that could hold "up-to-yesterday" data
-    const y=new Date(yesterdayISO());
-    const wantMonths=[...new Set([y.getMonth(), (y.getMonth()+11)%12])]; // this + prev
-    for(const mIdx of wantMonths.sort((a,b)=>a-b)){
-      try{
-        const rows=await fetchSheet(CONFIG.months[mIdx]);
-        daily=daily.concat(parseMonthDaily(rows, mIdx+1));
-      }catch(e){/* skip month */}
-    }
-    if(!daily.length) throw new Error('no-live-days');
-    // merge: keep embedded history, overlay/extend with freshly pulled days
+    const r=await fetch(CONFIG.apiUrl); if(!r.ok) throw new Error('http-'+r.status);
+    const j=await r.json();
+    // A 200 with no rows is not a live pull. The route can reach the sheet and
+    // still extract nothing (blank month tab, shifted row offsets), and treating
+    // that as success showed a green "Live" pill over empty trailing windows.
+    // Throw so the catch below falls back to the snapshot and says "Snapshot".
+    if(!(j.daily||[]).length) throw new Error('api-no-rows');
+    // MERGE (don't replace): keep the embedded history so 90D and the
+    // year-to-date roll-up still work, overlay the freshly-pulled recent days,
+    // and refresh monthly + latest-date.
     const map=new Map(DATA.daily.map(d=>[d.date,d]));
-    daily.forEach(d=>map.set(d.date,d));
+    (j.daily||[]).forEach(d=>map.set(d.date,d));
     DATA.daily=[...map.values()].sort((a,b)=>a.date<b.date?-1:1);
-    DATA.meta.latestDataDate=DATA.daily[DATA.daily.length-1].date;
+    if(j.monthly&&j.monthly.length) DATA.monthly=j.monthly;
+    if(j.meta&&j.meta.latestDataDate) DATA.meta.latestDataDate=j.meta.latestDataDate;
     afterData('live');
   }catch(e){
     setLive('snap');
     if(manual) flashTip(document.getElementById('livePill'),
-      "Live pull blocked (the sheet is private to this browser session). The board is showing the embedded snapshot. See README for enabling always-on live data.");
+      `Live pull failed (${e.message}). The board is showing the embedded snapshot. `+
+      `Check /api/health — it reports which credentials the deployment actually has.`);
   }
+}
+
+// Year covered by the monthly roll-up. Derived, not hardcoded, so the label stays
+// true when the workbook rolls over to a new calendar year.
+function ytdYear(list){
+  // Monthly rows carry label ("Sep 2026"), not an ISO date — read the year off that.
+  for(let i=(list||[]).length-1;i>=0;i--){
+    const m=/\b(20\d{2})\b/.exec(list[i].label||'');
+    if(m) return m[1];
+  }
+  return String(new Date().getFullYear());
 }
 
 /* ----------------------------- data access ----------------------------- */
@@ -149,11 +104,20 @@ function clampToYesterday(){
   for(let i=DATA.daily.length-1;i>=0;i--){ if(DATA.daily[i].date<=maxISO){ idx=i; break; } }
   return idx;
 }
+// The oldest period is usually shorter than P days, because periodSlices clamps
+// at the start of the data rather than reaching past it. Say so, instead of
+// labelling an 11-day slice a "30-day period".
+function periodSub(P, days, off){
+  const back = off ? ` · ${off} back` : '';
+  return days < P ? `${days} of ${P} days${back}` : `${P}-day period${back}`;
+}
 function ctx(){
-  if(S.win==='12M'){                                   // 12-month view — monthly granularity
+  if(S.win==='YTD'){                                   // year-to-date — monthly granularity
     const list=DATA.monthly;
+    const yr=ytdYear(list);
     return {rec:aggregate(list), prev:null, series:list, prevSeries:null, gran:'month',
-      title:'Last 12 months', sub:'2026 YTD', periodLabel:'2026 YTD', win:'12M'};
+      title:`${yr} year to date`, sub:`${list.length} month${list.length===1?'':'s'}`,
+      periodLabel:`${yr} YTD`, win:'YTD'};
   }
   const P=S.win, sl=periodSlices(DATA.daily, clampToYesterday(), P, S.off);
   S.off=sl.off;                                          // reflect any clamping back into state
@@ -161,7 +125,7 @@ function ctx(){
   const rec=aggregate(cur), prev=prevSeries.length?aggregate(prevSeries):null;
   return {rec, prev, series:cur, prevSeries, gran:'day',
     title:fmtRange(cur[0].date,cur[cur.length-1].date),
-    sub:`${P}-day period${S.off?` · ${S.off} back`:''}`, periodLabel:`vs prior ${P}d`, win:P};
+    sub:periodSub(P, cur.length, S.off), periodLabel:`vs prior ${P}d`, win:P};
 }
 
 
@@ -200,9 +164,9 @@ function renderHeader(c){
   document.getElementById('navDate').textContent=c.title;
   document.getElementById('navDow').textContent=c.sub;
   document.getElementById('throughVal').textContent=isoToNice(DATA.meta.latestDataDate)+" 2026";
-  // ‹ › step the trailing period back/forward; disabled for 12M (only 2026 data)
+  // ‹ › step the trailing period back/forward; disabled for YTD (one year of data)
   const prevB=document.getElementById('prevBtn'), nextB=document.getElementById('nextBtn');
-  if(S.win==='12M'){ prevB.disabled=true; nextB.disabled=true; }
+  if(S.win==='YTD'){ prevB.disabled=true; nextB.disabled=true; }
   else {
     const P=S.win, end=clampToYesterday();
     nextB.disabled = S.off<=0;
@@ -247,7 +211,7 @@ function renderKPIs(c){
 function renderWaterfall(c){
   const r=c.rec;
   document.getElementById('eqNote').textContent =
-    c.win==='12M' ? '12-month P&L' : `${c.win}-day P&L`;
+    c.win==='YTD' ? 'Year-to-date P&L' : `${c.win}-day P&L`;
   document.getElementById('eqRev').textContent = money(r.revExGst!=null?r.revExGst:r.revenue);
   const profEl=document.getElementById('eqProfit');
   profEl.textContent = money(r.profit);
@@ -345,7 +309,7 @@ function renderTrend(c){
         tension:.35,pointRadius:0,borderWidth:2,order:0});
     }
   }
-  const periodTxt = c.win==='12M' ? '· last 12 months' : `· ${c.win}-day period`;
+  const periodTxt = c.win==='YTD' ? '· year to date' : `· ${c.win}-day period`;
   if(S.metric==='mer'){
     const b=breakeven(c.rec);
     document.getElementById('trendSpan').textContent = b
@@ -402,7 +366,7 @@ function paceRow(name, actual, forecast, fmtFn, betterLow=false){
 }
 function renderPace(c){
   const wrap=document.getElementById('paceWrap');
-  document.getElementById('paceNote').textContent = c.win==='12M' ? '2026 YTD vs forecast' : `${c.win}-day period vs forecast`;
+  document.getElementById('paceNote').textContent = c.win==='YTD' ? `${c.periodLabel} vs forecast` : `${c.win}-day period vs forecast`;
   const sum=(k)=>c.series.reduce((a,d)=>a+(d[k]||0),0);
   const rev=sum('revenue'), revF=sum('fcRev'), spend=sum('metaTotal'), spendF=sum('projSpend'),
         prof=sum('profit'), profF=sum('fcProfit');
@@ -488,7 +452,7 @@ function wire(){
   document.querySelectorAll('#winSeg button').forEach(b=>b.onclick=()=>{
     document.querySelectorAll('#winSeg button').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
-    const v=b.dataset.win; S.win = v==='12M'?'12M':parseInt(v,10); S.off=0; render();
+    const v=b.dataset.win; S.win = v==='YTD'?'YTD':parseInt(v,10); S.off=0; render();
   });
   document.getElementById('livePill').onclick=()=>tryLiveRefresh(true);
   window.addEventListener('keydown',e=>{
