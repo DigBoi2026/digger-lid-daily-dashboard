@@ -45,6 +45,21 @@ function getClient() {
 }
 
 // grid = 2D array (rows). Header row 0 has day labels " 1 Jun "; row 1 has day-of-week.
+// A month tab is pre-built for the whole month, so future days exist as empty
+// columns. Those columns still carry a literal 0 in some rows (sessions, in the
+// sheet as it stands), and `!= null` treated that as data — so a blank Sep tab
+// produced 30 rows that looked real, pushed latestDataDate to 30 Sep, and filled
+// every trailing window with nothing. Require an actual trading signal instead.
+function hasData(rec) {
+  return rec.revenue != null || rec.orders != null || (rec.sessions != null && rec.sessions > 0);
+}
+
+// The newest date that carries real data — NOT simply the last row present.
+function lastDataDate(daily) {
+  for (let i = daily.length - 1; i >= 0; i--) if (hasData(daily[i])) return daily[i].date;
+  return null;
+}
+
 function parseDaily(grid, monthNum) {
   if (!grid || !grid.length) return [];
   const header = grid[0] || [], dow = grid[1] || [];
@@ -55,9 +70,37 @@ function parseDaily(grid, monthNum) {
     const iso = `${YEAR_FULL}-${String(monthNum).padStart(2,'0')}-${String(dn).padStart(2,'0')}`;
     const rec = { date: iso, label: h.trim(), dow: (dow[ci] || '').trim() };
     for (const k in ROWS) { const r = grid[ROWS[k]]; rec[k] = r ? num(r[ci]) : null; }
-    if (rec.revenue != null || rec.sessions != null) out.push(rec);
+    if (hasData(rec)) out.push(rec);
   });
   return out;
+}
+
+/* Where does the metric block actually start? ROWS is a hardcoded map calibrated
+   against the Jun '26 tab; inserting a row anywhere above it silently shifts every
+   metric and the route then reads blanks while still reporting "reachable". This
+   reads the labels in column A and says whether they are where we expect, so an
+   empty result can be told apart from a misaligned one without opening the sheet. */
+function probe(grid) {
+  if (!grid || !grid.length) return { gridRows: 0 };
+  const findRow = re => {
+    for (let i = 0; i < grid.length; i++) {
+      const cell = String((grid[i] && grid[i][0]) || '').trim();
+      if (re.test(cell)) return i;
+    }
+    return null;
+  };
+  const found = { revenue: findRow(/^revenue\b/i), sessions: findRow(/^sessions\b/i), orders: findRow(/^orders\b/i) };
+  const expected = { revenue: ROWS.revenue, sessions: ROWS.sessions, orders: ROWS.orders };
+  const aligned = Object.keys(expected).every(k => found[k] === null || found[k] === expected[k]);
+  return {
+    gridRows: grid.length,
+    dayColumns: (grid[0] || []).filter(h => /^\s*\d{1,2}\s+[A-Za-z]{3}\s*$/.test(h || '')).length,
+    found, expected, aligned,
+    verdict: found.revenue === null
+      ? 'no "Revenue" label found in column A — different tab layout'
+      : aligned ? 'row offsets correct — the tab has no figures entered'
+                : `row offsets SHIFTED by ${found.revenue - expected.revenue} — update ROWS in api/data.js`,
+  };
 }
 
 function parseMonthly(grid) {
@@ -85,15 +128,37 @@ module.exports = async (req, res) => {
     const now = new Date();
     const y = new Date(now); y.setDate(y.getDate() - 1);           // yesterday
     const thisM = y.getMonth();                                    // 0-based
-    const monthTabs = [{ name: `${MONTH_ABBR[thisM]} '${YEAR_LABEL}`, num: thisM + 1 }];
-    // include the previous month too (for the 30-day trend) — but only within the same
-    // sheet year, since only <Mon> 'YEAR_LABEL tabs exist (avoids a non-existent Dec '25 in Jan).
-    if (thisM > 0) monthTabs.unshift({ name: `${MONTH_ABBR[thisM-1]} '${YEAR_LABEL}`, num: thisM });
+    // Read the current month plus the three before it. Two months only covered the
+    // 30-day trend and left anything older to the embedded snapshot — so once the
+    // snapshot went stale there was an unbridgeable hole (July, in 2026-09) that
+    // the 90-day window spanned in silence. Still bounded to this sheet year,
+    // since only <Mon> 'YEAR_LABEL tabs exist.
+    const MONTHS_BACK = 3;
+    const monthTabs = [];
+    for (let back = MONTHS_BACK; back >= 0; back--) {
+      const mi = thisM - back;
+      if (mi < 0) continue;
+      monthTabs.push({ name: `${MONTH_ABBR[mi]} '${YEAR_LABEL}`, num: mi + 1 });
+    }
+
+    // batchGet rejects the WHOLE request if any range names a tab that does not
+    // exist, so ask which tabs are there first. Reading more months would
+    // otherwise turn a working route into a 500 the first time a tab is missing.
+    const meta = await sheets.spreadsheets.get({
+      spreadsheetId: sheetId, fields: 'sheets.properties.title',
+    });
+    const titles = new Set((meta.data.sheets || []).map(sh => sh.properties && sh.properties.title));
+    const missing = monthTabs.filter(m => !titles.has(m.name)).map(m => m.name);
+    const tabs = monthTabs.filter(m => titles.has(m.name));
+    const monthlyTab = `${YEAR_FULL} Monthly Totals`;
+    const haveMonthly = titles.has(monthlyTab);
+
+    if (!tabs.length) throw new Error(`No month tabs found. Looked for: ${monthTabs.map(m => m.name).join(', ')}`);
 
     // A1 notation: wrap sheet names in single quotes and DOUBLE any internal apostrophe
     // (tabs are named like  Jun '26  →  'Jun ''26'  ). Without this the batchGet fails.
     const a1 = name => `'${name.replace(/'/g, "''")}'!A1:AZ131`;
-    const cleanRanges = monthTabs.map(m => a1(m.name)).concat([a1(`${YEAR_FULL} Monthly Totals`)]);
+    const cleanRanges = tabs.map(m => a1(m.name)).concat(haveMonthly ? [a1(monthlyTab)] : []);
 
     const resp = await sheets.spreadsheets.values.batchGet({
       spreadsheetId: sheetId,
@@ -103,22 +168,32 @@ module.exports = async (req, res) => {
     const vr = resp.data.valueRanges || [];
 
     let daily = [];
-    monthTabs.forEach((m, i) => { daily = daily.concat(parseDaily(vr[i] && vr[i].values, m.num)); });
+    tabs.forEach((m, i) => { daily = daily.concat(parseDaily(vr[i] && vr[i].values, m.num)); });
     const map = new Map(daily.map(d => [d.date, d]));
     daily = [...map.values()].sort((a,b) => a.date < b.date ? -1 : 1);
 
-    const monthly = parseMonthly(vr[monthTabs.length] && vr[monthTabs.length].values);
+    const monthly = haveMonthly ? parseMonthly(vr[tabs.length] && vr[tabs.length].values) : [];
 
     const payload = {
       meta: {
         source: 'DiggerLid – Calendar 2026 Ecommerce Equation 7.1 (Accelerate)',
         sheetId, currency: 'AUD',
         snapshotDate: new Date().toISOString().slice(0,10),
-        latestDataDate: daily.length ? daily[daily.length-1].date : null,
+        latestDataDate: lastDataDate(daily),
+        monthsRead: tabs.map(m => m.name),
+        monthsMissing: missing,
         live: true,
       },
       daily, monthly,
     };
+
+    // When nothing parsed, say why rather than returning an empty shell that the
+    // board renders as blank panels under a green "Live" pill.
+    if (!daily.length || req.query && req.query.diag) {
+      payload.diag = { tabsMissing: missing };
+      tabs.forEach((m, i) => { payload.diag[m.name] = probe(vr[i] && vr[i].values); });
+      if (haveMonthly) payload.diag[monthlyTab] = probe(vr[tabs.length] && vr[tabs.length].values);
+    }
 
     // Edge-cache for an hour; serve stale while revalidating.
     res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1800');
@@ -132,4 +207,7 @@ module.exports = async (req, res) => {
 // Exported for offline testing (see source/test_api_parser.js).
 module.exports.parseDaily = parseDaily;
 module.exports.parseMonthly = parseMonthly;
+module.exports.hasData = hasData;
+module.exports.lastDataDate = lastDataDate;
+module.exports.probe = probe;
 module.exports._num = num;

@@ -105,6 +105,11 @@ async function tryLiveRefresh(manual=false){
     if(CONFIG.liveMode==='api' && CONFIG.apiUrl){
       const r=await fetch(CONFIG.apiUrl); if(!r.ok) throw new Error('api');
       const j=await r.json();
+      // A 200 with no rows is not a live pull. The route can reach the sheet and
+      // still extract nothing (blank month tab, shifted row offsets), and treating
+      // that as success showed a green "Live" pill over empty trailing windows.
+      // Throw so the catch below falls back to the snapshot and says "Snapshot".
+      if(!(j.daily||[]).length) throw new Error('api-no-rows');
       // MERGE (don't replace): keep the embedded 6-month history so 90D still works,
       // overlay the freshly-pulled recent days, and refresh monthly + latest-date.
       const map=new Map(DATA.daily.map(d=>[d.date,d]));
