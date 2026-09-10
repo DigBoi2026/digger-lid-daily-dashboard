@@ -341,7 +341,13 @@ function probe(grid) {
 
 /* The payload builder, shared by this route and the AI read subsystem, so both
    see exactly the same parsing. */
-async function buildData({ diag = false } = {}) {
+/* `probeTabs` MUST be destructured here alongside `diag`. It was not, and the
+   body reached for `opts.probeTabs` against a parameter list that had no `opts`
+   in it — a ReferenceError on the very first request, which the route dutifully
+   turned into {"error":"opts is not defined"} for every caller. Nothing 500s
+   loudly on this board: the pages fall back to their embedded snapshot and keep
+   drawing, so the whole dashboard silently went stale instead. */
+async function buildData({ diag = false, probeTabs = [] } = {}) {
 
     const sheetId = process.env.SHEET_ID || DEFAULT_SHEET_ID;
     const sheets = getClient();
@@ -373,7 +379,7 @@ async function buildData({ diag = false } = {}) {
        read it for real. The workbook holds nineteen tabs — a drivers sheet, a
        full-year plan, forward months — and none of them were reachable to look
        at, only to guess about. */
-    const extraTabs = (opts.probeTabs || []).filter(Boolean);
+    const extraTabs = (probeTabs || []).filter(Boolean);
     const allTitles = (meta.data.sheets || []).map(sh => sh.properties && sh.properties.title).filter(Boolean);
     const titles = new Set(allTitles);
     const missing = monthTabs.filter(m => !titles.has(m.name)).map(m => m.name);
