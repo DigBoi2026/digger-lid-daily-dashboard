@@ -72,6 +72,19 @@ Measured: **±13% at 30 days, ±17% at 90**, over origins that had a prior year 
 Origins without one scored ±27%. October to December are unvalidated at any horizon —
 no origin in the data reaches them — so BFCM rests on a single observed November, and
 the page says so on its face.
+
+**Sale periods** are the one thing the seasonality cannot carry. EOFY and BFCM are
+month-aligned, so the month index prices them exactly and declaring them again would
+double-count. Father's Day is not: it is the first Sunday of September, its run-up sits
+in August and its payback in September, so no per-month figure can hold it.
+`salePeriodModifiers()` measures it from the book — 2026 ran +47% over fourteen days
+against its own pre-promotion August, 2025 ran none — dates it for every year, and sizes
+a future year from the most recent that registered while every past year keeps its own
+measurement. Declared modifiers are divided out of history BEFORE anything is fitted, so
+the level, the month index and the growth rate are all baseline figures. Leaving the 2026
+promotion undeclared put the level 17% high and projected the rest of the year at ×2.0–×2.3
+on last year; August measured *before* it ran ×1.69, alongside May ×1.77, June ×1.72 and
+July ×1.51.
 | `fmtRange`, `isoToNice`, `rollingAvg`, `sparkline` | Formatting + the shared canvas sparkline |
 
 Because the math lives in one file, it's unit-tested independently of the browser

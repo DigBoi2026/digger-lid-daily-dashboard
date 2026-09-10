@@ -391,7 +391,15 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .cf.none{background:rgba(255,90,82,.16);color:var(--bad)}
 
 /* -- events and modifiers -- */
-.catrow.ev .cname small{color:var(--muted);font-weight:400;font-size:1.05cqh;margin-left:.3cqw}
+/* A sale period is the only row on this list that moves a number, so it reads
+   differently from the calendar entries around it. */
+.catrow.sale{border-left:2px solid var(--dl-yellow)}
+.catrow.sale .cname small,.catrow.mod .cname small{color:var(--dl-yellow);font-weight:700;
+  font-size:.95cqh;text-transform:uppercase;letter-spacing:.1em;margin-left:.4cqw}
+.catrow.sale .cmeta{white-space:normal;line-height:1.25}
+.catrow.sale.off{border-left-color:var(--line);opacity:.55}
+.catrow.sale .cright,.catrow.mod .cright{display:flex;align-items:center;gap:.4cqw}
+.catrow.ev .cname small{color:var(--muted);font-weight:400;font-size:1cqh;margin-left:.3cqw;text-transform:none;letter-spacing:0}
 .catrow.ev .cmeta{white-space:normal;line-height:1.25}
 .catrow.ev.hit .bar,.catrow.ev.hit{border-left:2px solid var(--dl-yellow)}
 .catrow.mod{border-left:2px solid var(--good)}

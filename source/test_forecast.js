@@ -194,6 +194,171 @@ function synth(startYear, years, opts) {
        from: '2025-12-31', horizon: 30 }).drift >= 1 / (Math.pow(Math.max(g.high, 1.05), 28 / 365)) - 0.01);
 })();
 
+/* --------------------------------------------------------- sale periods */
+
+(() => {
+  ok('nthDowOfMonth finds the first Sunday of Sep 2026',
+     F.nthDowOfMonth(2026, 9, 0, 1) === '2026-09-06', F.nthDowOfMonth(2026, 9, 0, 1));
+  ok('nthDowOfMonth finds the first Sunday of Sep 2025',
+     F.nthDowOfMonth(2025, 9, 0, 1) === '2025-09-07', F.nthDowOfMonth(2025, 9, 0, 1));
+  ok('nthDowOfMonth finds the fourth Thursday of Nov 2026',
+     F.nthDowOfMonth(2026, 11, 4, 4) === '2026-11-26', F.nthDowOfMonth(2026, 11, 4, 4));
+  ok('nthDowOfMonth returns null when the nth does not exist',
+     F.nthDowOfMonth(2026, 2, 0, 5) === null, F.nthDowOfMonth(2026, 2, 0, 5));
+  ok("Father's Day is declared as a sale period, not left to the month index",
+     F.SALE_PERIODS.some(sp => sp.key === 'fathers'), F.SALE_PERIODS.map(sp => sp.key));
+  ok('EOFY and BFCM are NOT sale periods — the month index already prices them',
+     !F.SALE_PERIODS.some(sp => sp.key === 'eofy' || sp.key === 'bfcm'), F.SALE_PERIODS.map(sp => sp.key));
+  ok('the events list says which mechanism carries each event',
+     F.EVENTS.every(e => e.via === 'index' || e.via === 'sale') &&
+     F.EVENTS.find(e => e.key === 'fathers').via === 'sale' &&
+     F.EVENTS.find(e => e.key === 'eofy').via === 'index',
+     F.EVENTS.map(e => e.key + ':' + e.via));
+})();
+
+/* Plant a promotion of a KNOWN size into a flat synthetic series, then check
+   the fit recovers it — the only way to know the measurement is a measurement
+   and not a coincidence. */
+function withPromo(rows, day, runUp, lift) {
+  const start = F.addDays(day, -(runUp - 1));
+  return rows.map(r => (r.date >= start && r.date <= day)
+    ? Object.assign({}, r, { revenue: r.revenue * (1 + lift) }) : r);
+}
+(() => {
+  const flat = synth(2024, 2);
+  const day = F.nthDowOfMonth(2025, 9, 0, 1);
+  const rows = withPromo(flat, day, 14, 0.5);
+  const sp = F.SALE_PERIODS.find(s2 => s2.key === 'fathers');
+  const fits = F.fitSale(rows, sp, F.fitDow(rows), F.fitSeason(rows).yearLevel);
+  const f2025 = fits.find(f => f.year === '2025');
+  ok('fitSale recovers a planted +50% lift', f2025 && near(f2025.lift, 0.5, 0.05), f2025 && f2025.lift);
+  ok('fitSale dates the run-up from the event backwards',
+     f2025 && f2025.runStart === F.addDays(day, -13), f2025 && f2025.runStart);
+  ok('fitSale returns a per-day profile the length of the run-up',
+     f2025 && f2025.profile.length === 14, f2025 && f2025.profile.length);
+  ok('a flat planted promotion gives a flat profile',
+     f2025 && f2025.profile.every(o => near(o.lift, 0.5, 0.08)), f2025 && f2025.profile.map(o => +o.lift.toFixed(2)));
+  ok('the year with no promotion measures no lift',
+     fits.find(f => f.year === '2024') && Math.abs(fits.find(f => f.year === '2024').lift) < 0.05,
+     fits.find(f => f.year === '2024') && fits.find(f => f.year === '2024').lift);
+})();
+
+(() => {
+  const flat = synth(2024, 2);
+  const day = F.nthDowOfMonth(2025, 9, 0, 1);
+  // A promotion with no slump after it: nothing was pulled forward on net, so
+  // the payback window must not invent one.
+  const rows = withPromo(flat, day, 14, 0.5);
+  const sp = F.SALE_PERIODS.find(s2 => s2.key === 'fathers');
+  const f = F.fitSale(rows, sp, F.fitDow(rows), F.fitSeason(rows).yearLevel).find(x => x.year === '2025');
+  ok('no slump after the promotion means no payback window',
+     f && (f.payback == null || f.payback >= 0 || f.paybackDays == null), f && [f.payback, f.paybackDays]);
+})();
+
+(() => {
+  // A promotion followed by a real slump: the payback window must be long
+  // enough to repay what was pulled forward, and no longer.
+  const flat = synth(2024, 2);
+  const day = F.nthDowOfMonth(2025, 9, 0, 1);
+  let rows = withPromo(flat, day, 14, 0.4);              // pulls 5.6 day-equivalents
+  rows = rows.map(r => (r.date > day && r.date <= F.addDays(day, 28))
+    ? Object.assign({}, r, { revenue: r.revenue * 0.7 }) : r);   // -30% after
+  const sp = F.SALE_PERIODS.find(s2 => s2.key === 'fathers');
+  const f = F.fitSale(rows, sp, F.fitDow(rows), F.fitSeason(rows).yearLevel).find(x => x.year === '2025');
+  ok('payback size is measured', f && near(f.payback, -0.3, 0.06), f && f.payback);
+  ok('payback length repays what was pulled forward, near enough',
+     f && f.paybackDays >= 14 && f.paybackDays <= 24, f && [f.pulled, f.paybackDays]);
+})();
+
+(() => {
+  // A promotion is a DECISION: the most recent year that actually ran one sizes
+  // the modifier. Averaging in a year that ran none would halve it.
+  const flat = synth(2024, 3);
+  const rows = withPromo(flat, F.nthDowOfMonth(2026, 9, 0, 1), 14, 0.5);   // 2026 only
+  const mods = F.salePeriodModifiers(rows, { years: ['2026', '2027'] });
+  ok('salePeriodModifiers dates one modifier per year asked for',
+     mods.length === 2, mods.map(m => m.key));
+  ok('it is sized from the most recent year that registered',
+     mods[0].measured.from === '2026' && near(mods[0].lift, 0.5, 0.05), mods[0] && mods[0].lift);
+  ok('every year measured is reported alongside, not hidden',
+     mods[0].measured.allYears.length >= 2, mods[0].measured.allYears.map(y => y.year));
+  ok('next year gets the event on ITS date, not this one repeated',
+     mods[1].end === F.nthDowOfMonth(2027, 9, 0, 1), mods[1].end);
+  ok('the run-up profile is carried onto the modifier, dated',
+     mods[1].profile.length === 14 && mods[1].profile[13].date === mods[1].end,
+     mods[1].profile && mods[1].profile.length);
+  ok('a year with no promotion anywhere produces no modifiers',
+     F.salePeriodModifiers(synth(2024, 2), { years: ['2025'] }).length === 0);
+})();
+
+/* Each year must use its OWN measurement where it has one. Carrying the
+   reference year's lift onto a historical year that ran no promotion is a false
+   statement about the past, and it does damage in the wrong direction: it
+   deflates the prior year, inflates year-on-year growth, and pushes the whole
+   forecast UP by roughly a quarter. */
+(() => {
+  const flat = synth(2024, 3);
+  const rows = withPromo(flat, F.nthDowOfMonth(2026, 9, 0, 1), 14, 0.5);   // 2026 only
+  const mods = F.salePeriodModifiers(rows, { years: ['2024', '2025', '2026', '2027'] });
+  const keys = mods.map(m => m.key);
+  ok('a measured year with no promotion gets no modifier',
+     keys.indexOf('fathers:2024') === -1 && keys.indexOf('fathers:2025') === -1, keys);
+  ok('the year that did promote gets its own measurement',
+     mods.find(m => m.key === 'fathers:2026').measured.own === true);
+  ok('a future year is sized from the most recent that registered',
+     mods.find(m => m.key === 'fathers:2027').measured.own === false &&
+     mods.find(m => m.key === 'fathers:2027').measured.from === '2026');
+  /* And the consequence, stated as a test: mis-dating it upward is worse than
+     not declaring it at all. */
+  const bad = mods.concat([Object.assign({}, mods[0], {
+    key: 'bad:2025', start: '2025-08-25', end: '2025-09-07',
+    profile: null, lift: 0.5, payback: 0, paybackEnd: null })]);
+  const good = F.project({ rows, from: '2026-09-06', horizon: 90, modifiers: mods });
+  const wrong = F.project({ rows, from: '2026-09-06', horizon: 90, modifiers: bad });
+  ok('declaring a promotion in a year that had none inflates the forecast',
+     wrong.total > good.total * 1.05, [good.total, wrong.total]);
+})();
+
+/* THE level regression. A sale period must be divided back OUT of the level, or
+   the forecast reads a fortnight of discounting as the new run rate. */
+(() => {
+  const flat = synth(2024, 2);
+  const day = F.nthDowOfMonth(2025, 9, 0, 1);
+  const rows = withPromo(flat, day, 14, 0.5);
+  const clean = F.project({ rows: flat, from: day, horizon: 30 });
+  const dirty = F.project({ rows, from: day, horizon: 30 });
+  const mods = F.salePeriodModifiers(rows, { years: ['2025'] });
+  const fixed = F.project({ rows, from: day, horizon: 30, modifiers: mods });
+  ok('an undeclared promotion inflates the level', dirty.level > clean.level * 1.15,
+     [clean.level, dirty.level]);
+  ok('declaring it brings the level back to the un-promoted one',
+     near(fixed.level / clean.level, 1, 0.08), fixed.level / clean.level);
+  ok('and brings the forward forecast back with it',
+     near(fixed.total / clean.total, 1, 0.1), fixed.total / clean.total);
+})();
+
+(() => {
+  // Forward: a sale period in the horizon must lift its own days and cut the
+  // ones after, on the measured profile rather than a flat block.
+  const flat = synth(2024, 3);
+  const rows = withPromo(flat, F.nthDowOfMonth(2026, 9, 0, 1), 14, 0.5);
+  const mods = F.salePeriodModifiers(rows, { years: ['2027'] });
+  const from = '2027-08-01';
+  const base = F.project({ rows, from, horizon: 90 });
+  const lift = F.project({ rows, from, horizon: 90, modifiers: mods });
+  const m = mods[0];
+  const inWin = d => d.date >= m.start && d.date <= m.end;
+  const sIn = p => p.days.filter(inWin).reduce((a, d) => a + d.revenue, 0);
+  ok('next September lifts inside the run-up window',
+     sIn(lift) > sIn(base) * 1.35, sIn(lift) / sIn(base));
+  ok('run-up days are flagged as modified',
+     lift.days.filter(d => inWin(d) && d.modified).length === 14,
+     lift.days.filter(d => inWin(d) && d.modified).length);
+  ok('days outside the sale period and its payback are untouched',
+     near(lift.days.filter(d => d.date > m.paybackEnd).reduce((a, d) => a + d.revenue, 0),
+          base.days.filter(d => d.date > m.paybackEnd).reduce((a, d) => a + d.revenue, 0), 1));
+})();
+
 /* --------------------------------------------------------------- fitPnl */
 (() => {
   const rows = synth(2024, 2).map(r => Object.assign({}, r, {
@@ -331,6 +496,47 @@ if (!REAL || REAL.length < 400) {
   ok('real: the big months are the efficient ones on ad spend',
      pnl.adRateIndex[6] < 1 && pnl.adRateIndex[11] < 1 && pnl.adRateIndex[7] > 1,
      [pnl.adRateIndex[6], pnl.adRateIndex[11], pnl.adRateIndex[7]]);
+
+  /* The real Father's Day. 2026 ran a large promotion; 2025 ran none worth the
+     name, so the September index cannot possibly carry it — which is the whole
+     argument for it being a sale period. */
+  const fdFits = F.fitSale(REAL, F.SALE_PERIODS.find(sp => sp.key === 'fathers'),
+                           F.fitDow(REAL), season.yearLevel);
+  const fd26 = fdFits.find(f => f.year === '2026'), fd25 = fdFits.find(f => f.year === '2025');
+  ok('real: 2026 Father\'s Day measures a large lift', fd26 && fd26.lift > 0.3, fd26 && fd26.lift);
+  ok('real: 2025 Father\'s Day measures no promotion', fd25 && fd25.lift < 0.1, fd25 && fd25.lift);
+  ok('real: the 2026 run-up is a ramp, not a flat block',
+     fd26 && (Math.max(...fd26.profile.map(o => o.lift)) - Math.min(...fd26.profile.map(o => o.lift))) > 0.3,
+     fd26 && fd26.profile.map(o => +o.lift.toFixed(2)));
+  ok('real: the payback window is derived from what was pulled forward',
+     fd26 && fd26.paybackDays > 10 && fd26.paybackDays < 30, fd26 && [fd26.pulled, fd26.paybackDays]);
+
+  const realMods = F.salePeriodModifiers(REAL, { years: ['2026', '2027'] });
+  const bare = F.projectPnl({ rows: REAL, from: '2026-09-08', horizon: 114 });
+  const corr = F.projectPnl({ rows: REAL, from: '2026-09-08', horizon: 114, modifiers: realMods });
+  ok('real: the promotion inflates the level by ~17% if left in',
+     bare.level > corr.level * 1.15, [bare.level, corr.level, bare.level / corr.level]);
+  /* Declaring it does not merely tell a better story — it scores better. Small,
+     because only the newest origins have a promotion inside their level window
+     at all, but it moves the right way at every horizon. */
+  const btPlain = F.backtest(REAL, { model: { scenario: 'realistic' } });
+  const btSale  = F.backtest(REAL, { model: { scenario: 'realistic', modifiers: realMods } });
+  ok('real: declaring the sale period does not make the backtest worse',
+     [30, 60, 90].every(h => btSale[h].mape <= btPlain[h].mape + 0.005),
+     [30, 60, 90].map(h => [btPlain[h].mape.toFixed(3), btSale[h].mape.toFixed(3)]));
+  ok('real: and it reduces the 30-day error',
+     btSale[30].mape < btPlain[30].mape, [btPlain[30].mape, btSale[30].mape]);
+  /* The independent check that settles which of the two is right: August
+     measured BEFORE the promotion ran x1.69 on last year, alongside May x1.77,
+     June x1.72 and July x1.51. A forecast projecting the rest of the year at
+     x2.0+ is reading a fortnight of discounting as trend. */
+  const ly2 = { '2026-10': 356456, '2026-11': 710170, '2026-12': 283078 };
+  const ratios = corr.months.filter(m => ly2[m.month]).map(m => m.revenue / ly2[m.month]);
+  ok('real: corrected, the rest of the year lands on the underlying trend (x1.5-x1.9)',
+     ratios.every(r => r > 1.5 && r < 1.9), ratios.map(r => +r.toFixed(2)));
+  const bareRatios = bare.months.filter(m => ly2[m.month]).map(m => m.revenue / ly2[m.month]);
+  ok('real: uncorrected, it runs above every year-on-year month ever recorded',
+     bareRatios.some(r => r > growth.high), bareRatios.map(r => +r.toFixed(2)));
 
   const bt = F.backtest(REAL, { model: { scenario: 'realistic' } });
   ok('real: 30-day error with a prior year stays under 20%', bt[30].mape < 0.2, bt[30].mape);

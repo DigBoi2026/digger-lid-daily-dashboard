@@ -166,13 +166,196 @@ var DLforecast = (function () {
      numbers, because only they are genuinely new information the history has
      not already priced in. */
   const EVENTS = [
-    { key: 'eofy',    name: 'EOFY',           month: 6,  note: 'x2.0 on May, two years running. Tax-deductible asset purchases before 30 June.' },
-    { key: 'eofy_pb', name: 'EOFY payback',   month: 7,  note: 'Demand pulled forward. -46% (2025), -52% (2026).' },
-    { key: 'fathers', name: "Father's Day",   month: 9,  note: 'First Sunday. Lifts the fortnight before, then a slump of about -55%.' },
-    { key: 'bfcm',    name: 'BFCM',           month: 11, note: 'x1.99 on October (2025). The single most profitable month of the year.' },
-    { key: 'bfcm_pb', name: 'BFCM payback',   month: 12, note: '-60% (2025), plus the construction shutdown from mid-December.' },
-    { key: 'shutdown',name: 'Trade shutdown', month: 1,  note: 'Sites closed to late January. Weakest index of the year at 0.62.' },
+    { key: 'eofy',    name: 'EOFY',           month: 6,  via: 'index',
+      note: 'x2.0 on May, two years running. Tax-deductible asset purchases before 30 June.' },
+    { key: 'eofy_pb', name: 'EOFY payback',   month: 7,  via: 'index',
+      note: 'Demand pulled forward. -46% (2025), -52% (2026).' },
+    { key: 'fathers', name: "Father's Day",   month: 9,  via: 'sale',
+      note: 'First Sunday. The run-up straddles Aug/Sep, so it is carried as a sale period, not by the month index.' },
+    { key: 'bfcm',    name: 'BFCM',           month: 11, via: 'index',
+      note: 'x1.99 on October (2025). The single most profitable month of the year.' },
+    { key: 'bfcm_pb', name: 'BFCM payback',   month: 12, via: 'index',
+      note: '-60% (2025), plus the construction shutdown from mid-December.' },
+    { key: 'shutdown',name: 'Trade shutdown', month: 1,  via: 'index',
+      note: 'Sites closed to late January. Weakest index of the year at 0.66.' },
   ];
+
+  /* ------------------------------------------------------- sale periods */
+
+  /* WHY FATHER'S DAY IS A SALE PERIOD AND EOFY IS NOT.
+
+     EOFY and BFCM are already inside the month index — June reads 1.86 and
+     November 2.50 precisely because they happen in them — so declaring those
+     as sale periods on top would count them twice. What makes them
+     representable is that they are month-ALIGNED: EOFY is June, its payback is
+     July, and a per-month figure can say both.
+
+     Father's Day cannot be represented that way at all. It is the first Sunday
+     of September, its run-up sits almost entirely in AUGUST and its payback in
+     September, so it straddles the boundary and no month index — however well
+     fitted — can hold it. That is not a gap in the seasonality; it is a shape
+     the seasonality is the wrong instrument for. Hence a sale period.
+
+     And it earns the treatment. Measured against the three pre-promotion weeks
+     of its own August, deseasonalised:
+
+         2026   run-up 24 Aug - 6 Sep   +47%      payback  -34%
+         2025   same window             -10%      payback  -22%
+
+     2025 had no Father's Day promotion worth the name. 2026 did, and it was
+     large. So this is new information the history genuinely does not carry —
+     exactly what a modifier is for — and it is measured from the book rather
+     than asserted. */
+  function nthDowOfMonth(year, month, wantDow, n) {
+    let seen = 0;
+    const dim = daysInMonth(year, month);
+    for (let d = 1; d <= dim; d++) {
+      const iso2 = year + '-' + String(month).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+      if (dow(iso2) === wantDow && ++seen === n) return iso2;
+    }
+    return null;
+  }
+
+  const SALE_PERIODS = [
+    {
+      key: 'fathers', name: "Father's Day",
+      when: y => nthDowOfMonth(y, 9, 0, 1),        // first Sunday of September (AU)
+      runUp: 14,                                    // days of run-up, ending on the day itself
+      /* The payback length is not guessed. A 14-day window at +47% pulls about
+         6.6 days of trade forward, and giving 6.6 days back at -34% a day takes
+         twenty. So the window is derived from the lift it has to repay, and
+         shortens on its own if a future year promotes less hard. */
+      note: 'Run-up straddles the Aug/Sep boundary, so no month index can hold it.',
+    },
+  ];
+
+  /* Measure one sale period, per year, against the three weeks of its own month
+     that precede it. Deseasonalised by day-of-week and by the year's own level,
+     so a year twice the size of another is still comparable.
+
+     The baseline deliberately stops two days short of the run-up: a promotion
+     leaks backwards a little (teasers, early access) and including those days
+     in the baseline would flatter the lift. */
+  function fitSale(rows, sp, dowIdx, yearLevel) {
+    const by = {}; rows.forEach(r => { if (r.revenue > 0) by[r.date] = r.revenue; });
+    const shapeAt = d => {
+      const y = d.slice(0, 4);
+      if (by[d] == null || !yearLevel[y]) return null;
+      return by[d] / dowIdx[dow(d)] / yearLevel[y];
+    };
+    const winMean = (a, b) => {
+      const v = [];
+      for (let d = a; d <= b; d = addDays(d, 1)) { const s = shapeAt(d); if (s != null) v.push(s); }
+      return v.length ? { mean: mean(v), n: v.length } : null;
+    };
+    const out = [];
+    Object.keys(yearLevel).sort().forEach(y => {
+      const day = sp.when(+y);
+      if (!day) return;
+      const runStart = addDays(day, -(sp.runUp - 1));
+      const base = winMean(addDays(runStart, -22), addDays(runStart, -2));   // 21 days
+      const run  = winMean(runStart, day);
+      if (!base || !run || base.n < 14 || run.n < sp.runUp) return;
+      const lift = run.mean / base.mean - 1;
+
+      /* A PROFILE, not a flat block. The first cut applied one average lift
+         across all fourteen days, and that reads the promotion badly at both
+         ends: 2026 ramped from +4% on the opening day to +84% at its peak four
+         days later, then eased back to +25% by the day itself. Dividing the
+         quiet tail days by the fourteen-day average over-corrected them, and
+         the baseline it recovered came out 10% BELOW an independent
+         pre-promotion estimate having started 11% above it — the same error,
+         mirrored. Smoothed over three days so one odd Saturday cannot invent a
+         spike. */
+      const profile = [];
+      const lo = -(sp.runUp - 1);
+      for (let k = lo; k <= 0; k++) {
+        const v = [];
+        for (let j = -1; j <= 1; j++) {
+          const o = k + j;
+          if (o < lo || o > 0) continue;                 // never reach outside the window
+          const sh = shapeAt(addDays(day, o));
+          if (sh != null) v.push(sh);
+        }
+        profile.push({ offset: k, lift: v.length ? mean(v) / base.mean - 1 : lift });
+      }
+
+      /* Repay the pulled-forward volume: the profile's total lift in
+         day-equivalents, given back at whatever the days after the event
+         actually run at. The window is derived from the debt, so a year that
+         promotes less hard pays it back faster on its own. */
+      const pbProbe = winMean(addDays(day, 1), addDays(day, 30));
+      const payback = pbProbe ? pbProbe.mean / base.mean - 1 : null;
+      const pulled = sum(profile.map(o => Math.max(0, o.lift)));
+      const paybackDays = (payback != null && payback < 0)
+        ? Math.max(1, Math.round(pulled / -payback)) : null;
+      out.push({ year: y, day, runStart, lift, profile, payback, paybackDays, pulled,
+                 baseline: base.mean, baselineDays: base.n, paybackObserved: pbProbe ? pbProbe.n : 0 });
+    });
+    return out;
+  }
+
+  /* Concrete, dated modifiers for a sale period, ready to hand to project().
+
+     Sized from the MOST RECENT year in which the promotion actually registered,
+     not an average across years. A promotion is a decision, not a season: 2025
+     chose not to run one and averaging that in would halve a lift the business
+     has since shown it can produce. Every year measured is returned alongside,
+     so the choice is visible rather than buried. */
+  function salePeriodModifiers(rows, opts) {
+    opts = opts || {};
+    const src = (rows || []).filter(r => r.revenue > 0).sort((a, b) => a.date < b.date ? -1 : 1);
+    if (!src.length) return [];
+    const dowIdx = opts.dowIdx || fitDow(src);
+    const season = opts.season || fitSeason(src);
+    const years = opts.years || [];
+    const out = [];
+    (opts.periods || SALE_PERIODS).forEach(sp => {
+      const fits = fitSale(src, sp, dowIdx, season.yearLevel);
+      const byYear = {}; fits.forEach(f => byYear[f.year] = f);
+      /* A lift is enough to declare a sale period. Requiring a payback window
+         too was wrong: a promotion that pulled nothing forward still has to be
+         divided out of the level, and gating on the slump meant the whole
+         modifier was silently dropped — lift and all — whenever the days after
+         the event happened to hold up. */
+      const useful = fits.filter(f => f.lift > 0.05);
+      if (!useful.length) return;
+      const ref = useful[useful.length - 1];                 // most recent that registered
+
+      years.forEach(y => {
+        const day = sp.when(+y);
+        if (!day) return;
+        /* EACH YEAR USES ITS OWN MEASUREMENT WHERE IT HAS ONE.
+
+           Only a year with no measurement — a year still ahead — is sized from
+           the most recent one that registered. Applying the reference year's
+           lift to a HISTORICAL year is not a forecast, it is a false statement
+           about the past, and it does real damage: 2025 ran no Father's Day
+           promotion, so dividing 2025's ordinary late-August trade by 2026's
+           +47% deflated the prior year, inflated year-on-year growth, and
+           pushed the forecast UP by 24% — the exact opposite of what declaring
+           the promotion is meant to do. */
+        const own = byYear[y];
+        const src2 = (own && own.lift > 0.05) ? own : (own ? null : ref);
+        if (!src2) return;                                   // measured, and it was no promotion
+        out.push({
+          key: sp.key + ':' + y, name: sp.name + ' ' + y, periodKey: sp.key,
+          start: addDays(day, -(sp.runUp - 1)), end: day,
+          lift: src2.lift,
+          /* Day-by-day, anchored on the event itself, so the ramp lands on the
+             same offsets whichever year it is applied to. */
+          profile: src2.profile.map(o => ({ date: addDays(day, o.offset), lift: o.lift })),
+          payback: src2.paybackDays ? src2.payback : 0,
+          paybackEnd: src2.paybackDays ? addDays(day, src2.paybackDays) : null,
+          measured: { from: src2.year, own: !!(own && own.lift > 0.05),
+                      lift: src2.lift, payback: src2.payback,
+                      paybackDays: src2.paybackDays, pulled: src2.pulled, allYears: fits },
+          note: sp.note,
+        });
+      });
+    });
+    return out;
+  }
 
   /* ----------------------------------------------------------- projection */
 
@@ -280,19 +463,53 @@ var DLforecast = (function () {
   }
 
   function project(opts) {
-    const rows = (opts.rows || []).filter(r => r.revenue > 0).sort((a, b) => a.date < b.date ? -1 : 1);
-    if (!rows.length) return null;
+    const raw = (opts.rows || []).filter(r => r.revenue > 0).sort((a, b) => a.date < b.date ? -1 : 1);
+    if (!raw.length) return null;
     const horizon = opts.horizon || 90;
     const scenario = SCENARIOS[opts.scenario] || SCENARIOS.realistic;
+    const from = opts.from || raw[raw.length - 1].date;
+
+    /* Modifiers describe the PAST as well as the future, and they are applied to
+       the past first.
+
+       A modifier says "this much of this day is explained by something the model
+       does not otherwise know about". So the honest order of operations is:
+       divide that explanation out of history, fit everything on what is left,
+       then multiply it back onto the days ahead where it applies. Fitting on raw
+       revenue and patching afterwards does not work, and the reason is worth
+       stating: an undeclared promotion contaminates the month index and the
+       year-on-year growth rate too, not just the level, and no amount of
+       correction downstream can reach a season index that has already absorbed
+       it. Corrected here once, every fit below is a baseline fit. */
+    const mods = opts.modifiers || [];
+    const profileAt = {};
+    mods.forEach(m => (m.profile || []).forEach(o => {
+      profileAt[m.key + '|' + o.date] = o.lift;
+    }));
+    const modAt = date => {
+      let f = 1;
+      mods.forEach(m => {
+        if (date >= m.start && date <= m.end) {
+          const p = profileAt[m.key + '|' + date];
+          f *= (1 + (p != null ? p : (m.lift || 0)));
+        } else if (m.payback && m.paybackEnd && date > m.end && date <= m.paybackEnd) {
+          f *= (1 + (m.payback || 0));
+        }
+      });
+      return f;
+    };
+    const rows = mods.length
+      ? raw.map(r => { const f = modAt(r.date); return f === 1 ? r : Object.assign({}, r, { revenue: r.revenue / f }); })
+      : raw;
+
     const dowIdx = opts.dowIdx || fitDow(rows);
     const season = opts.season || fitSeason(rows);
     const growth = opts.growth || fitGrowth(rows);
-    const from = opts.from || rows[rows.length - 1].date;
 
     const LW = opts.levelWindow || 28;
     const LM = opts.levelMode || 'shape';
     const shaper = priorShaper(rows);
-    const lvl = levelOf(rows, dowIdx, season.index, LW, LM, from, shaper);
+    const lvl = levelOf(rows.filter(r => r.date <= from), dowIdx, season.index, LW, LM, from, shaper);
     const prev = levelOf(rows.filter(r => r.date <= addDays(from, -LW)), dowIdx, season.index, LW, LM, addDays(from, -LW), shaper);
 
     /* Drift is a growth RATE, so bound it by the growth this business has
@@ -314,16 +531,6 @@ var DLforecast = (function () {
     const drift = scenario.driftFrom === 'flat' ? 1
                 : scenario.driftFrom === 'yoy'  ? Math.max(recentDrift, yoyDrift)
                 : recentDrift;
-
-    const mods = opts.modifiers || [];
-    const modAt = date => {
-      let f = 1;
-      mods.forEach(m => {
-        if (date >= m.start && date <= m.end) f *= (1 + (m.lift || 0));
-        else if (m.payback && m.paybackEnd && date > m.end && date <= m.paybackEnd) f *= (1 + (m.payback || 0));
-      });
-      return f;
-    };
 
     /* Two independent predictors, blended.
 
@@ -363,6 +570,9 @@ var DLforecast = (function () {
       // "events land smaller/larger" only touches months that ARE events
       if (si > 1.2) si = 1 + (si - 1) * scenario.eventScale;
       const a = lvl * Math.pow(drift, k / LW) * dowIdx[dow(date)] * si;
+      /* Last year's same days are already baseline — the whole series was
+         corrected above — so a promotion that ran then is not carried into this
+         year's ordinary weeks, and this year's is not multiplied on top of it. */
       const lyRaw = priorAt(date);
       const b = lyRaw != null ? lyRaw * gYoY * scenario.eventScale : null;
       const w = b != null ? priorWeight : 0;
@@ -545,7 +755,8 @@ var DLforecast = (function () {
     return summary;
   }
 
-  return { addDays, dow, monthOf, daysInMonth, fitDow, fitSeason, fitGrowth, priorShaper, fitPnl, projectPnl, backtest,
+  return { addDays, dow, monthOf, daysInMonth, nthDowOfMonth, fitDow, fitSeason, fitGrowth,
+           priorShaper, fitSale, salePeriodModifiers, SALE_PERIODS, fitPnl, projectPnl, backtest,
            levelOf, project, EVENTS, SCENARIOS, _mean: mean, _sum: sum };
 })();
 

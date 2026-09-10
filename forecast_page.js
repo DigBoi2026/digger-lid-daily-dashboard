@@ -18,8 +18,9 @@ const F = window.DLforecast;
 const API_URL = '/api/data';
 const REFRESH_MINUTES = 30;
 const MOD_KEY = 'dl_forecast_modifiers';
+const OFF_KEY = 'dl_forecast_sale_off';       // sale periods the user has switched off
 
-const S = { scen: 'realistic', hor: 90, live: 'snap', mods: [] };
+const S = { scen: 'realistic', hor: 90, live: 'snap', mods: [], saleOff: [], sale: [] };
 let DATA = window.DL_DATA || null;
 const PRIOR = window.DL_PRIOR || null;
 let CHART = null;
@@ -88,9 +89,41 @@ function priorSameDates(list, from, to) {
   return { sum: n ? s : null, days: n, missing: miss };
 }
 
-function userMods() {
-  return S.mods.map(m => ({ start: m.start, end: m.end, lift: m.lift / 100,
-    payback: m.payback ? m.payback / 100 : 0, paybackEnd: m.payback ? F.addDays(m.end, 14) : null }));
+/* Recurring sale periods, measured from the book and dated for every year the
+   data touches plus the two ahead, so a horizon that crosses into next
+   September still knows what happens there.
+
+   These are ON by default, and that is a deliberate choice rather than a
+   convenience. Leaving a promotion the business demonstrably ran out of the
+   model is not neutral — it silently treats a fortnight of discounting as the
+   new run rate. On 2026-09-08 that put the level 33% above the pre-promotion
+   trade and projected October to December at x2.0-x2.3 on last year, when
+   August measured BEFORE the promotion ran x1.69, in line with May's x1.77,
+   June's x1.72 and July's x1.51. Switching one off is one click, and the choice
+   is remembered. */
+function refreshSalePeriods() {
+  const list = rows();
+  if (!list.length) { S.sale = []; return; }
+  const years = new Set(list.map(r => r.date.slice(0, 4)));
+  const thisYear = +list[list.length - 1].date.slice(0, 4);
+  years.add(String(thisYear + 1));
+  try {
+    S.sale = F.salePeriodModifiers(list, { years: [...years].sort() });
+  } catch (e) { S.sale = []; }
+}
+
+function activeSale() {
+  return S.sale.filter(m => S.saleOff.indexOf(m.key) === -1);
+}
+
+/* Everything project() should apply, seeded and typed together. Typed lifts
+   arrive as percentages from the form; seeded ones are already fractions. */
+function allMods() {
+  return activeSale().concat(S.mods.map((m, i) => ({
+    key: 'user:' + i, start: m.start, end: m.end, lift: m.lift / 100,
+    payback: m.payback ? m.payback / 100 : 0,
+    paybackEnd: m.payback ? F.addDays(m.end, 14) : null,
+  })));
 }
 
 function run(scen, hor) {
@@ -98,7 +131,7 @@ function run(scen, hor) {
   const from = anchorOf(list);
   if (!from) return null;
   return F.projectPnl({ rows: list, from, horizon: hor || horizonDays(from),
-                        scenario: scen || S.scen, modifiers: userMods() });
+                        scenario: scen || S.scen, modifiers: allMods() });
 }
 
 /* ------------------------------------------------------------------- KPIs */
@@ -298,34 +331,76 @@ function renderMonths(p, ctx) {
 function renderEvents(p) {
   const el = document.getElementById('eventList');
   const inHorizon = new Set(p.months.map(m => +m.month.slice(5, 7)));
+  const horFrom = F.addDays(p.from, 1), horTo = F.addDays(p.from, p.horizon);
+
+  /* Sale periods first: they are the only entries on this list that move a
+     number, so they lead it and say so. */
+  const sale = S.sale.filter(m => m.paybackEnd >= horFrom && m.start <= horTo)
+    .concat(S.sale.filter(m => !(m.paybackEnd >= horFrom && m.start <= horTo)).slice(0, 1))
+    .map(m => {
+      const off = S.saleOff.indexOf(m.key) !== -1;
+      const live = m.paybackEnd >= horFrom && m.start <= horTo;
+      const other = (m.measured.allYears || []).filter(y => y.year !== m.measured.from);
+      return `<div class="catrow sale${off ? ' off' : ''}">
+        <div class="cinfo">
+          <div class="cname">${esc(m.name)} <small>sale period</small></div>
+          <div class="cmeta">${isoToNice(m.start)} → ${isoToNice(m.end)} at
+            ${pct(m.lift * 100, 0)}, then ${pct(m.payback * 100, 0)} to ${isoToNice(m.paybackEnd)}
+            · ${m.measured.own ? 'measured in ' + m.measured.from : 'sized from ' + m.measured.from}${other.length
+              ? ' (' + other.map(y => y.year + ' ' + pct(y.lift * 100, 0)).join(', ') + ')' : ''}</div>
+        </div>
+        <div class="cright">
+          ${live && !off ? '<span class="cf ok">applied</span>' : off ? '<span class="cf none">off</span>' : '<span class="cf thin">outside</span>'}
+          <button class="modx" data-sale="${esc(m.key)}" aria-label="${off ? 'Switch on' : 'Switch off'} ${esc(m.name)}">${off ? '+' : '×'}</button>
+        </div>
+      </div>`;
+    }).join('');
+
+  /* Then the recurring calendar, each entry saying which mechanism carries it —
+     the month index already prices EOFY and BFCM in, so declaring them here as
+     well would count them twice. */
   const ev = F.EVENTS.map(e => {
     const on = inHorizon.has(e.month);
     return `<div class="catrow ev${on ? ' hit' : ''}">
-      <div class="cinfo"><div class="cname">${esc(e.name)} <small>${MONTH_ABBR[e.month - 1]}</small></div>
+      <div class="cinfo"><div class="cname">${esc(e.name)} <small>${MONTH_ABBR[e.month - 1]} · ${e.via === 'sale' ? 'sale period' : 'in the month index'}</small></div>
         <div class="cmeta">${esc(e.note)}</div></div>
       <div class="cright">${on ? '<span class="cf ok">in horizon</span>' : ''}</div>
     </div>`;
   }).join('');
-  const mods = S.mods.length ? S.mods.map((m, i) => `<div class="catrow mod">
-      <div class="cinfo"><div class="cname">${esc(m.name)}</div>
+
+  const mods = S.mods.map((m, i) => `<div class="catrow mod">
+      <div class="cinfo"><div class="cname">${esc(m.name)} <small>yours</small></div>
         <div class="cmeta">${isoToNice(m.start)} → ${isoToNice(m.end)} · ${pct(m.lift, 0)}${m.payback ? ' then ' + pct(m.payback, 0) + ' for 14d' : ''}</div></div>
       <div class="cright"><button class="modx" data-i="${i}" aria-label="Remove ${esc(m.name)}">×</button></div>
-    </div>`).join('') : '';
-  el.innerHTML = ev + mods;
-  el.querySelectorAll('.modx').forEach(b => b.onclick = () => {
+    </div>`).join('');
+
+  el.innerHTML = sale + mods + ev;
+  el.querySelectorAll('.modx[data-i]').forEach(b => b.onclick = () => {
     S.mods.splice(+b.dataset.i, 1); saveMods(); render();
   });
-  document.getElementById('modNote').textContent = S.mods.length
-    ? S.mods.length + ' modifier' + (S.mods.length > 1 ? 's' : '') + ' applied'
-    : 'events are already in the model · modifiers are not';
+  el.querySelectorAll('.modx[data-sale]').forEach(b => b.onclick = () => {
+    const k = b.dataset.sale, at = S.saleOff.indexOf(k);
+    if (at === -1) S.saleOff.push(k); else S.saleOff.splice(at, 1);
+    saveMods(); render();
+  });
+
+  const nLive = activeSale().filter(m => m.paybackEnd >= horFrom && m.start <= horTo).length;
+  document.getElementById('modNote').textContent =
+    (nLive ? nLive + ' sale period' + (nLive > 1 ? 's' : '') + ' applied' : 'no sale period in this horizon') +
+    (S.mods.length ? ' · ' + S.mods.length + ' of yours' : '');
 }
 
 function saveMods() {
-  try { localStorage.setItem(MOD_KEY, JSON.stringify(S.mods)); } catch (e) { /* private mode */ }
+  try {
+    localStorage.setItem(MOD_KEY, JSON.stringify(S.mods));
+    localStorage.setItem(OFF_KEY, JSON.stringify(S.saleOff));
+  } catch (e) { /* private mode, or site data blocked — the page still works */ }
 }
 function loadMods() {
   try { const v = JSON.parse(localStorage.getItem(MOD_KEY) || '[]'); if (Array.isArray(v)) S.mods = v; }
   catch (e) { S.mods = []; }
+  try { const v = JSON.parse(localStorage.getItem(OFF_KEY) || '[]'); if (Array.isArray(v)) S.saleOff = v; }
+  catch (e) { S.saleOff = []; }
 }
 
 /* ------------------------------------------------------------ what it rests on */
@@ -355,25 +430,57 @@ function renderBasis(p) {
         'what 2025 origins scored, with no BFCM anywhere in their history') : '') +
     line('Year on year', mult(g.yoy), g.n + ' whole months, ' + mult(g.low) + '–' + mult(g.high) + ' · last year carries ' + (p.priorWeight * 100).toFixed(0) + '% of the weight') +
     line('Drift', mult(p.drift) + ' / 28d', 'implies ' + mult(Math.pow(p.drift, 365 / 28)) + ' a year, bounded by the best year-on-year month recorded') +
-    line('Level now', money(p.level, true) + '/day', 'deseasonalised over the last 28 complete days') +
+    line('Level now', money(p.level, true) + '/day',
+        'deseasonalised over the last 28 complete days' +
+        (levelCorrected(p) ? ', with ' + levelCorrected(p).name + ' divided back out' : '')) +
     line('Fixed cost', money(pnl && pnl.fcPerDay, true) + '/day', 'the latest step, not an average — it has only ever gone up');
 
   document.getElementById('basisWarn').innerHTML =
+    (levelCorrected(p) ? (() => {
+        const m = levelCorrected(p), bare = uncorrectedLevel(p);
+        return `<div class="bwarn"><b>Promotion-corrected:</b> ${esc(m.name)} is divided out
+          of the level, taking it from ${money(bare)} to ${money(p.level)} a day
+          (${pct((p.level / bare - 1) * 100, 0)}). The direction is certain — the three weeks
+          of August before that promotion ran x1.69 on last year, in line with May's x1.77 and
+          June's x1.72, while the promotion fortnight ran x2.93. The size is less so: an
+          independent pre-promotion estimate lands about 9% above this. Switch it off on the
+          calendar to see the forecast without it.</div>`;
+      })() : '') +
+    /* Two caveats, one box. Three separate warnings crowded the panel until the
+       accuracy rows behind them had nowhere to sit, and a caveat that pushes the
+       evidence off the screen is self-defeating. */
     `<div class="bwarn"><b>Not validated:</b> no origin in the data has a horizon
        reaching October to December, so BFCM — the largest single claim here — is
-       untested by backtest and rests on ${s.observations[11] || 0} observed November${(s.observations[11] || 0) === 1 ? '' : 's'}.</div>` +
-    ((s.observations[2] === 1 || s.observations[3] === 1) ?
-      `<div class="bwarn">February to April 2025 were never filled into the workbook, so
-       those months are fitted on 2026 alone.</div>` : '');
+       untested by backtest and rests on ${s.observations[11] || 0} observed November${(s.observations[11] || 0) === 1 ? '' : 's'}.${
+       (s.observations[2] === 1 || s.observations[3] === 1)
+         ? ' February to April 2025 were never filled into the workbook either, so those months are fitted on 2026 alone.' : ''}</div>`;
 
   document.getElementById('basisNote').textContent =
     'from ' + niceFull(p.from) + ' · ' + p.horizon + ' days';
+}
+
+/* Whether a declared sale period actually overlaps the window the level is
+   measured over — which is the only case where the correction changes anything,
+   and so the only case worth telling the reader about. */
+function levelCorrected(p) {
+  const winStart = F.addDays(p.from, -27);
+  return activeSale().find(m => (m.paybackEnd || m.end) >= winStart && m.start <= p.from) || null;
+}
+let _bareLevel = null;
+function uncorrectedLevel(p) {
+  if (_bareLevel && _bareLevel.from === p.from) return _bareLevel.level;
+  let v = p.level;
+  try { const q = F.project({ rows: rows(), from: p.from, horizon: 1, scenario: p.scenario }); if (q) v = q.level; }
+  catch (e) { /* fall back to showing the corrected one */ }
+  _bareLevel = { from: p.from, level: v };
+  return v;
 }
 
 /* ------------------------------------------------------------------ render */
 
 function render() {
   if (!DATA) return;
+  refreshSalePeriods();
   const list = rows();
   const from = anchorOf(list);
   if (!from) return;
@@ -444,7 +551,7 @@ async function tryLiveRefresh() {
     (j.daily || []).forEach(d => map.set(d.date, d));
     DATA.daily = [...map.values()].sort((a, b) => a.date < b.date ? -1 : 1);
     if (j.meta && j.meta.latestDataDate) DATA.meta.latestDataDate = j.meta.latestDataDate;
-    setLive('live'); render(); measure();
+    _bareLevel = null; setLive('live'); render(); measure();
   } catch (e) { setLive('snap'); }
 }
 
