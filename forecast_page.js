@@ -364,6 +364,150 @@ function renderChart(p, ctx) {
      ${bands.length ? '<span class="k sale">Sale period</span>' : ''}`;
 }
 
+/* ------------------------------------------------------- the timeline strip */
+
+/* What is happening, under the days it happens on.
+
+   This replaced a row of four panels below the chart. The numbers were all
+   correct there and all in the wrong place: a table of months cannot tell you
+   that the September dip IS the Father's Day payback, because the two facts sat
+   two feet apart with no line drawn between them. Here a month, the event that
+   explains it and the multiple applied to it occupy the same column of pixels.
+
+   Aligned to the chart's OWN plot area rather than to the panel — read from
+   CHART.chartArea after it renders, because the y-axis labels take a variable
+   amount of the left edge and a strip laid out on the panel's width is wrong by
+   however wide "$70K" happens to be. */
+function renderTimeline(p, ctx) {
+  const el = document.getElementById('tline');
+  if (!el) return;
+  if (typeof Chart === 'undefined' || !CHART || !CHART.scales || !CHART.scales.x) {
+    el.innerHTML = ''; return;
+  }
+  const labels = CHART.data.labels;
+  const first = labels[0], last = labels[labels.length - 1];
+  const span = Math.max(1, dayDiff(first, last));
+  const pos = d => Math.max(0, Math.min(100, dayDiff(first, d) / span * 100));
+  const seg = (a, b) => ({ left: pos(a), width: Math.max(0.4, pos(b) - pos(a)) });
+
+  const ar = CHART.chartArea;
+  const total = CHART.width || 1;
+  const plotW = Math.max(1, ar.right - ar.left);
+  const padL = (ar.left / total * 100).toFixed(3);
+  const padR = ((total - ar.right) / total * 100).toFixed(3);
+
+  /* ---- lane 1: months, with the numbers that used to be in the table ---- */
+  const byMonth = {};
+  ctx.list.forEach(r => {
+    if (r.date < first || r.date > last || !(r.revenue > 0)) return;
+    const k = r.date.slice(0, 7);
+    (byMonth[k] = byMonth[k] || { actual: 0, days: 0 });
+    byMonth[k].actual += r.revenue; byMonth[k].days++;
+  });
+  p.months.forEach(m => {
+    (byMonth[m.month] = byMonth[m.month] || { actual: 0, days: 0 });
+    byMonth[m.month].fc = m;
+  });
+
+  const monthCells = Object.keys(byMonth).sort().map(k => {
+    const b = byMonth[k], m = b.fc;
+    const dim = F.daysInMonth(+k.slice(0, 4), +k.slice(5, 7));
+    const a = k + '-01' < first ? first : k + '-01';
+    const z = k + '-' + String(dim).padStart(2, '0');
+    const g = seg(a, z > last ? last : z);
+    const idx = p.basis.season.index[+k.slice(5, 7)];
+    const n = p.basis.season.observations[+k.slice(5, 7)] || 0;
+    /* A forecast month shows the forecast and what the same dates did last
+       year; a month already banked shows what it actually took. Never mixed —
+       labelling a projection and a result the same way is how a forecast gets
+       quoted back as a fact. */
+    let head, sub;
+    if (m) {
+      const ds = p.days.filter(d => d.month === k);
+      const ly = priorSameDates(ctx.list, ds[0].date, ds[ds.length - 1].date);
+      head = money(m.revenue, true);
+      /* The day count leads on a part month. $197K for the 22 days left of
+         September is not September, and the figure is quoted against the same
+         22 days last year, so both halves of the comparison need saying. */
+      sub = (ds.length < dim ? ds.length + 'd · ' : '') +
+            (ly.sum ? 'x' + (m.revenue / ly.sum).toFixed(2) + ' vs last yr' : 'no prior year');
+    } else {
+      head = money(b.actual, true);
+      /* A banked month reports the same measure as a forecast one — its
+         year-on-year — so the two lanes read as one series rather than as two
+         different kinds of number that happen to sit side by side. */
+      const a2 = k + '-01' < first ? first : k + '-01';
+      const z2 = k + '-' + String(b.days).padStart(2, '0');
+      const ly = priorSameDates(ctx.list, a2, z2 > last ? last : z2);
+      sub = (b.days < dim ? b.days + ' of ' + dim + 'd · ' : '') +
+            (ly.sum ? 'x' + (b.actual / ly.sum).toFixed(2) + ' vs last yr' : 'no prior year');
+    }
+    /* HOW MUCH FITS IS DECIDED HERE, not by the browser cutting text off.
+
+       A month's cell is as wide as the month is long, and at a 90-day horizon
+       the 22 remaining days of September get a narrow column — too narrow for
+       four lines of text, which the first cut simply sliced through mid-word.
+       The pixel width is known (the share of the plot area), so the cell drops
+       the least important line at each threshold and keeps everything in the
+       tooltip. Degrading on purpose beats clipping by accident. */
+    const px = g.width / 100 * plotW;
+    const idxLine = n ? 'season x' + idx.toFixed(2) + (n <= 1 ? ' · 1 yr' : '') : 'no history';
+    const full = [monthLabel(k), m ? '' : 'actual', head, sub, idxLine].filter(Boolean).join(' · ');
+    return `<div class="tl-m${m ? '' : ' past'}" style="left:${g.left}%;width:${g.width}%"
+        title="${esc(full)}">
+      <div class="tl-m-name">${monthLabel(k)}${m || px < 110 ? '' : ' <i>actual</i>'}</div>
+      ${px >= 52 ? `<div class="tl-m-val">${head}</div>` : ''}
+      ${px >= 96 ? `<div class="tl-m-sub">${sub}</div>` : ''}
+      ${px >= 140 ? `<div class="tl-m-idx">${idxLine}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  /* ---- lane 2: what is being applied, and by how much ------------------- */
+  const bars = [];
+  allMods().forEach(m => {
+    if ((m.paybackEnd || m.end) < first || m.start > last) return;
+    const mine = m.kind === 'user';
+    /* The multiple, which is the whole point of the bar: a sale period whose
+       run-up ramps is quoted at its PEAK day, because "+47% on average" tells
+       you nothing about the day it mattered most. */
+    const peak = (m.profile && m.profile.length)
+      ? Math.max.apply(null, m.profile.map(o => o.lift)) : (m.lift || 0);
+    const g = seg(m.start < first ? first : m.start, m.end > last ? last : m.end);
+    bars.push(`<div class="tl-b${mine ? ' mine' : ''}" style="left:${g.left}%;width:${g.width}%"
+        title="${esc(m.name)} · ${isoToNice(m.start)} to ${isoToNice(m.end)} · peak x${(1 + peak).toFixed(2)}">
+        <b>x${(1 + peak).toFixed(2)}</b> <span>${esc(m.name.replace(/ \d{4}$/, ''))}</span></div>`);
+    if (m.payback && m.paybackEnd) {
+      const gp = seg(m.end, m.paybackEnd > last ? last : m.paybackEnd);
+      bars.push(`<div class="tl-b pb" style="left:${gp.left}%;width:${gp.width}%"
+        title="payback after ${esc(m.name)} · to ${isoToNice(m.paybackEnd)}">
+        <b>x${(1 + m.payback).toFixed(2)}</b> <span>payback</span></div>`);
+    }
+  });
+  /* Recurring events get a marker, not a bar: they are already inside the month
+     index above, and a bar would read as a second multiplier on top of it. */
+  const evs = F.EVENTS.filter(e => e.via === 'index').map(e => {
+    const k = Object.keys(byMonth).find(x => +x.slice(5, 7) === e.month);
+    if (!k) return '';
+    const dim = F.daysInMonth(+k.slice(0, 4), e.month);
+    const mid = k + '-' + String(Math.round(dim / 2)).padStart(2, '0');
+    if (mid < first || mid > last) return '';
+    return `<div class="tl-e" style="left:${pos(mid)}%" title="${esc(e.note)}">
+        ${esc(e.name)}<small>in the season index</small></div>`;
+  }).join('');
+
+  const today = pos(p.from);
+  el.innerHTML = `<div class="tl-inner" style="padding-left:${padL}%;padding-right:${padR}%">
+      <div class="tl-rel">
+        <div class="tl-now" style="left:${today}%"></div>
+        <div class="tl-lane tl-months">${monthCells}</div>
+        <div class="tl-lane tl-drivers">${evs}${bars.join('') ||
+          '<div class="tl-none">Nothing declared in this window — the forecast is the seasonality alone.</div>'}</div>
+      </div>
+    </div>`;
+}
+
+const dayDiff = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+
 /* ------------------------------------------------------ trends, in the rail */
 
 /* Three small bar charts rather than three tables. They answer "when is the
@@ -448,50 +592,6 @@ function renderTrends(p, ctx) {
   const vals = Object.keys(b.dowIdx).map(k => b.dowIdx[k]);
   document.getElementById('dowNote').textContent =
     'spread ' + Math.min.apply(null, vals).toFixed(2) + '–' + Math.max.apply(null, vals).toFixed(2);
-}
-
-/* ------------------------------------------------------------ month table */
-
-function renderMonths(p, ctx) {
-  const el = document.getElementById('monthTable');
-  const rowsHtml = p.months.map(m => {
-    const ds = p.days.filter(d => d.month === m.month);
-    const ly = priorSameDates(ctx.list, ds[0].date, ds[ds.length - 1].date);
-    const r = ly.sum ? m.revenue / ly.sum : null;
-    const nObs = (p.basis.season.observations[+m.month.slice(5, 7)]) || 0;
-    /* An index fitted on one year is a guess with a sample size, and November's
-       is the one the whole year-end number hangs on. Say the number out loud
-       rather than letting the forecast imply more confidence than it has. */
-    const conf = nObs >= 2 ? '<span class="cf ok">2 yrs</span>'
-               : nObs === 1 ? '<span class="cf thin">1 yr</span>'
-               : '<span class="cf none">no history</span>';
-    return `<div class="trow">
-      <div class="c1">${monthLabel(m.month)}<small>${m.days}d</small></div>
-      <div class="c2">${money(m.revenue, true)}</div>
-      <div class="c3">${ly.sum ? money(ly.sum, true) : '—'}</div>
-      <div class="c4 ${r == null ? '' : r >= 1 ? 'pos' : 'neg'}">${r == null ? '—' : mult(r)}</div>
-      <div class="c5 ${m.profit < 0 ? 'neg' : 'pos'}">${money(m.profit, true)}</div>
-      <div class="c6">${(m.margin * 100).toFixed(1)}%</div>
-      <div class="c7">${conf}</div>
-    </div>`;
-  }).join('');
-  const lyAll = priorSameDates(ctx.list, F.addDays(p.from, 1), F.addDays(p.from, p.horizon));
-  const rAll = lyAll.sum ? p.total / lyAll.sum : null;
-  const total = `<div class="trow tot">
-      <div class="c1">Total<small>${p.horizon}d</small></div>
-      <div class="c2">${money(p.total, true)}</div>
-      <div class="c3">${lyAll.sum ? money(lyAll.sum, true) : '—'}</div>
-      <div class="c4 ${rAll == null ? '' : rAll >= 1 ? 'pos' : 'neg'}">${rAll == null ? '—' : mult(rAll)}</div>
-      <div class="c5 ${p.profit < 0 ? 'neg' : 'pos'}">${money(p.profit, true)}</div>
-      <div class="c6">${p.total ? (p.profit / p.total * 100).toFixed(1) : '—'}%</div>
-      <div class="c7"></div>
-    </div>`;
-  el.innerHTML = `<div class="thead">
-      <div class="c1">Month</div><div class="c2">Revenue</div><div class="c3">Last yr</div>
-      <div class="c4">vs</div><div class="c5">Profit</div><div class="c6">Margin</div><div class="c7">Basis</div>
-    </div>${rowsHtml}${total}`;
-  document.getElementById('monthNote').textContent =
-    'vs the same dates last year · ' + S.scen;
 }
 
 /* ------------------------------------------------- where every $100 goes */
@@ -1077,7 +1177,7 @@ function render() {
     safe('kpis', () => renderKpis(p, ctx));
     safe('scenarios', () => renderScenarios(ctx));
     safe('chart', () => renderChart(p, ctx));
-    safe('months', () => renderMonths(p, ctx));
+    safe('timeline', () => renderTimeline(p, ctx));
     safe('trends', () => renderTrends(p, ctx));
     safe('hundred', () => renderHundred(p, ctx));
     safe('sales', () => renderSales(p));
@@ -1140,13 +1240,30 @@ function wire() {
   document.querySelectorAll('#viewSeg button').forEach(bt => bt.onclick = () => {
     setView(bt.dataset.view); render();
   });
+
+  /* Modals. Both are things you OPEN — a picture to go and look at, and a set
+     of controls — so neither takes permanent space from the map. */
+  const openModal = id => {
+    document.querySelectorAll('.modal').forEach(m => m.hidden = m.id !== id);
+  };
+  const closeModals = () => document.querySelectorAll('.modal').forEach(m => m.hidden = true);
+  document.getElementById('hundredBtn').onclick = () => openModal('hundredModal');
+  document.getElementById('declBtn').onclick = () => openModal('declModal');
+  document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => closeModals());
+  /* Clicking the backdrop closes; clicking the card must not. */
+  document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => {
+    if (e.target === m) closeModals();
+  }));
   document.querySelectorAll('#notesSeg button').forEach(bt => bt.onclick = () => {
     document.querySelectorAll('#notesSeg button').forEach(x => x.classList.remove('active'));
     bt.classList.add('active'); S.notesMode = bt.dataset.mode; render();
   });
   /* Escape returns to the map, since that is where the page starts. */
   window.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && S.view !== 'map') { setView('map'); render(); }
+    if (e.key !== 'Escape') return;
+    const open = [...document.querySelectorAll('.modal')].some(m => !m.hidden);
+    if (open) { closeModals(); return; }              // a modal first, then the view
+    if (S.view !== 'map') { setView('map'); render(); }
   });
   document.querySelectorAll('#horSeg button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#horSeg button').forEach(x => x.classList.remove('active'));

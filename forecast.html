@@ -84,8 +84,16 @@
         <div class="p-head">
           <div class="p-title">Forecast <span id="chartSpan">Map</span></div>
           <div class="chartkey" id="chartKey"></div>
+          <div class="chartbtns">
+            <button id="hundredBtn" title="Where every $100 of sales goes">$100 OF SALES</button>
+            <button id="declBtn" title="Sale periods and your modifiers">SALE PERIODS &amp; MODIFIERS</button>
+          </div>
         </div>
         <div id="chartWrap"><canvas id="fcChart"></canvas></div>
+        <!-- Aligned to the chart's own x-axis, so a month, the event that
+             explains it and the multiple applied to it all sit under the days
+             they belong to instead of in a table somewhere else. -->
+        <div class="tline" id="tline"></div>
       </div>
 
       <div class="rail" id="railR">
@@ -107,41 +115,49 @@
       </div>
     </section>
 
-    <section id="bottom">
-      <div class="panel">
-        <div class="p-head"><div class="p-title">Month by <span>Month</span></div>
-          <div class="p-note" id="monthNote">vs the same dates last year</div></div>
-        <div class="ptable" id="monthTable"></div>
-      </div>
-
-      <div class="panel">
-        <div class="p-head"><div class="p-title">Every $100 of <span>Sales</span></div>
-          <div class="p-note" id="hundredNote">last 30 complete days</div></div>
+    <!-- Two modals, because both are things you OPEN rather than read: one is a
+         picture you go and look at, the other is a set of controls. Neither
+         belongs in a permanent strip competing with the map. -->
+    <div class="modal" id="hundredModal" hidden>
+      <div class="modal-card">
+        <div class="modal-head">
+          <div class="p-title">Every $100 of <span>Sales</span></div>
+          <div class="p-note" id="hundredNote">last 30 complete days</div>
+          <button class="modal-x" data-close="hundredModal" aria-label="Close">✕</button>
+        </div>
         <div class="hundredwrap" id="hundredWrap"></div>
       </div>
+    </div>
 
-      <div class="panel">
-        <div class="p-head"><div class="p-title">Sale <span>Periods</span></div>
-          <div class="p-note" id="saleNote">measured from the book</div></div>
-        <div class="catlist" id="saleList"></div>
-        <div id="saleWarn"></div>
+    <div class="modal" id="declModal" hidden>
+      <div class="modal-card wide">
+        <div class="modal-head">
+          <div class="p-title">Sale Periods &amp; <span>Modifiers</span></div>
+          <div class="p-note" id="declNote">measured from the book · and what it cannot know</div>
+          <button class="modal-x" data-close="declModal" aria-label="Close">✕</button>
+        </div>
+        <div class="modal-cols">
+          <div class="modal-col">
+            <h4>Sale periods <small id="saleNote">—</small></h4>
+            <div class="catlist" id="saleList"></div>
+            <div id="saleWarn"></div>
+          </div>
+          <div class="modal-col">
+            <h4>Your modifiers <small id="modNote">—</small></h4>
+            <div class="catlist" id="modList"></div>
+            <form class="modform" id="modForm" autocomplete="off">
+              <input type="text" id="modName" placeholder="Name (e.g. new tray launch)" maxlength="40" required />
+              <input type="number" id="modLift" placeholder="Lift %" step="5" aria-label="Lift percent" required />
+              <input type="date" id="modStart" required aria-label="Modifier start date" />
+              <input type="date" id="modEnd" required aria-label="Modifier end date" />
+              <input type="number" id="modPay" placeholder="Payback %" step="5" aria-label="Payback percent" />
+              <button type="submit">Add</button>
+            </form>
+            <div id="combined"></div>
+          </div>
+        </div>
       </div>
-
-      <div class="panel">
-        <div class="p-head"><div class="p-title">Your <span>Modifiers</span></div>
-          <div class="p-note" id="modNote">what the data cannot know</div></div>
-        <div class="catlist" id="modList"></div>
-        <form class="modform" id="modForm" autocomplete="off">
-          <input type="text" id="modName" placeholder="Name (e.g. new tray launch)" maxlength="40" required />
-          <input type="number" id="modLift" placeholder="Lift %" step="5" aria-label="Lift percent" required />
-          <input type="date" id="modStart" required aria-label="Modifier start date" />
-          <input type="date" id="modEnd" required aria-label="Modifier end date" />
-          <input type="number" id="modPay" placeholder="Payback %" step="5" aria-label="Payback percent" />
-          <button type="submit">Add</button>
-        </form>
-        <div id="combined"></div>
-      </div>
-    </section>
+    </div>
 
     <!-- ============ VIEW 2 — HOW IT WORKS ============ -->
     <section id="explain" hidden>
