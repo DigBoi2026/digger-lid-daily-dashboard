@@ -22,7 +22,8 @@ const OFF_KEY = 'dl_forecast_sale_off';       // sale periods the user has switc
 const EDIT_KEY = 'dl_forecast_sale_edit';     // and lifts they have re-sized
 
 const S = { scen: 'realistic', hor: 90, live: 'snap',
-            mods: [], saleOff: [], saleEdit: {}, sale: [], ceiling: null };
+            mods: [], saleOff: [], saleEdit: {}, sale: [], ceiling: null,
+            notesMode: 'simple' };
 let DATA = window.DL_DATA || null;
 const PRIOR = window.DL_PRIOR || null;
 let CHART = null;
@@ -560,6 +561,131 @@ const SYM = {
 };
 
 function renderNotes(p) {
+  document.getElementById('notesBody').className =
+    'notes-body ' + (S.notesMode === 'simple' ? 'plain' : 'maths');
+  return S.notesMode === 'simple' ? renderNotesPlain(p) : renderNotesMaths(p);
+}
+
+/* PLAIN ENGLISH — the default, because most of the people who open this want to
+   know whether to trust the number, not how it was derived.
+
+   Five steps, no symbols, and one picture that does more work than the rest of
+   the page put together: where $100 of sales goes on an ordinary day, next to
+   the same $100 in November. Fixed cost is the same $2,700 either way, so it
+   eats 16c of every dollar now and 6c in November — which is the entire reason
+   the year is made in two months, said in a way nobody has to be talked
+   through. */
+function renderNotesPlain(p) {
+  const el = document.getElementById('notesBody');
+  const pnl = p.pnl, b = p.basis, g = b.growth;
+  const b30 = BT && BT[30], b90 = BT && BT[90];
+  const nov = p.months.find(m => m.month.slice(5) === '11');
+  const dow = b.dowIdx;
+  const dnames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  let best = 0, worst = 0;
+  for (let i = 1; i < 7; i++) { if (dow[i] > dow[best]) best = i; if (dow[i] < dow[worst]) worst = i; }
+  let bigM = 1, smallM = 1;
+  for (let m = 2; m <= 12; m++) {
+    if (b.season.observations[m] && b.season.index[m] > b.season.index[bigM]) bigM = m;
+    if (b.season.observations[m] && b.season.index[m] < b.season.index[smallM]) smallM = m;
+  }
+
+  /* Where $100 goes, at two different daily sales levels. Fixed cost is a fixed
+     DOLLAR amount, so its share is the only thing that moves — which is exactly
+     the point being made. */
+  function hundred(perDay, adRate) {
+    const gst = (1 - pnl.exGstRate) * 100;
+    const variable = pnl.vcRate * 100;
+    const ads = adRate * 100;
+    const fixed = perDay > 0 ? (pnl.fcPerDay / perDay) * 100 : 0;
+    return { gst, variable, ads, fixed, profit: 100 - gst - variable - ads - fixed };
+  }
+  const novPerDay = nov ? nov.revenue / nov.days : null;
+  const novAdRate = pnl.adRate * (pnl.adRateIndex[11] || 1);
+  const now = hundred(p.level, pnl.adRate);
+  const big = novPerDay ? hundred(novPerDay, novAdRate) : null;
+
+  const bar = (h, label, sub) => {
+    const seg = [['GST', h.gst, 'gst'], ['Product, shipping, fees', h.variable, 'vc'],
+                 ['Ads', h.ads, 'ads'], ['Wages and overheads', h.fixed, 'fc'],
+                 ['Profit', Math.max(0, h.profit), h.profit >= 0 ? 'pf' : 'loss']];
+    const total = seg.reduce((a, x) => a + x[1], 0) || 100;
+    return `<div class="h100">
+      <div class="h100-h">${label} <small>${sub}</small></div>
+      <div class="h100-bar">${seg.map(x =>
+        `<i class="${x[2]}" style="width:${(x[1] / total * 100).toFixed(2)}%"
+            title="${x[0]}: $${x[1].toFixed(2)}"></i>`).join('')}</div>
+      <div class="h100-key">${seg.map(x =>
+        `<span class="${x[2]}"><b>$${x[1].toFixed(0)}</b> ${x[0]}</span>`).join('')}</div>
+    </div>`;
+  };
+
+  const steps = [
+    ['We look at what you actually sold',
+     `Every single day of 2025 and 2026, out of your own P&amp;L sheet. Nothing here is an
+      industry average or a rule of thumb.`],
+    ['We take your sales promotions out first',
+     `If you ran a Father&rsquo;s Day promo, we pull that bump out before we learn anything —
+      otherwise the model decides a discount fortnight is your new normal, and then expects
+      it every week for the rest of the year.`],
+    ['We learn four of your habits',
+     `<b>Busy days:</b> ${dnames[best]} is your strongest, ${dnames[worst]} your weakest.<br>
+      <b>Big months:</b> ${MONTH_ABBR[bigM - 1]} is about
+      ${(b.season.index[bigM] / (b.season.index[smallM] || 1)).toFixed(1)}x
+      ${MONTH_ABBR[smallM - 1]}.<br>
+      <b>Growth:</b> you are running about <b>${(g.yoy || 1).toFixed(1)}x</b> last year.<br>
+      <b>Today&rsquo;s pace:</b> about <b>${money(p.level)}</b> a day once the season and the
+      day of the week are stripped out.`],
+    ['We guess every future day twice, then split the difference',
+     `Once from <b>today&rsquo;s pace</b>, adjusted for what day and what month it is. Once
+      from <b>the same days last year</b>, scaled up by your growth. The second guess is
+      worth more next week than next quarter, so its share shrinks the further out we look.`],
+    ['We add your promotions back on, then take the costs off',
+     `Whatever you have declared goes back on, and then your sheet&rsquo;s own cost lines turn
+      sales into profit. That is the picture below.`],
+  ];
+
+  el.innerHTML = `
+    <div class="ncol">
+      <ol class="plainsteps">${steps.map(st =>
+        `<li><h4>${st[0]}</h4><p>${st[1]}</p></li>`).join('')}</ol>
+    </div>
+    <div class="ncol">
+      <div class="plainbox">
+        <h4>Where every $100 of sales goes</h4>
+        ${bar(now, 'An ordinary day right now', money(p.level) + ' of sales')}
+        ${big ? bar(big, 'A day in November', money(novPerDay) + ' of sales') : ''}
+        <p class="plainnote">The wages and overheads bar is the same
+          <b>${money(pnl.fcPerDay)} a day</b> in both — it does not care how much you sell. That
+          is the whole business in one line: it eats <b>${now.fixed.toFixed(0)}c</b> of every
+          dollar on a quiet day and only <b>${big ? big.fixed.toFixed(0) : '—'}c</b> in
+          November, which is why the year is made in two months.</p>
+        <p class="plainbig">You need about <b>${money(p.breakevenPerDay)} a day</b>
+          — ${money(p.breakevenPerDay * 30, true)} a month — before you make a cent.</p>
+      </div>
+      <div class="plainbox">
+        <h4>How right has it been?</h4>
+        <p>We rewind to a date in your own history, forget everything after it, forecast, and
+          check. Doing that over and over:</p>
+        <p class="plainbig">Usually within
+          <b>${b30 ? (b30.mape * 100).toFixed(0) : '—'}%</b> a month out, and
+          <b>${b90 ? (b90.mape * 100).toFixed(0) : '—'}%</b> three months out.</p>
+      </div>
+      <div class="plainbox warn">
+        <h4>Where to be careful</h4>
+        <p><b>November is the biggest guess and the thinnest evidence.</b> You have only had
+          one Black Friday on the books, so nothing in your history can check it. When we
+          tested the model on a year that had never seen one, it under-guessed by more than
+          half.</p>
+        <p><b>It cannot know what you have not told it.</b> A new product, a price rise, a
+          sale you are planning — add those as modifiers and it will.</p>
+      </div>
+    </div>`;
+}
+
+/* THE MATHS — the same thing again, for when the plain version raises a question
+   it cannot answer. */
+function renderNotesMaths(p) {
   const el = document.getElementById('notesBody');
   const b = p.basis, pnl = p.pnl, g = b.growth;
   const dowVals = Object.keys(b.dowIdx).map(k => b.dowIdx[k]);
@@ -800,6 +926,10 @@ async function tryLiveRefresh() {
 function wire() {
   const notes = document.getElementById('notes');
   document.getElementById('infoBtn').onclick = () => { notes.hidden = !notes.hidden; };
+  document.querySelectorAll('#notesSeg button').forEach(bt => bt.onclick = () => {
+    document.querySelectorAll('#notesSeg button').forEach(x => x.classList.remove('active'));
+    bt.classList.add('active'); S.notesMode = bt.dataset.mode; render();
+  });
   document.getElementById('notesClose').onclick = () => { notes.hidden = true; };
   window.addEventListener('keydown', e => { if (e.key === 'Escape') notes.hidden = true; });
   document.querySelectorAll('#horSeg button').forEach(b => b.onclick = () => {
