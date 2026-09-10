@@ -129,7 +129,22 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
    part of 20 seconds to come back, and the previous ceiling of 11.5s gave up
    short of that. Five consecutive calls proved it: two served, three threw
    THROTTLED. Budget ~30s instead; maxDuration is 60. */
-const THROTTLE_BACKOFF_MS = [800, 1800, 3500, 7000, 15000];   // ~28s worst case
+const THROTTLE_BACKOFF_MS = [1000, 2500, 5000, 10000, 20000];   // ~38s worst case: a drained bucket needs ~18s
+
+/* PACING. A two-year day-grouped ShopifyQL query costs ~125 of a 1000-point
+   bucket that refills at ~50 points a second. The three lens datasets are 2, 3
+   and 8 such queries; a reader clicking CUSTOMERS, COUNTRIES, PRODUCTS in
+   quick succession fires 13 of them and the last dataset lands on an empty
+   bucket, which is exactly what happened on first deploy. Sleeping between
+   consecutive queries inside one dataset keeps its own draw under the refill
+   rate, so a dataset never throttles itself; the backoff above covers the
+   case where another dataset drained the bucket first. Tests set it to 0. */
+let PACE_MS = 1500;
+async function paced(query) {
+  const rows = await shopifyql(query);
+  if (PACE_MS) await sleep(PACE_MS);
+  return rows;
+}
 
 async function shopifyql(query, attempt = 0) {
   const token = await accessToken();
@@ -272,7 +287,7 @@ async function buildProducts(today) {
 async function buildGeo(today) {
   const since = iso(addDays(today, -730));
   const until = iso(addDays(today, 1));
-  const one = q => shopifyql(q);
+  const one = q => paced(q);
 
   const totRows = await one(
     `FROM sales SHOW net_sales, orders GROUP BY day SINCE ${since} UNTIL ${until} ORDER BY day`);
@@ -343,7 +358,7 @@ async function buildGeo(today) {
 async function buildCustomers(today) {
   const since = iso(addDays(today, -730));
   const until = iso(addDays(today, 1));
-  const q = t => shopifyql(
+  const q = t => paced(
     `FROM sales SHOW net_sales, orders WHERE new_or_returning_customer = '${t}' GROUP BY day SINCE ${since} UNTIL ${until} ORDER BY day`);
   const newRows = await q('New');
   const retRows = await q('Returning');
@@ -401,7 +416,7 @@ async function buildProductsDaily(today) {
   const until = iso(addDays(today, 1));
   const yrSince = iso(addDays(today, -365));
 
-  const rank = await shopifyql(
+  const rank = await paced(
     `FROM sales SHOW net_sales, orders GROUP BY product_title SINCE ${yrSince} UNTIL ${until} ORDER BY net_sales DESC`);
   const top = rank
     .filter(r => r.product_title && String(r.product_title).trim() && n2(r.net_sales) > 0)
@@ -417,12 +432,12 @@ async function buildProductsDaily(today) {
     });
     return m;
   };
-  const T = bucket(await shopifyql(
+  const T = bucket(await paced(
     `FROM sales SHOW net_sales, orders GROUP BY day SINCE ${since} UNTIL ${until} ORDER BY day`));
   const per = {};
   for (const p of top) {
     const lit = p.title.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-    per[p.key] = bucket(await shopifyql(
+    per[p.key] = bucket(await paced(
       `FROM sales SHOW net_sales, orders WHERE product_title = '${lit}' GROUP BY day SINCE ${since} UNTIL ${until} ORDER BY day`));
   }
 
@@ -535,3 +550,4 @@ module.exports.categorize = categorize;   // for offline unit testing
 module.exports.accessToken = accessToken;         // for offline unit testing
 module.exports.storeDomain = storeDomain;         // for offline unit testing
 module.exports.resetTokenCache = () => { cachedToken = null; cachedTokenExpiry = 0; };
+module.exports._setPace = ms => { PACE_MS = ms; };   // tests: no sleeping between stubbed queries

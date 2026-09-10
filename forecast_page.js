@@ -256,12 +256,29 @@ const lens = () => LENSES[S.lens] || LENSES.total;
 /* Shopify is only asked for when a lens that needs it is actually selected:
    each dataset is several queries against a rate-limited API, and nobody
    looking at the total forecast should pay for them. */
-async function ensureExt(name) {
+async function ensureExt(name, attempt) {
+  attempt = attempt || 0;
   const st = extState(name);
-  if (st === 'loading' || st === 'ready') return;
+  if (st === 'loading' || st === 'ready' || (st === 'waiting' && !attempt)) return;
   EXT[name] = { state: 'loading', data: null }; render();
   try {
     const r = await fetch('/api/shopify?dataset=' + encodeURIComponent(name));
+    /* A 503 is Shopify's rate limit — transient by construction, and the route
+       says how long. Wait it out and try again rather than leaving the reader
+       with "unavailable" for a condition that clears itself in half a minute.
+       Two retries, then it really is unavailable. */
+    if (r.status === 503 && attempt < 2) {
+      let wait = 30;
+      try { const j = await r.json(); wait = +j.retry_after_seconds || 30; } catch (e) { /* body optional */ }
+      EXT[name] = { state: 'waiting', data: null, retryIn: wait };
+      render();
+      const tick = setInterval(() => {
+        if (extState(name) !== 'waiting') { clearInterval(tick); return; }
+        EXT[name].retryIn = Math.max(0, EXT[name].retryIn - 1); render();
+      }, 1000);
+      setTimeout(() => { clearInterval(tick); if (extState(name) === 'waiting') ensureExt(name, attempt + 1); }, wait * 1000);
+      return;
+    }
     if (!r.ok) throw new Error('http-' + r.status);
     const j = await r.json();
     if (!(j.daily || []).length) throw new Error('no rows');
@@ -363,14 +380,18 @@ function renderKpisLens(p, ctx) {
 
   if (!ctx.series) {
     const st = L.needs ? extState(L.needs) : 'idle';
-    el.style.gridTemplateColumns = '';
+    const wait = L.needs && EXT[L.needs] ? EXT[L.needs].retryIn : 0;
+    el.style.gridTemplateColumns = ''; el.classList.remove('dense');
     el.innerHTML = `<div class="kpi accent" style="grid-column:1/-1">
       <div class="k-lbl">${esc(L.label)}</div>
       <div class="k-val">${st === 'loading' ? 'Loading…'
+        : st === 'waiting' ? 'Shopify is rate-limited · retrying in ' + wait + 's'
         : st === 'failed' ? 'Shopify unavailable' : '—'}</div>
       <div class="k-sub">${st === 'failed'
-        ? 'This split comes from Shopify and the request did not come back. It is rate-limited — try again in a minute.'
-        : 'Fetching two years of daily net sales from Shopify.'}</div></div>`;
+        ? 'This split comes from Shopify and the request did not come back after two retries. Try again in a minute.'
+        : st === 'waiting'
+          ? 'Another lens just used the API’s allowance. It refills in about half a minute and this will load itself.'
+          : 'Fetching two years of daily net sales from Shopify.'}</div></div>`;
     return;
   }
 

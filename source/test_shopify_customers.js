@@ -38,6 +38,7 @@ global.fetch = async (url, opts) => {
 };
 
 const S = require('../api/shopify.js');
+S._setPace(0);   // stubbed API: no need to pace
 const TODAY = new Date('2026-09-10T00:00:00Z');
 const day = (d, net, orders) => ({ day: d, net_sales: String(net), orders: String(orders) });
 

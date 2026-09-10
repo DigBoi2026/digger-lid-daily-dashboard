@@ -52,6 +52,7 @@ global.fetch = async (url, opts) => {
 };
 
 const S = require('../api/shopify.js');
+S._setPace(0);   // stubbed API: no need to pace
 
 function run(fixture) {
   QUERIES = []; FIXTURE = fixture;
