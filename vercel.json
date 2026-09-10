@@ -27,12 +27,6 @@
       "maxDuration": 10
     }
   },
-  "crons": [
-    {
-      "path": "/api/watchdog",
-      "schedule": "0 22 * * *"
-    }
-  ],
   "headers": [
     {
       "source": "/api/watchdog",
@@ -49,13 +43,7 @@
     },
     {
       "source": "/api/ai/(.*)",
-      "crons": [
-    {
-      "path": "/api/watchdog",
-      "schedule": "0 22 * * *"
-    }
-  ],
-  "headers": [
+      "headers": [
         {
           "key": "Cache-Control",
           "value": "private, no-store"
@@ -68,13 +56,7 @@
     },
     {
       "source": "/api/(.*)",
-      "crons": [
-    {
-      "path": "/api/watchdog",
-      "schedule": "0 22 * * *"
-    }
-  ],
-  "headers": [
+      "headers": [
         {
           "key": "Cache-Control",
           "value": "s-maxage=600, stale-while-revalidate=1800"
@@ -83,13 +65,7 @@
     },
     {
       "source": "/(.*)",
-      "crons": [
-    {
-      "path": "/api/watchdog",
-      "schedule": "0 22 * * *"
-    }
-  ],
-  "headers": [
+      "headers": [
         {
           "key": "X-Content-Type-Options",
           "value": "nosniff"

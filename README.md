@@ -117,26 +117,31 @@ days are not piling up, and that the forecast layer can still produce a number.
 It answers **200** when healthy and **503** when not, so the cheapest uptime
 monitor in the world works against it unconfigured.
 
-Two schedules, because they do different jobs:
+One schedule: `.github/workflows/watchdog.yml`, every 30 minutes. It fails the
+job when the board is lying, and **GitHub emails the repository owner when a
+scheduled workflow fails** — no webhook, no mail provider, no secret. Confirm
+it is on at github.com/settings/notifications → Actions.
 
-| | Cadence | Reaches you via |
-|---|---|---|
-| `.github/workflows/watchdog.yml` | every 30 min | GitHub emails the repo owner when a scheduled workflow fails — **no setup, no secret** |
-| `vercel.json` → `crons` | daily, 22:00 UTC | the heartbeat, and it carries the forecast log row |
+Vercel Cron was the obvious home for this and is the wrong one twice over: on a
+Hobby plan it fires once a day, far too slow to catch a bad deploy, and a
+`crons` block in `vercel.json` is a deploy-time dependency on the account's
+plan — get it wrong and the whole site fails to build rather than just the
+alarm. **An alarm must not be able to break the thing it is watching.**
 
-The Action is the fast detector because Vercel Cron on a Hobby plan fires only
-once a day. It needs no credential: `/api/watchdog` is exempt from the
-Basic-Auth gate and returns *status only* — booleans, dates, counts, error
-strings — withholding every figure unless a bearer token is presented.
+The check needs no credential: `/api/watchdog` is exempt from the Basic-Auth
+gate and returns *status only* — booleans, dates, counts, error strings —
+withholding every figure unless a bearer token is presented.
 
 Set `ALERT_WEBHOOK_URL` for a direct Slack/Discord/Zapier message. If you do
 not, the route says so in every response: the failure mode it exists to fix must
 not be reintroduced by the fix.
 
 **The forecast log.** Nothing recorded what the forecast *said*, so it could only
-ever be checked in simulation, never against what happened. The daily run
-returns one flat row — scenarios, profit, November, the model basis — ready to
-append to a sheet:
+ever be checked in simulation, never against what happened. One flat row —
+scenarios, profit, November, the model basis — ready to append to a sheet. The
+workflow captures it once a day if a `WATCHDOG_TOKEN` secret is set, and skips
+rather than failing if it is not: the alarm must never be blocked by missing
+configuration. By hand:
 
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" \

@@ -1,10 +1,15 @@
 # The fast half of the smoke alarm.
 #
-# Vercel Cron on a Hobby plan fires ONCE A DAY. That is fine as a heartbeat and
-# far too slow to catch a bad deploy: the last change that broke /api/data would
-# have run most of a day before the daily run noticed. This workflow is the quick
-# detector — every 30 minutes it asks the board whether it is telling the truth,
-# and fails the job when it is not.
+# Every 30 minutes it asks the board whether it is telling the truth, and fails
+# the job when it is not.
+#
+# This is the ONLY schedule. Vercel Cron was the obvious place for it and is the
+# wrong one twice over: on a Hobby plan it fires once a day, which is far too
+# slow to catch a bad deploy — the last change that broke /api/data would have
+# run most of a day before a daily check noticed — and a `crons` block in
+# vercel.json is a deploy-time dependency on the account's plan, so getting it
+# wrong takes the whole site down rather than just the alarm. An alarm must not
+# be able to break the thing it is watching.
 #
 # It is a GitHub Action rather than another cron for one reason: it needs NO
 # SETUP TO REACH A HUMAN. GitHub emails the repository owner when a scheduled
@@ -76,3 +81,33 @@ jobs:
             exit 1
           fi
           echo "Board healthy."
+
+      # One row a day, so the forecast can be checked against what actually
+      # happened rather than only in simulation. Optional on purpose: it needs a
+      # credential for the figures, so without the secret it skips rather than
+      # failing — the alarm above is the part that must never be blocked by
+      # missing configuration.
+      - name: Record what the forecast said
+        if: github.event_name == 'schedule'
+        env:
+          BASE: ${{ vars.DASHBOARD_BASE_URL || 'https://digboi-seven.vercel.app' }}
+          TOKEN: ${{ secrets.WATCHDOG_TOKEN }}
+        run: |
+          set -uo pipefail
+          if [ -z "${TOKEN:-}" ]; then
+            echo "No WATCHDOG_TOKEN secret set, so there is nothing to log with."
+            echo "Add one (CRON_SECRET or an AI token from Vercel) under"
+            echo "Settings -> Secrets and variables -> Actions to start the log."
+            exit 0
+          fi
+          # Once a day, at whichever run lands in the 22:00 UTC hour.
+          if [ "$(date -u +%H)" != "22" ]; then
+            echo "Not the logging hour (UTC $(date -u +%H)); skipping."
+            exit 0
+          fi
+          csv=$(curl -sS --max-time 45 -H "Authorization: Bearer $TOKEN" \
+                  "$BASE/api/watchdog?format=csv&t=$(date +%s)") || {
+            echo "::warning title=forecast log::could not fetch the row"; exit 0; }
+          echo "$csv"
+          echo "$csv" | tail -n +2 >> forecast_log.csv || true
+          echo "::notice title=forecast logged::$(echo "$csv" | tail -n1)"
