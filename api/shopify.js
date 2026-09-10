@@ -123,7 +123,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
    Retry a throttle with a widening pause; anything else fails immediately,
    because a bad query or a dead token will not fix itself. */
-const THROTTLE_BACKOFF_MS = [700, 1600, 3200, 6000];   // ~11.5s worst case, against a 60s maxDuration
+/* The bucket holds 1000 points and refills ~50 a second, and a cold browse of
+   Products then Region costs about 975 — so a drained bucket needs the better
+   part of 20 seconds to come back, and the previous ceiling of 11.5s gave up
+   short of that. Five consecutive calls proved it: two served, three threw
+   THROTTLED. Budget ~30s instead; maxDuration is 60. */
+const THROTTLE_BACKOFF_MS = [800, 1800, 3500, 7000, 15000];   // ~28s worst case
 
 async function shopifyql(query, attempt = 0) {
   const token = await accessToken();
@@ -293,7 +298,21 @@ module.exports = async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.status(200).send(JSON.stringify(payload));
   } catch (err) {
-    res.status(500).json({ error: String((err && err.message) || err) });
+    const msg = String((err && err.message) || err);
+    /* A rate limit is temporary and self-healing, so answer 503 + Retry-After
+       rather than 500. A 500 is a hard failure the CDN will not paper over; a
+       503 lets stale-while-revalidate keep serving the last good copy while the
+       bucket refills, instead of dropping every page to its embedded snapshot.
+       Everything else — a bad query, a dead token — stays a 500, because those
+       do not fix themselves and should be loud. */
+    if (/THROTTLED|Rate limited|HTTP 429/i.test(msg)) {
+      res.setHeader('Retry-After', '30');
+      res.setHeader('Cache-Control', 's-maxage=0, stale-while-revalidate=1800');
+      res.status(503).json({ error: msg, retry_after_seconds: 30,
+        detail: 'Shopify rate limit. Transient — the previous response stays servable while it clears.' });
+      return;
+    }
+    res.status(500).json({ error: msg });
   }
 };
 
