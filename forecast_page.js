@@ -128,7 +128,7 @@ function refreshSalePeriods() {
   const thisYear = +list[list.length - 1].date.slice(0, 4);
   years.add(String(thisYear + 1));
   try {
-    S.sale = F.salePeriodModifiers(list, { years: [...years].sort(), overrides: S.saleEdit });
+    S.sale = F.salePeriodModifiers(list, { years: [...years].sort(), overrides: S.saleEdit, modifiers: userMods() });
     if (S.ceiling == null) S.ceiling = F.observedCeiling(list);
   } catch (e) { S.sale = []; }
 }
@@ -137,15 +137,20 @@ function activeSale() {
   return S.sale.filter(m => S.saleOff.indexOf(m.key) === -1);
 }
 
-/* Everything project() should apply, seeded and typed together. Typed lifts
-   arrive as percentages from the form; seeded ones are already fractions. */
-function allMods() {
-  return activeSale().concat(S.mods.map((m, i) => ({
+/* Typed declarations as the engine sees them. Lifts arrive as percentages
+   from the form; the engine wants fractions. */
+function userMods() {
+  return S.mods.map((m, i) => ({
     key: 'user:' + i, kind: 'user', name: m.name,
     start: m.start, end: m.end, lift: m.lift / 100,
     payback: m.payback ? m.payback / 100 : 0,
     paybackEnd: m.payback ? F.addDays(m.end, 14) : null,
-  })));
+  }));
+}
+
+/* Everything project() should apply, seeded and typed together. */
+function allMods() {
+  return activeSale().concat(userMods());
 }
 
 function run(scen, hor) {
@@ -303,7 +308,7 @@ function runLens(list, hor) {
       try {
         const yrs = new Set(sr.rows.map(r => r.date.slice(0, 4)));
         yrs.add(String(+from.slice(0, 4) + 1));
-        mods = F.salePeriodModifiers(sr.rows, { years: [...yrs].sort(), overrides: S.saleEdit })
+        mods = F.salePeriodModifiers(sr.rows, { years: [...yrs].sort(), overrides: S.saleEdit, modifiers: userMods() })
           .filter(m => S.saleOff.indexOf(m.key) === -1);
       } catch (e) { mods = []; }
     }

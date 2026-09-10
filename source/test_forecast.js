@@ -562,6 +562,33 @@ function withPromo(rows, day, runUp, lift) {
      bt[30].coldStart == null || bt[30].coldStart.n > 0, bt[30].coldStart);
 })();
 
+/* ---------------------------- a launch inside a sale period's baseline */
+(function () {
+  /* Flat $10,000 a day through 2025 and 2026 with a known weekday shape. Plant
+     a +50% promotion for the 14 days ending on Father's Day 2026 (6 Sep) and a
+     +30% product launch on the three weeks before it (6-22 Aug) — the launch
+     sits exactly inside the promotion's 21-day baseline. Measured naively the
+     promotion reads about +15%; with the launch declared it reads the +50% it
+     really was. */
+  const base = synth(2025, 2, { month: {} });
+  const rows = base.map(r => {
+    let f = 1;
+    if (r.date >= '2026-08-24' && r.date <= '2026-09-06') f = 1.5;
+    else if (r.date >= '2026-08-06' && r.date <= '2026-08-22') f = 1.3;
+    return { date: r.date, revenue: r.revenue * f };
+  }).filter(r => r.date <= '2026-09-08');
+  const naive = F.salePeriodModifiers(rows, { years: ['2026'] }).find(m => m.key === 'fathers:2026');
+  const launch = { key: 'user:0', kind: 'user', name: 'Launch', start: '2026-08-06', end: '2026-08-22', lift: 0.3, payback: 0 };
+  const corrected = F.salePeriodModifiers(rows, { years: ['2026'], modifiers: [launch] }).find(m => m.key === 'fathers:2026');
+  ok('launch-in-baseline: measured naively, the promotion is understated', naive && naive.lift < 0.25, naive && naive.lift);
+  ok('launch-in-baseline: with the launch declared, the planted +50% is recovered',
+     corrected && Math.abs(corrected.lift - 0.5) < 0.06, corrected && corrected.lift);
+  ok('launch-in-baseline: a declaration outside the baseline changes nothing',
+     (() => { const far = { key: 'user:1', kind: 'user', name: 'x', start: '2026-03-01', end: '2026-03-10', lift: 0.3, payback: 0 };
+              const c2 = F.salePeriodModifiers(rows, { years: ['2026'], modifiers: [far] }).find(m => m.key === 'fathers:2026');
+              return c2 && Math.abs(c2.lift - naive.lift) < 1e-9; })());
+})();
+
 /* ---------------------------------------- a product launched mid-window */
 (function () {
   /* Two years of days. Nothing until 1 Oct 2025 (a $20/day trickle in Aug-Sep),

@@ -410,8 +410,11 @@ var DLforecast = (function () {
       const pbProbe = winMean(addDays(day, 1), addDays(day, 30));
       const payback = pbProbe ? pbProbe.mean / base.mean - 1 : null;
       const pulled = sum(profile.map(o => Math.max(0, o.lift)));
-      const paybackDays = (payback != null && payback < 0)
-        ? Math.max(1, Math.round(pulled / -payback)) : null;
+      /* A dip under 2% is noise, not a payback, and dividing by it would make
+         the repayment window run for years (or, at -0.000001, crash addDays).
+         Sixty days is the most any promotion here has taken to wash through. */
+      const paybackDays = (payback != null && payback < -0.02)
+        ? Math.min(60, Math.max(1, Math.round(pulled / -payback))) : null;
       out.push({ year: y, day, runStart, lift, profile, payback, paybackDays, pulled,
                  baseline: base.mean, baselineDays: base.n, paybackObserved: pbProbe ? pbProbe.n : 0 });
     });
@@ -428,7 +431,17 @@ var DLforecast = (function () {
   function salePeriodModifiers(rows, opts) {
     opts = opts || {};
     const overrides = opts.overrides || {};
-    const src = (rows || []).filter(r => r.revenue > 0).sort((a, b) => a.date < b.date ? -1 : 1);
+    /* Declared modifiers correct history BEFORE a sale period is measured, the
+       same order project() uses. The reason is concrete: Pro Mat Plus launched
+       on 6 Aug 2026 and lifted the fortnight before Father's Day by 26%. That
+       fortnight is Father's Day's baseline, so measured against it the
+       promotion read 47%; against the weeks before the launch it is 69%. With
+       the launch declared, the baseline is deflated first and the promotion is
+       measured against ordinary trade. */
+    const decl = (opts.modifiers || []).filter(m => m && m.start && m.end);
+    const modAt = decl.length ? composeMods(decl, {}).at : null;
+    const src = (rows || []).filter(r => r.revenue > 0).sort((a, b) => a.date < b.date ? -1 : 1)
+      .map(r => { if (!modAt) return r; const f = modAt(r.date); return f === 1 ? r : Object.assign({}, r, { revenue: r.revenue / f }); });
     if (!src.length) return [];
     const dowIdx = opts.dowIdx || fitDow(src);
     const season = opts.season || fitSeason(src);
