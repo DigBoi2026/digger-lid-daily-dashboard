@@ -127,6 +127,20 @@ const day = (d, net, orders) => ({ day: d, net_sales: String(net), orders: Strin
   const r = await S.buildProductsDaily(TODAY);
   ok('products: a negative residual is clamped to 0', r.daily[0].other === 0, r.daily[0].other);
 
+  /* --------------------------------------------------------------- recent */
+  QUERIES = [];
+  ANSWER = () => [
+    { day: '2026-09-09', total_sales: '13734.31', net_sales: '12059.13', orders: '38' },
+    { day: '2026-09-10', total_sales: '19499.28', net_sales: '17119.07', orders: '58' },
+    { day: '2026-09-11', total_sales: '6061.67',  net_sales: '5216.99',  orders: '21' },
+  ];
+  const rc = await S.buildRecent(TODAY);
+  ok('recent: one query', QUERIES.length === 1, QUERIES.length);
+  ok('recent: asks for total_sales — the figure that matches the sheet', /total_sales, net_sales, orders/.test(QUERIES[0]), QUERIES[0]);
+  ok('recent: three weeks, through today', /SINCE 2026-08-20/.test(QUERIES[0]) && /UNTIL 2026-09-12/.test(QUERIES[0]), QUERIES[0]);
+  ok('recent: rows shaped for shopifyFill', rc.daily[0].date === '2026-09-09' && rc.daily[0].total === 13734.31 && rc.daily[0].orders === 38, rc.daily[0]);
+  ok('recent: names the measure', rc.meta.measure === 'total_sales');
+
   console.log(`shopify customers+products: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();

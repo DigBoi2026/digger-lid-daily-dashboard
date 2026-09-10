@@ -13,8 +13,11 @@
 
 const SHEET = window.DL_DATA || null;
 const PULSE = window.DL_PULSE || null;
+let RECENT = null;                     // Shopify's last three weeks, for the days the sheet has not reached
 let charts = { ctx: null };
-const S = { day: null, ctxMetric: 'revenue' };
+/* win: 1 = the selected day; 3 = the three days ending on it, pooled. The day
+   defaults to yesterday in the shop's timezone (AEST), not the viewer's. */
+const S = { day: null, win: 1, ctxMetric: 'revenue' };
 
 /* ---------- formatters ---------- */
 const money=(n,c=true)=>{ if(n==null||isNaN(n))return '—';
@@ -30,8 +33,22 @@ const dowOf=iso=>DOW[new Date(iso+'T00:00:00Z').getUTCDay()];
 
 /* ---------- series registry ----------
    Every signal exposes {dates, vals, dens} — consecutive daily arrays. */
-const sheetDates = SHEET ? SHEET.daily.map(d=>d.date) : [];
+/* The sheet's rows, then the days Shopify has that the sheet has not reached,
+   flagged provisional (see DLcore.shopifyFill). Shopify's total_sales is the
+   P&L's revenue figure to the cent, so those days carry real revenue and orders
+   a day early; everything the sheet adds stays null and pending. */
+let ROWS = [];
+const sheetDates = [];
+function rebuildRows(){
+  ROWS = SHEET ? SHEET.daily.concat(DLcore.shopifyFill(SHEET.daily, RECENT && RECENT.daily)) : [];
+  sheetDates.length = 0; sheetDates.push(...ROWS.map(d=>d.date));
+}
+rebuildRows();
 const sheetIdx = new Map(sheetDates.map((d,i)=>[d,i]));
+const rowAt = iso => sheetIdx.has(iso) ? ROWS[sheetIdx.get(iso)] : null;
+/* The rows of the current window ending on iso — one for 1D, three for 3D. */
+function windowRows(iso){ const i=sheetIdx.get(iso); if(i==null) return []; return ROWS.slice(Math.max(0,i-S.win+1), i+1); }
+const isProv = r => !!(r && r.provisional);
 /* PENDING vs ZERO — the general rule, replacing a guard that covered one metric.
 
    This used to read `(key==='ncpa' && !v) ? null : v` with the comment "$0 CPA =
@@ -55,7 +72,7 @@ function isPendingFor(rec, key){
   return rec.pending.some(g => (PENDING_KEYS[g]||[]).includes(key));
 }
 const sheetSeries = key => ({ dates: sheetDates,
-  vals: SHEET.daily.map(r=>{
+  vals: ROWS.map(r=>{
     if(isPendingFor(r, key)) return null;          // waiting on the sheet, not a zero
     const v=r[key]; if(v==null) return null;
     return (key==='ncpa' && !v) ? null : v;        // kept: a $0 CPA is an artifact either way
@@ -77,15 +94,9 @@ function baselines(sig, iso){
   const ser = sig.ser || sig;                 // signals carry series under .ser; ad-hoc calls pass it inline
   const i = ser.dates.indexOf(iso);
   if(i<0) return null;
-  const y = ser.vals[i];
-  const prev = (from,n) => { const out=[]; for(let k=1;k<=n;k++){ if(from-k<0)break; out.push(ser.vals[from-k]); } return out; };
-  const b3 = mean(prev(i,3).slice(0,3));
-  const w30 = prev(i,30), n30 = w30.filter(v=>v!=null).length;
-  const b30 = n30>=7 ? mean(w30) : null;
-  const wk=[]; for(let k=1;k<=4;k++){ const j=i-7*k; if(j>=0) wk.push(ser.vals[j]); }
-  const bwk = wk.filter(v=>v!=null).length>=2 ? mean(wk) : null;
-  const den = ser.dens ? ser.dens[i] : null;
-  return { y, b3, b30, bwk, n30, den };
+  /* The window's pooled value against baselines that sit BEFORE it; for 1D this
+     is the single-day rule the page always had (DLcore.windowBaselines). */
+  return DLcore.windowBaselines(ser, i, S.win);
 }
 const deltaPct=(y,b)=> (y==null||b==null||!b) ? null : (y-b)/Math.abs(b)*100;
 function judge(sig, iso){
@@ -132,14 +143,20 @@ const evalAll = iso => SIGNALS.map(sig=>({sig, r: judge(sig, iso)}));
 /* ---------- day navigation ---------- */
 const computeAllDays = () => [...new Set([...sheetDates, ...(PULSE?PULSE.days:[])])].sort();
 let allDays = computeAllDays();
-function rebuildIndexes(){                     // after a live upgrade of either source
+function rebuildIndexes(){                     // after a live upgrade of any source
+  rebuildRows();
   sheetIdx.clear(); sheetDates.forEach((d,i)=>sheetIdx.set(d,i));
   pIdx = PULSE ? new Map(PULSE.days.map((d,i)=>[d,i])) : new Map();
   allDays = computeAllDays();
 }
+/* Yesterday in the shop's timezone — the last full trading day, whoever is
+   looking and wherever they are. If no source has it yet, the newest day that
+   is not after it. */
 function defaultDay(){
-  // newest day with ANY data across both sources (site signals usually run ahead of the sheet).
-  return allDays.length ? allDays[allDays.length-1] : null;
+  const want = DLcore.previousDayAEST();
+  if(allDays.includes(want)) return want;
+  const older = allDays.filter(d => d <= want);
+  return older.length ? older[older.length-1] : (allDays.length ? allDays[allDays.length-1] : null);
 }
 
 /* ============================ RENDER ============================ */
@@ -147,9 +164,20 @@ function render(){
   if(!S.day){ document.getElementById('errBox').classList.add('show'); return; }
   const iso=S.day, evals=evalAll(iso);
   document.getElementById('navDate').textContent = nice(iso);
-  document.getElementById('navDow').textContent = dowOf(iso)+' · DAILY PULSE';
-  const newest = PULSE ? PULSE.days[PULSE.days.length-1] : sheetDates[sheetDates.length-1];
-  document.getElementById('throughVal').textContent = nice(newest);
+  document.getElementById('navDow').textContent = S.win===1
+    ? dowOf(iso)+' · DAILY PULSE'
+    : '3 DAYS TO '+dowOf(iso).slice(0,3)+' · PULSE';
+  document.querySelectorAll('#winSeg button').forEach(b=>b.classList.toggle('active', +b.dataset.win===S.win));
+  document.getElementById('sigNote').textContent = (S.win===1?'day':'3-day window')+' vs 3-day · 30-day · same-weekday averages';
+  /* Freshness, per source: the sheet's real last entry, then how far Shopify and
+     the site signals run past it. */
+  const sheetLast = SHEET && SHEET.daily.length ? SHEET.daily[SHEET.daily.length-1].date : null;
+  const shopLast = ROWS.length && isProv(ROWS[ROWS.length-1]) ? ROWS[ROWS.length-1].date : null;
+  const siteLast = PULSE ? PULSE.days[PULSE.days.length-1] : null;
+  document.getElementById('throughVal').textContent = sheetLast ? nice(sheetLast) : '—';
+  document.getElementById('throughPend').textContent =
+    [shopLast ? 'Shopify to '+nice(shopLast) : '', siteLast ? 'site to '+nice(siteLast) : ''].filter(Boolean).join(' · ');
+  const newest = allDays[allDays.length-1];
   document.getElementById('jumpNewest').classList.toggle('show', iso < newest);
   const i=allDays.indexOf(iso);
   document.getElementById('prevBtn').disabled = i<=0;
@@ -189,6 +217,9 @@ function renderVerdict(evals, iso){
   }
   const sheetHas = sheetIdx.has(iso);
   if(!sheetHas && SHEET) sub.textContent += ` · business metrics end ${nice(sheetDates[sheetDates.length-1])} (site signals only)`;
+  const provDays = windowRows(iso).filter(isProv).length, pendDays = windowRows(iso).filter(r=>r.pending&&r.pending.includes('adSpend')).length;
+  if(provDays) sub.textContent += ` · ${S.win>1?provDays+' of '+S.win+' days':'P&L'} not in the sheet yet — revenue & orders from Shopify`;
+  else if(pendDays) sub.textContent += ` · ad spend not yet entered${S.win>1?' for '+pendDays+' of '+S.win+' days':''} — spend & profit are estimates`;
   right.innerHTML = [
     issues.length ? `<span class="v-chip b-t">${issues.length} ISSUE${issues.length>1?'S':''}</span>` : '',
     watches.length ? `<span class="v-chip a-t">${watches.length} WATCH</span>` : '',
@@ -201,43 +232,98 @@ function fmtDelta(d,dir,signedWord=false){
   return s;
 }
 
-/* ---- KPI strip (sheet, day vs 3d avg, 14-day spark) ---- */
+/* ---- KPI strip (window totals, day vs 3d avg, 14-day spark) ----
+
+   Every tile shows a number if there is any honest way to get one, and greys it
+   when the sheet has not confirmed it:
+
+     · a day the sheet has not reached  -> revenue and orders from Shopify (the
+       same figures, a day early); sessions and conversion from the site signals
+     · ad spend not typed in yet        -> the recent average, marked "est."
+     · profit before that spend         -> the sheet's own contribution less the
+       estimated spend, marked "est."
+
+   Grey with the reason under it, never a blank, never a confident number. */
+function recentEntered(iso, n=7){
+  // the last n rows before the window whose ad spend has been typed in
+  const i=sheetIdx.get(iso); if(i==null) return [];
+  const out=[]; for(let k=i-S.win; k>=0 && out.length<n; k--){ const r=ROWS[k]; if(r && r.totalAds>0 && !(r.pending&&r.pending.length)) out.push(r); }
+  return out;
+}
+function estimates(iso){
+  const ent = recentEntered(iso);
+  const avgSpend = ent.length ? ent.reduce((a,r)=>a+r.totalAds,0)/ent.length : null;
+  const contrib = ent.length ? ent.reduce((a,r)=>a+((r.revExGst!=null?r.revExGst:r.revenue)-(r.totalVC||0))/r.revenue,0)/ent.length : null;
+  const fc = ent.length ? ent[0].totalFC||0 : 0;
+  const dayProfit = r => {
+    if(!(r.pending&&r.pending.includes('profit')) && r.profit!=null) return r.profit;          // entered: the sheet's own figure
+    if(avgSpend==null) return null;
+    const before = r.revExGst!=null ? r.revExGst-(r.totalVC||0)-(r.totalFC||0)                  // half-entered: costs are in, spend is not
+                 : (contrib!=null && r.revenue!=null ? r.revenue*contrib - fc : null);          // Shopify-only: recent rates
+    return before==null ? null : before - avgSpend;
+  };
+  return { avgSpend, contrib, dayProfit, n: ent.length };
+}
 function renderKPIs(iso){
   const el=document.getElementById('kpis');
-  const hasSheet = sheetIdx.has(iso), hasPulse = PULSE && pIdx.has(iso);
-  // Each tile: sheet series first; if the sheet doesn't cover the day, fall back to the
-  // PostHog equivalent where one exists (labelled "site"), else say so plainly.
+  const rows = windowRows(iso);
+  const hasSheet = rows.length>0, hasPulse = PULSE && pIdx.has(iso);
+  const agg = rows.length>1 ? DLcore.aggregate(rows) : (rows[0]||null);
+  const provDays = rows.filter(isProv).length;
+  const pendDays = rows.filter(r=>r.pending&&r.pending.includes('adSpend')).length;
+  const est = estimates(iso);
   const pulseSessions = hasPulse ? pulseRaw('sessions') : null;
   const pulseOrders   = hasPulse ? pulseRaw('orders')   : null;
   const pulseCvr      = hasPulse ? pulseRate('orders','sessions',100) : null;
+  const daysWord = n => S.win>1 ? `${n} of ${S.win} days` : 'day';
   const tiles=[
-    {lbl:'Revenue',    fmt:v=>money(v,true), dir:'high', accent:true,  sheet:'revenue'},
-    {lbl:'Meta Spend', fmt:v=>money(v,true), dir:null,                 sheet:'metaTotal'},
-    {lbl:'Net Profit', fmt:v=>money(v,true), dir:'high',               sheet:'profit'},
-    {lbl:'Orders',     fmt:numf,             dir:'high',               sheet:'orders',   alt:pulseOrders},
+    {lbl:'Revenue',    fmt:v=>money(v,true), dir:'high', accent:true,  sheet:'revenue',  shop:true},
+    {lbl:'Meta Spend', fmt:v=>money(v,true), dir:null,                 sheet:'metaTotal', spend:true},
+    {lbl:'Net Profit', fmt:v=>money(v,true), dir:'high',               sheet:'profit',    profit:true},
+    {lbl:'Orders',     fmt:numf,             dir:'high',               sheet:'orders',   alt:pulseOrders, shop:true},
     {lbl:'Sessions',   fmt:numf,             dir:'high',               sheet:'sessions', alt:pulseSessions},
     {lbl:'Conversion', fmt:v=>pctf(v,2),     dir:'high',               sheet:'cvr',      alt:pulseCvr},
   ];
   const sparks=[];
   el.innerHTML = tiles.map((t,ti)=>{
-    let ser=null, tag='';
-    if(hasSheet) ser=sheetSeries(t.sheet);
-    else if(t.alt){ ser=t.alt; tag=' · site'; }
+    let ser=null, tag='', y=null, prov=false, why='', per='vs 3-day avg', approx=false;
+    if(hasSheet){
+      ser=sheetSeries(t.sheet);
+      y = agg ? agg[t.sheet] : null;
+      if(t.shop && provDays){ prov=true; why = `${S.win>1?provDays+' of '+S.win+' days':'Shopify'} · not yet in sheet`; }
+      if(t.spend && pendDays){
+        /* entered days as typed, pending days at the recent average */
+        const typed = rows.reduce((a,r)=>a+((r.pending&&r.pending.includes('adSpend'))?0:(r.metaTotal||0)),0);
+        y = est.avgSpend!=null ? typed + est.avgSpend*pendDays : null;
+        prov=true; approx=true;
+        why = y==null ? 'not yet entered' : `est. · ${daysWord(pendDays)} not entered · avg ${money(est.avgSpend,true)}/day`;
+      }
+      if(t.profit && pendDays){
+        const parts = rows.map(est.dayProfit);
+        y = parts.every(v=>v!=null) ? parts.reduce((a,b)=>a+b,0) : null;
+        prov=true; approx=true;
+        why = y==null ? 'before ad spend · not yet entered' : `est. · before ad spend${provDays?' · recent cost rates':''}`;
+      }
+      /* sessions and conversion do not exist on a Shopify-only day: use the site's */
+      if((t.sheet==='sessions'||t.sheet==='cvr') && (y==null || isNaN(y)) && t.alt){
+        const b0=judge({ser:t.alt, dir:'high'}, iso); if(b0.y!=null){ ser=t.alt; y=b0.y; tag=' · site'; prov=true; why='site signals · sheet not yet in'; }
+      }
+    } else if(t.alt){ ser=t.alt; tag=' · site'; const b0=judge({ser, dir:'high'}, iso); y=b0.y; }
     if(!ser) return `<div class="kpi"><div class="k-head"><div class="k-lbl">${t.lbl}</div>
       <div class="k-val">—</div><div class="k-sub">no sheet data</div></div><div class="k-foot"></div></div>`;
     const b=judge({ser, dir:t.dir||'high'}, iso);
-    const y=b.y, d3=b.d3;
+    if(y==null && !prov) y=b.y;
+    const d3 = approx ? null : b.d3;
     const cls = t.dir==null ? 'flat' : (d3==null?'flat' : (t.dir==='high'? (d3>=0?'up':'down') : (d3<=0?'up':'down')));
     const ar = d3==null?'—':(d3>=0?'▲':'▼');
     sparks.push({ti, ser});
-    // Distinguish "the sheet hasn't been filled in yet" from "there is no such
-    // number". A bare dash reads as a fault; "pending" reads as a queue.
-    const row = hasSheet ? SHEET.daily[sheetIdx.get(iso)] : null;
-    const waiting = y==null && isPendingFor(row, t.sheet);
-    return `<div class="kpi ${t.accent?'accent':''}"><div class="k-head"><div class="k-lbl">${t.lbl}${tag}</div>
-      <div class="k-val">${y==null?(waiting?'pending':'—'):t.fmt(y)}</div>
-      <div class="k-sub">${waiting?'not yet entered':'&nbsp;'}</div></div>
-      <div class="k-foot"><span class="delta ${cls}">${ar} ${d3==null?'—':Math.abs(d3).toFixed(1)+'%'}</span><span class="k-per">${waiting?'awaiting sheet entry':'vs 3-day avg'}</span></div>
+    const row = rows[rows.length-1] || null;
+    const waiting = y==null && (isPendingFor(row, t.sheet) || pendDays>0);
+    if(waiting && !why) why = provDays ? 'awaiting sheet · no site signal yet' : 'not yet entered';
+    return `<div class="kpi ${t.accent?'accent':''} ${prov||waiting?'prov':''}"><div class="k-head"><div class="k-lbl">${t.lbl}${tag}</div>
+      <div class="k-val">${y==null||isNaN(y)?(waiting?'pending':'—'):(approx?'~':'')+t.fmt(y)}</div>
+      <div class="k-sub">${why||'&nbsp;'}</div></div>
+      <div class="k-foot"><span class="delta ${cls}">${ar} ${d3==null?'—':Math.abs(d3).toFixed(1)+'%'}</span><span class="k-per">${waiting?'awaiting sheet entry':approx?'no comparison on an estimate':per}</span></div>
       <canvas class="spark" data-ti="${ti}"></canvas></div>`;
   }).join('');
   el.querySelectorAll('canvas.spark').forEach(cv=>{
@@ -251,6 +337,7 @@ function renderKPIs(iso){
 function renderSignals(evals, iso){
   const order={issue:0, watch:1, ok:2, low:3, nodata:4};
   const rows=[...evals].sort((a,b)=>order[a.r.status]-order[b.r.status]);
+  const provWin = windowRows(iso).some(isProv);
   document.getElementById('sigList').innerHTML = rows.map(({sig,r})=>{
     if(r.status==='nodata') return `<div class="sigrow"><span class="hdot" style="background:var(--line)"></span>
       <span class="snm">${sig.label}<span class="src">${sig.src}</span></span>
@@ -262,7 +349,8 @@ function renderSignals(evals, iso){
       return `<span class="sdelta num ${cls}">${d>=0?'+':''}${d.toFixed(0)}%</span>`; };
     const note = r.status==='issue'||r.status==='watch'
       ? `<div class="snote">${sig.dir==='low'?'higher':'lower'} than normal — ${r.d3!=null?fmtDelta(r.d3)+' vs 3-day':''}${r.d30!=null?' · '+fmtDelta(r.d30)+' vs 30-day':''}${r.n30<30?' ('+r.n30+'d of history)':''}</div>` : '';
-    return `<div class="sigrow ${r.status}">
+    const prov = provWin && sig.src==='Sheet';
+    return `<div class="sigrow ${r.status}${prov?' prov':''}">
       <span class="hdot ${dotCls}" ${r.status==='low'?'style="background:var(--line)"':''}></span>
       <span class="snm">${sig.label}<span class="src">${sig.src}</span></span>
       <span class="sval num">${sig.fmt(r.y)}</span>
@@ -299,7 +387,7 @@ function renderHealth(iso){
   const rows=[['JS errors','errors'],['Rage clicks','rageclicks'],['Dead clicks','deadclicks']];
   wrap.innerHTML = rows.map(([lbl,key])=>{
     const ser=pulseRate(key,'pageviews',1000), b=judge({dir:'low', dates:ser.dates, vals:ser.vals, dens:ser.dens}, iso);
-    const raw=PULSE.series[key][i];
+    let raw=null; for(let k=Math.max(0,i-S.win+1);k<=i;k++){ const v=PULSE.series[key][k]; if(v!=null) raw=(raw||0)+v; }
     return hRow(`${lbl} <small style="color:var(--muted)">· ${raw==null?'—':numf(raw)}</small>`,
       b.y==null?'—':b.y.toFixed(1)+'/1k', b.d3, 'low');
   }).join('');
@@ -315,11 +403,12 @@ function renderChannels(iso){
   let i=pIdx.get(iso), useIso=iso;
   if(dayTot(i)===0){ let j=i-1; while(j>=0 && dayTot(j)===0) j--; if(j>=0){ i=j; useIso=PULSE.days[j]; } }
   document.getElementById('chanNote').textContent = useIso===iso
-    ? 'sessions · day vs 3-day avg'
+    ? `sessions · ${S.win===1?'day':'3-day total'} vs 3-day avg`
     : `attribution pending — showing ${nice(useIso)}`;
   const rows=Object.entries(PULSE.channels).map(([name,vals])=>{
     const b=judge({dir:'high', dates:PULSE.days, vals}, useIso);
-    return {name, y:vals[i], d3:b.d3};
+    let y=null; for(let k=Math.max(0,i-S.win+1);k<=i;k++){ if(vals[k]!=null) y=(y||0)+vals[k]; }
+    return {name, y, d3:b.d3};
   }).filter(r=>r.y!=null).sort((a,b)=>b.y-a.y);
   const max=Math.max(...rows.map(r=>r.y),1);
   wrap.innerHTML = rows.map(r=>{
@@ -363,8 +452,8 @@ function renderCtx(iso){
   const labels=ser.dates.slice(from,i+1).map(nice), data=ser.vals.slice(from,i+1);
   const b=judge({dir:'high',dates:ser.dates,vals:ser.vals}, iso);
   const cfg={type:'bar', data:{labels, datasets:[
-      {data, backgroundColor:data.map((_,k)=>k===data.length-1?'#f5eb19':'rgba(245,235,25,0.28)'),
-       borderColor:data.map((_,k)=>k===data.length-1?'#f5eb19':'transparent'), borderWidth:1, borderRadius:2, order:2},
+      {data, backgroundColor:data.map((_,k)=>k>=data.length-S.win?'#f5eb19':'rgba(245,235,25,0.28)'),
+       borderColor:data.map((_,k)=>k>=data.length-S.win?'#f5eb19':'transparent'), borderWidth:1, borderRadius:2, order:2},
       ...(b.b30!=null?[{type:'line', data:Array(labels.length).fill(b.b30), borderColor:'rgba(255,255,255,0.55)',
         borderDash:[6,4], borderWidth:1.4, pointRadius:0, order:1, label:'30d avg'}]:[]),
       ...(b.b3!=null?[{type:'line', data:Array(labels.length).fill(b.b3), borderColor:'rgba(255,138,74,0.8)',
@@ -390,7 +479,7 @@ function setLive(mode,note){ const dot=document.getElementById('liveDot'),txt=do
   if(pill) pill.title = note || 'Data source status'; }
 async function tryLive(){
   setLive('loading');
-  let sheetLive=false, pulseLive=false;
+  let sheetLive=false, pulseLive=false, shopLive=false;
   const onNewest = S.day===defaultDay();
   // Sheet P&L (Daily Ops source)
   if(SHEET){
@@ -419,16 +508,23 @@ async function tryLive(){
         } }
     }catch(e){}
   }
+  // Shopify: the days the sheet has not reached (one cheap query)
+  if(SHEET){
+    try{
+      const r=await fetch('/api/shopify?dataset=recent');
+      if(r.ok){ const j=await r.json(); if(j&&j.daily&&j.daily.length&&!j.error){ RECENT=j; shopLive=true; } }
+    }catch(e){}
+  }
   // A source only counts as "expected" if the page actually has that dataset.
-  const want = (SHEET?1:0) + (PULSE?1:0), got = (sheetLive?1:0) + (pulseLive?1:0);
+  const want = (SHEET?2:0) + (PULSE?1:0), got = (sheetLive?1:0) + (pulseLive?1:0) + (shopLive?1:0);
   if(got){ rebuildIndexes(); SIGNALS=buildSignals(); if(onNewest) S.day=defaultDay(); render(); }
   if(!got){ setLive('snap'); return; }
   if(got===want){ setLive('live'); return; }
   // Partial: at least one source refreshed but another is down. Never claim "Live"
   // here — the sheet P&L half of this page would be stale or blank while the pill
-  // says otherwise. Name the failed source so the gap is explainable at a glance.
-  const stale = !sheetLive ? 'sheet P&L' : 'site signals';
-  const asOf  = !sheetLive && SHEET && sheetDates.length ? ' (frozen at '+sheetDates[sheetDates.length-1]+')' : '';
+  // says otherwise. Name the failed sources so the gap is explainable at a glance.
+  const stale = [!sheetLive&&SHEET?'sheet P&L':'', !pulseLive&&PULSE?'site signals':'', !shopLive&&SHEET?'Shopify fill-in':''].filter(Boolean).join(' + ');
+  const asOf  = !sheetLive && SHEET && SHEET.daily.length ? ' (frozen at '+SHEET.daily[SHEET.daily.length-1].date+')' : '';
   setLive('partial', 'Partial refresh — '+stale+' unavailable'+asOf+'. Showing the embedded snapshot for that source.');
 }
 
@@ -441,6 +537,7 @@ function step(dir){ const i=allDays.indexOf(S.day)+dir;
   document.getElementById('prevBtn').onclick=()=>step(-1);
   document.getElementById('nextBtn').onclick=()=>step(1);
   document.getElementById('jumpNewest').onclick=()=>{ S.day = allDays[allDays.length-1]; render(); };
+  document.querySelectorAll('#winSeg button').forEach(b=>b.onclick=()=>{ S.win=+b.dataset.win||1; render(); });
   window.addEventListener('keydown',e=>{ if(e.key==='ArrowLeft')step(-1); if(e.key==='ArrowRight')step(1); });
   window.addEventListener('resize',()=>{clearTimeout(window._rz);window._rz=setTimeout(render,200);});
   render(); setLive('snap');

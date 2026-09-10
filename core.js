@@ -152,8 +152,83 @@ var DLcore = (function () {
     line(cur, 'rgba(245,235,25,0.95)', 3.6, true);
   }
 
+  /* ------------------------------------------------------------------------
+     WINDOWED BASELINES — the Pulse page's "day vs its own history", generalised
+     to a window of N days ending at index i.
+
+     y is the window's pooled value: a plain mean for a flow, or Σ(value×den)/Σden
+     for a rate that carries its denominators, so three days at different traffic
+     pool like one longer day rather than averaging a quiet Sunday's rate with a
+     busy Tuesday's as equals. The baselines sit BEFORE the window, not inside
+     it: 3 days before its first day, up to 30 before it (needs 7), and the same
+     N-day window in each of the previous four weeks. For N=1 this is exactly
+     the single-day rule the page always had. */
+  function windowBaselines(ser, i, win) {
+    win = Math.max(1, win | 0);
+    const start = i - win + 1;
+    if (i < 0 || start < 0 || i >= ser.vals.length) return null;
+    const pooled = (a, b) => {                       // indices a..b inclusive
+      let num = 0, den = 0, n = 0, sum = 0;
+      for (let k = a; k <= b; k++) {
+        const v = ser.vals[k]; if (v == null) continue;
+        if (ser.dens) { const d = ser.dens[k]; if (d == null || !d) continue; num += v * d; den += d; }
+        else { sum += v; n++; }
+      }
+      if (ser.dens) return den ? { y: num / den, den } : { y: null, den: 0 };
+      return { y: n ? sum / n : null, den: null };
+    };
+    const cur = pooled(start, i);
+    const prevVals = (from, n) => { const out = []; for (let k = 1; k <= n; k++) { if (from - k < 0) break; out.push(ser.vals[from - k]); } return out; };
+    const meanOf = a => { const v = a.filter(x => x != null); return v.length ? v.reduce((x, y) => x + y, 0) / v.length : null; };
+    const b3 = meanOf(prevVals(start, 3));
+    const w30 = prevVals(start, 30), n30 = w30.filter(v => v != null).length;
+    const b30 = n30 >= 7 ? meanOf(w30) : null;
+    const wk = [];
+    for (let k = 1; k <= 4; k++) { const e = i - 7 * k; if (e - win + 1 >= 0) wk.push(pooled(e - win + 1, e).y); }
+    const bwk = wk.filter(v => v != null).length >= 2 ? meanOf(wk) : null;
+    return { y: cur.y, b3, b30, bwk, n30, den: cur.den, win, start };
+  }
+
+  /* The shop's day, not the viewer's. Shopify and the P&L both close their day
+     on Australian Eastern Standard Time (the store reports AEST, no daylight
+     saving), so "yesterday" is yesterday in Brisbane whoever is looking. */
+  const AEST_TZ = 'Australia/Brisbane';
+  function todayAEST(now) {
+    const d = now || new Date();
+    return new Intl.DateTimeFormat('en-CA', { timeZone: AEST_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  }
+  function previousDayAEST(now) {
+    const t = todayAEST(now);
+    const d = new Date(t + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
+
+  /* Days the sheet has not been given yet, filled from Shopify.
+
+     Shopify's total_sales matches the P&L's revenue to the cent (checked day by
+     day: 14,095.81 / 17,590.78 / 11,957.87 / 10,905.13), so for a day after the
+     sheet's last entry the revenue and order count are not estimates — they are
+     the same numbers a day early. Everything the sheet adds (sessions, costs,
+     ad spend, profit) is absent, so those fields stay null and the row is
+     flagged provisional, pending ad spend and profit like any half-entered day.
+     A day the sheet already has is never overwritten. */
+  function shopifyFill(sheetRows, recent, today) {
+    const have = new Set((sheetRows || []).filter(r => r && r.date).map(r => r.date));
+    const last = [...have].sort().pop() || '';
+    const cut = today || todayAEST();                  // today is still trading: never a full day
+    return (recent || [])
+      .filter(r => r && r.date && r.date > last && r.date < cut && !have.has(r.date) && (r.total > 0 || r.orders > 0))
+      .sort((a, b) => a.date < b.date ? -1 : 1)
+      .map(r => ({
+        date: r.date, revenue: r.total, orders: r.orders,
+        aov: r.orders ? r.total / r.orders : null,
+        provisional: 'shopify', pending: ['adSpend', 'profit'],
+      }));
+  }
+
   return { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline,
-           pendingOf, isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE };
+           pendingOf, isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE,
+           windowBaselines, todayAEST, previousDayAEST, shopifyFill, AEST_TZ };
 })();
 
 if (typeof window !== 'undefined') window.DLcore = DLcore;                       // browser

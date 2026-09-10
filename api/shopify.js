@@ -465,6 +465,32 @@ async function buildProductsDaily(today) {
   };
 }
 
+/* -------------------------------- recent -------------------------------- */
+
+/* The last three weeks of days, for the Pulse page to fill in what the sheet
+   has not been given yet. Shopify's total_sales IS the P&L's revenue figure
+   (matched to the cent day by day), so this is the same number a day early,
+   not an estimate. One cheap query. The store closes its day in AEST and so
+   does the sheet, so the days line up; the page drops today's partial day. */
+async function buildRecent(today) {
+  const since = iso(addDays(today, -21));
+  const until = iso(addDays(today, 2));
+  const rows = await shopifyql(
+    `FROM sales SHOW total_sales, net_sales, orders GROUP BY day SINCE ${since} UNTIL ${until} ORDER BY day`);
+  const daily = (rows || []).map(r => ({
+    date: String(r.day || '').slice(0, 10),
+    total: n2(r.total_sales), net: n2(r.net_sales), orders: +r.orders || 0,
+  })).filter(r => r.date).sort((a, b) => a.date < b.date ? -1 : 1);
+  return {
+    meta: {
+      source: 'Shopify · ShopifyQL (total sales by day)', currency: 'AUD', asOf: iso(today),
+      since, until, days: daily.length, measure: 'total_sales',
+      note: 'total_sales matches the P&L revenue row to the cent; the newest day may still be in progress.',
+    },
+    daily,
+  };
+}
+
 /* -------------------------------- region -------------------------------- */
 async function buildRegion(today) {
   const M = twelveMonths(today);
@@ -518,6 +544,7 @@ module.exports = async (req, res) => {
                   : dataset === 'geo' ? await buildGeo(today)
                   : dataset === 'customers' ? await buildCustomers(today)
                   : dataset === 'productsDaily' ? await buildProductsDaily(today)
+                  : dataset === 'recent' ? await buildRecent(today)
                   : await buildProducts(today);
     res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1800');
     res.setHeader('Content-Type', 'application/json');
@@ -546,6 +573,7 @@ module.exports.buildRegion = buildRegion;         // shared with the AI read sub
 module.exports.buildGeo = buildGeo;               // the Forecast page's country lens
 module.exports.buildCustomers = buildCustomers;   // the Forecast page's customer lens
 module.exports.buildProductsDaily = buildProductsDaily;   // the Forecast page's product lens
+module.exports.buildRecent = buildRecent;         // the Pulse page's Shopify fill-in
 module.exports.categorize = categorize;   // for offline unit testing
 module.exports.accessToken = accessToken;         // for offline unit testing
 module.exports.storeDomain = storeDomain;         // for offline unit testing

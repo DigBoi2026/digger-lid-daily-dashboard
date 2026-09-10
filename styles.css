@@ -321,6 +321,29 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .hdot.n{ background:#4a4445; box-shadow:none; }
 .n-t{ color:var(--muted,#9a9193); font-style:italic; }
 
+/* ---------------------------------------------------------------------------
+   PROVISIONAL — a number the sheet has not confirmed yet, shown anyway.
+
+   The Pulse page fills the days the sheet has not reached from Shopify, and
+   estimates what needs an input that has not been typed in (ad spend, and so
+   profit). Those values are real information and hiding them helped nobody, but
+   they must never read as final: grey figure, dashed edge, and a line under it
+   saying where the number came from and what it is waiting on. Never red — it
+   is a queue, not a fault. */
+.kpi.prov{border-style:dashed;border-color:rgba(154,145,147,.55)}
+.kpi.prov::before{background:var(--muted);opacity:.55}
+.kpi.prov .k-val{color:var(--muted)}
+.kpi.prov .k-sub{color:var(--warn,#ffb020);font-style:italic}
+.kpi.prov .k-per{color:var(--warn,#ffb020)}
+/* the reason line is one line; a long one ends in an ellipsis rather than pushing the tile */
+.pulse-stage .kpi .k-sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.kpi.prov .delta{opacity:.55}
+.sigrow.prov .sval,.sigrow.prov .sdelta{color:var(--muted);font-weight:400;font-style:italic}
+.sigrow.prov .snm::after{content:' provisional';font-size:.8em;color:var(--warn,#ffb020);font-style:italic;letter-spacing:.02em}
+.hrow.prov .hval{color:var(--muted);font-style:italic}
+.daynav .seg.small{margin-left:.4cqw}
+.daynav .seg.small button{font-size:1.15cqh;padding:.45cqh .8cqw}
+
 /* a KPI tile whose value is the word "pending" rather than a number */
 .kpi .k-val{ overflow-wrap:anywhere; }
 

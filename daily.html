@@ -36,13 +36,19 @@
           <div class="dow" id="navDow">DAILY PULSE</div>
         </div>
         <button id="nextBtn" title="Next day" aria-label="Next day">›</button>
-        <button id="jumpNewest" class="jump-chip" title="Jump to the newest day with site signals">newer data →</button>
+        <div class="seg small" id="winSeg" role="group" aria-label="Window ending on the selected day"
+             title="One day, or the three days ending on the selected day">
+          <button data-win="1" class="active">1D</button>
+          <button data-win="3">3D</button>
+        </div>
+        <button id="jumpNewest" class="jump-chip" title="Jump to the newest day with data">newer data →</button>
       </div>
 
       <div class="status">
         <div class="freshness">
-          <div class="lbl">Signals through</div>
+          <div class="lbl" id="throughLbl">Sheet through</div>
           <div class="val" id="throughVal">—</div>
+          <div class="pend" id="throughPend"></div>
         </div>
         <div class="livepill" id="livePill" title="Data source status">
           <span class="dot snap" id="liveDot"></span>
@@ -69,7 +75,7 @@
       <div class="panel">
         <div class="p-head">
           <div class="p-title">Problem <span>Signals</span></div>
-          <div class="p-note" id="sigNote">yesterday vs 3-day · 30-day · same-weekday averages</div>
+          <div class="p-note" id="sigNote">day vs 3-day · 30-day · same-weekday averages</div>
         </div>
         <div class="sighead">
           <span></span><span>Signal</span><span class="num">Day</span>
@@ -119,7 +125,7 @@
 
     <footer id="foot">
       <div id="footSource">—</div>
-      <div id="footNote">Read-only · sheet P&amp;L + PostHog site signals</div>
+      <div id="footNote">Read-only · sheet P&amp;L + Shopify (days the sheet has not reached) + PostHog site signals</div>
     </footer>
 
     <div class="err" id="errBox">
