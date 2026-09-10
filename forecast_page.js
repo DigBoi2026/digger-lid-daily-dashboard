@@ -24,8 +24,12 @@ const EDIT_KEY = 'dl_forecast_sale_edit';     // and lifts they have re-sized
 const S = { scen: 'realistic', hor: 90, live: 'snap',
             mods: [], saleOff: [], saleEdit: {}, sale: [], ceiling: null,
             notesMode: 'simple', view: 'map', lens: 'total' };
-let GEO = null;            // Shopify daily AU/NZ/other, fetched only when asked for
-let GEO_STATE = 'idle';    // idle | loading | ready | failed
+/* Shopify-backed series, fetched only when a lens that needs them is selected.
+   Keyed by dataset name: geo (AU/NZ/rest), customers (new/returning),
+   productsDaily (top products). Each is { state: idle|loading|ready|failed, data }. */
+const EXT = {};
+const extState = name => (EXT[name] && EXT[name].state) || 'idle';
+const extData = name => (EXT[name] && EXT[name].data) || null;
 let DATA = window.DL_DATA || null;
 const PRIOR = window.DL_PRIOR || null;
 let CHART = null;
@@ -183,22 +187,29 @@ const LENSES = {
     build(list) { return [{ id: 'total', name: 'Revenue', rows: list, primary: true }]; },
   },
   customers: {
-    label: 'New vs returning', unit: 'orders', profit: false, ties: true, sparse: true,
-    note: 'order counts from the sheet · measured, not assumed',
-    warn: 'Order counts only. The sheet has no revenue split by customer, and neither ' +
-          'does Shopify, so a per-group revenue figure would assume new and returning ' +
-          'customers spend the same per order — an assumption this data cannot test.',
-    build(list) {
+    label: 'New vs returning', unit: 'money', profit: false, ties: false, sparse: true,
+    needs: 'customers',
+    note: 'Shopify net sales by customer type · order counts tie to the sheet',
+    brief: 'Shopify net sales. Orders tie to the sheet; dollars do not tie to the P&L.',
+    warn: 'Net sales by new_or_returning_customer — ex GST and net of refunds, so the ' +
+          'dollars do not tie to the board’s revenue and there is no cost side, so no ' +
+          'profit. The ORDER counts match the sheet’s New Customer Orders day for day. ' +
+          'Returning customers spend about 8% more per order than new ones, which is why ' +
+          'the split is measured here rather than assumed from order counts.',
+    build(list, ext) {
+      if (!ext || !ext.daily) return null;
+      const mk = key => F.asMetric(ext.daily, key);
       return [
-        { id: 'new', name: 'New customers', rows: F.asMetric(list, 'newOrders'), primary: true },
-        { id: 'ret', name: 'Returning',
-          rows: F.asMetric(list, r => Math.max(0, (r.orders || 0) - (r.newOrders || 0))) },
+        { id: 'new', name: 'New customers', rows: mk('newNet'), aux: mk('newOrders'), primary: true },
+        { id: 'ret', name: 'Returning', rows: mk('retNet'), aux: mk('retOrders') },
       ];
     },
   },
   countries: {
     label: 'AU / NZ / rest', unit: 'money', profit: false, ties: false, sparse: true,
+    needs: 'geo',
     note: 'Shopify net sales by shipping country',
+    brief: 'Different measure from the P&L. Does not tie. No profit.',
     warn: 'Net sales on shipping address — excludes GST and is recorded by destination, ' +
           'so these totals do NOT tie to the board’s revenue, and there is no cost data ' +
           'per country, so no profit. Your workbook’s Country 2/3/4 blocks would tie; ' +
@@ -209,10 +220,9 @@ const LENSES = {
           'itself — read them as scale, not as a forecast. “Rest of world” is also a ' +
           'residual (total less AU less NZ), so it carries any order with no country ' +
           'recorded against it.',
-    needs: 'geo',
-    build(list, geo) {
-      if (!geo || !geo.daily) return null;
-      const mk = key => F.asMetric(geo.daily, key);
+    build(list, ext) {
+      if (!ext || !ext.daily) return null;
+      const mk = key => F.asMetric(ext.daily, key);
       return [
         { id: 'au', name: 'Australia', rows: mk('au'), primary: true },
         { id: 'nz', name: 'New Zealand', rows: mk('nz') },
@@ -220,30 +230,50 @@ const LENSES = {
       ];
     },
   },
+  products: {
+    label: 'Top products', unit: 'money', profit: false, ties: false, sparse: true,
+    needs: 'productsDaily',
+    note: 'Shopify net sales by product · top sellers, then everything else',
+    brief: 'Shopify net sales by product. Does not tie to the P&L. No profit.',
+    warn: 'Net sales by product title — ex GST and net of refunds, so it does not tie to ' +
+          'the board’s revenue, and there is no cost per product here, so no profit. The ' +
+          'top sellers by trailing-year sales get their own line; “Everything else” is ' +
+          'the residual and carries the long tail, gifts with purchase at $0, and refunds. ' +
+          'A product launched inside the last year has no prior year to lean on, and its ' +
+          'measured error says so.',
+    build(list, ext) {
+      if (!ext || !ext.daily || !ext.products) return null;
+      const mk = key => F.asMetric(ext.daily, key);
+      const out = ext.products.map((pr, i) => ({ id: pr.key, name: pr.title, rows: mk(pr.key), primary: i === 0 }));
+      out.push({ id: 'other', name: 'Everything else', rows: mk('other') });
+      return out;
+    },
+  },
 };
 
 const lens = () => LENSES[S.lens] || LENSES.total;
 
-/* Shopify is only asked for when the country lens is actually selected: it is
-   three queries against a rate-limited API, and nobody looking at the total
-   forecast should pay for them. */
-async function ensureGeo() {
-  if (GEO_STATE === 'loading' || GEO_STATE === 'ready') return;
-  GEO_STATE = 'loading'; render();
+/* Shopify is only asked for when a lens that needs it is actually selected:
+   each dataset is several queries against a rate-limited API, and nobody
+   looking at the total forecast should pay for them. */
+async function ensureExt(name) {
+  const st = extState(name);
+  if (st === 'loading' || st === 'ready') return;
+  EXT[name] = { state: 'loading', data: null }; render();
   try {
-    const r = await fetch('/api/shopify?dataset=geo');
+    const r = await fetch('/api/shopify?dataset=' + encodeURIComponent(name));
     if (!r.ok) throw new Error('http-' + r.status);
     const j = await r.json();
     if (!(j.daily || []).length) throw new Error('no rows');
-    GEO = j; GEO_STATE = 'ready';
-  } catch (e) { GEO = null; GEO_STATE = 'failed'; }
+    EXT[name] = { state: 'ready', data: j };
+  } catch (e) { EXT[name] = { state: 'failed', data: null }; }
   render(); measure();
 }
 
 /* Every lens's series, projected. The primary carries the fan and the rails. */
 function runLens(list, hor) {
   const L = lens();
-  const built = L.build(list, GEO);
+  const built = L.build(list, L.needs ? extData(L.needs) : null);
   if (!built) return null;
   return built.map(sr => {
     const out = { id: sr.id, name: sr.name, primary: !!sr.primary, rows: sr.rows };
@@ -266,6 +296,14 @@ function runLens(list, hor) {
                   modifiers: mods, observedCeiling: S.ceiling };
       out[sc] = L.profit ? F.projectPnl(o) : F.project(o);
     });
+    /* A companion count (orders) so a money tile can also say how many and at
+       what average — realistic only; it is context, not a second forecast. */
+    if (sr.aux && sr.aux.length) {
+      try {
+        const a = F.project({ rows: sr.aux, from, horizon: hor, scenario: 'realistic', sparse: true });
+        out.auxTotal = a ? a.total : null;
+      } catch (e) { out.auxTotal = null; }
+    }
     return out;
   });
 }
@@ -278,6 +316,7 @@ function renderKpis(p, ctx) {
      profit, a MER or a breakeven against an order count or a shipping-address
      net-sales figure would be inventing a relationship the data does not have. */
   if (ctx.L && ctx.L !== LENSES.total) return renderKpisLens(p, ctx);
+  el.style.gridTemplateColumns = ''; el.classList.remove('dense');
   const ly = priorSameDates(ctx.list, F.addDays(p.from, 1), F.addDays(p.from, p.horizon));
   const yoy = ly.sum ? (p.total / ly.sum - 1) * 100 : null;
   const nov = p.months.find(m => m.month.slice(5) === '11');
@@ -323,13 +362,15 @@ function renderKpisLens(p, ctx) {
   const label = S.hor === 'EOY' ? 'to year end' : 'next ' + p.horizon + ' days';
 
   if (!ctx.series) {
+    const st = L.needs ? extState(L.needs) : 'idle';
+    el.style.gridTemplateColumns = '';
     el.innerHTML = `<div class="kpi accent" style="grid-column:1/-1">
       <div class="k-lbl">${esc(L.label)}</div>
-      <div class="k-val">${GEO_STATE === 'loading' ? 'Loading…'
-        : GEO_STATE === 'failed' ? 'Shopify unavailable' : '—'}</div>
-      <div class="k-sub">${GEO_STATE === 'failed'
-        ? 'The country split comes from Shopify and the request did not come back. It is rate-limited — try again in a minute.'
-        : 'Fetching daily net sales by shipping country from Shopify.'}</div></div>`;
+      <div class="k-val">${st === 'loading' ? 'Loading…'
+        : st === 'failed' ? 'Shopify unavailable' : '—'}</div>
+      <div class="k-sub">${st === 'failed'
+        ? 'This split comes from Shopify and the request did not come back. It is rate-limited — try again in a minute.'
+        : 'Fetching two years of daily net sales from Shopify.'}</div></div>`;
     return;
   }
 
@@ -344,11 +385,13 @@ function renderKpisLens(p, ctx) {
        measures wider than 100%, at which point a year-on-year arrow is theatre.
        So past that line the tile drops the arrow and says what it is. */
     const eb = BT && BT.byName && BT.byName[sr.name] && BT.byName[sr.name][30];
-    const err = eb ? '±' + (eb.mape * 100).toFixed(0) + '%' : null;
-    const shaky = eb && eb.mape > 0.5;
+    const em = eb ? (eb.mape != null ? eb.mape : eb.coldStart ? eb.coldStart.mape : null) : null;
+    const err = em != null ? '±' + (em * 100).toFixed(0) + '%' + (eb.mape == null ? ' · no prior yr' : '') : null;
+    const shaky = em != null && em > 0.5;
+    const aux = sr.auxTotal ? ' · <b>' + numf(sr.auxTotal) + '</b> orders · AOV ' + money(sp.total / sr.auxTotal, true) : '';
     return { lbl: sr.name + ' · ' + label, val: fmt(sp.total), accent: !!sr.primary,
       sub: 'share <b>' + (tot ? (sp.total / tot * 100).toFixed(0) : '—') + '%</b>' +
-           (ly.sum ? ' · last year ' + fmt(ly.sum) : ''),
+           (aux || (ly.sum ? ' · last year ' + fmt(ly.sum) : '')),
       foot: shaky
         ? '<span class="delta down">' + err + ' measured error</span> scale, not a forecast'
         : yoy != null
@@ -365,13 +408,18 @@ function renderKpisLens(p, ctx) {
      box at every viewport, and a warning spilling out of its own border reads as
      a rendering fault rather than as a warning. Headline on the face, whole
      thing in the tooltip. */
-  const brief = unit === 'orders'
+  const brief = L.brief || (unit === 'orders'
     ? 'No revenue split exists, so none is shown.'
-    : 'Different measure from the P&L. Does not tie. No profit.';
+    : 'Different measure from the P&L. Does not tie. No profit.');
   tiles.push({ lbl: 'Read this first', val: unit === 'orders' ? 'Orders only' : 'Revenue only',
     sub: '', foot: brief, warn: true, title: L.warn || '' });
 
-  el.innerHTML = tiles.slice(0, 6).map(t => `<div class="kpi${t.accent ? ' accent' : ''}${t.warn ? ' warnkpi' : ''}"${
+  /* Six tiles is the row's natural width; a lens with more series gets a denser
+     row rather than losing its tail off the right-hand edge. */
+  const shown = tiles.slice(0, 9);
+  el.style.gridTemplateColumns = shown.length > 6 ? `repeat(${shown.length}, 1fr)` : '';
+  el.classList.toggle('dense', shown.length > 6);
+  el.innerHTML = shown.map(t => `<div class="kpi${t.accent ? ' accent' : ''}${t.warn ? ' warnkpi' : ''}"${
       t.title ? ` title="${esc(t.title)}"` : ''}>
       <div class="k-top"><div class="k-lbl">${t.lbl}</div></div>
       <div class="k-val">${t.val}</div>
@@ -424,14 +472,17 @@ function renderScenarios(ctx) {
   /* The sub-line names the series the figure belongs to whenever the lens has
      more than one, because a tight Australia must not be allowed to hide a
      loose rest-of-world behind a number the reader takes as covering both. */
+  const accVal = b => !b ? '…' : b.mape != null ? '±' + (b.mape * 100).toFixed(0) + '%'
+                     : b.coldStart ? '±' + (b.coldStart.mape * 100).toFixed(0) + '%' : '—';
   const accSub = (b, h) => {
     if (!b) return 'measuring';
     const w = BT && BT['worst' + h];
+    if (b.mape == null) return (b.coldStart ? b.coldStart.n : 0) + ' origins · no prior year' + (w && !w.only ? ' · ' + w.name : '');
     return b.n + (w && !w.only ? ' origins · worst: ' + w.name : ' past origins');
   };
-  document.getElementById('acc30').textContent = b30 ? '±' + (b30.mape * 100).toFixed(0) + '%' : '…';
+  document.getElementById('acc30').textContent = accVal(b30);
   document.getElementById('acc30Sub').textContent = accSub(b30, 30);
-  document.getElementById('acc90').textContent = b90 ? '±' + (b90.mape * 100).toFixed(0) + '%' : '…';
+  document.getElementById('acc90').textContent = accVal(b90);
   document.getElementById('acc90Sub').textContent = accSub(b90, 90);
 }
 
@@ -459,7 +510,9 @@ function smooth(vals, n) {
    map of the year ahead rather than a line that happens to bend. */
 /* Distinct hues for a multi-series lens. Yellow stays the brand's primary and
    the other two are chosen to survive being drawn over the sale-period wash. */
-const SERIES_COLOR = ['rgba(245,235,25,0.95)', 'rgba(57,217,138,0.95)', 'rgba(120,190,255,0.95)'];
+const SERIES_COLOR = ['rgba(245,235,25,0.95)', 'rgba(57,217,138,0.95)', 'rgba(120,190,255,0.95)',
+                      'rgba(255,146,72,0.95)', 'rgba(232,110,200,0.95)', 'rgba(170,140,255,0.95)',
+                      'rgba(179,171,172,0.85)'];
 
 function renderChart(p, ctx) {
   const wrap = document.getElementById('chartWrap');
@@ -1478,7 +1531,7 @@ const horizonOf = (from, to) => Math.round((Date.parse(to + 'T00:00:00Z') - Date
    immediately and the band fills in behind it. */
 /* Keyed by lens — and for countries by whether Shopify has answered yet — so
    returning to a lens does not re-walk the whole book. */
-const btKey = () => S.lens === 'countries' ? 'countries:' + GEO_STATE : S.lens;
+const btKey = () => { const L = lens(); return L.needs ? S.lens + ':' + extState(L.needs) : S.lens; };
 const btTotal = () => (BTS.total && BTS.total !== 'failed') ? BTS.total : null;
 
 /* One number goes in the cell, so it is the WORST series', named. An average
@@ -1489,7 +1542,8 @@ function foldBt(per) {
   [30, 90].forEach(h => {
     const got = per.map(x => ({ name: x.name, r: x.bt && x.bt[h] })).filter(x => x.r);
     if (!got.length) return;
-    const worst = got.reduce((a, b) => b.r.mape > a.r.mape ? b : a);
+    const errOf = r => r.mape != null ? r.mape : (r.coldStart ? r.coldStart.mape : -1);
+    const worst = got.reduce((a, b) => errOf(b.r) > errOf(a.r) ? b : a);
     out[h] = worst.r;
     out['worst' + h] = { name: worst.name, only: got.length === 1 };
   });
@@ -1501,7 +1555,7 @@ function measureLens(key) {
   let res = 'failed';
   try {
     const L = key === 'total' ? LENSES.total : lens();
-    const built = L.build(rows(), GEO);
+    const built = L.build(rows(), L.needs ? extData(L.needs) : null);
     if (built) res = foldBt(built.map(sr => ({
       name: sr.name,
       bt: F.backtest(sr.rows, { sparse: !!L.sparse, model: { scenario: 'realistic' } }),
@@ -1597,7 +1651,7 @@ function wire() {
     document.querySelectorAll('#lensSeg button').forEach(x => x.classList.remove('active'));
     b.classList.add('active'); S.lens = b.dataset.lens;
     render(); measure();
-    if (lens().needs === 'geo') ensureGeo();
+    if (lens().needs) ensureExt(lens().needs);
   });
   document.querySelectorAll('#horSeg button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#horSeg button').forEach(x => x.classList.remove('active'));

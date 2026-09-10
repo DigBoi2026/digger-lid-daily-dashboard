@@ -31,14 +31,16 @@ const row = (name, model, rows) => {
 console.log('MAPE (bias) at 30 / 60 / 90 days, origins with a prior year; cold30 = origins without one\n');
 
 console.log('— baselines —');
-row('naive: trailing 28d mean, nothing else', { dowIdx: ones, season: flatSeason, driftCap: 1, priorWeight: 0, levelMode: 'trailing' });
-row('naive + day-of-week', { season: flatSeason, driftCap: 1, priorWeight: 0, levelMode: 'trailing' });
+row('naive: trailing 28d mean, nothing else', { dowIdx: ones, season: flatSeason, driftMode: 'flat', priorWeight: 0, levelMode: 'trailing' });
+row('naive + day-of-week', { season: flatSeason, driftMode: 'flat', priorWeight: 0, levelMode: 'trailing' });
 row('seasonal naive: last year x yoy only', { priorWeight: 1 });
 console.log('\n— the model, then each part removed —');
 const full = row('FULL MODEL', {});
 row('  - day-of-week index', { dowIdx: ones });
 row('  - month index (season)', { season: flatSeason });
-row('  - drift (level held flat)', { driftCap: 1 });
+row('  - growth trend (level held flat)', { driftMode: 'flat' });
+row('  - growth trend, using best month instead', { growthMode: 'high' });
+row('  - growth trend, using latest 3 months', { growthMode: 'recent' });
 row('  - prior-year blend (A only)', { priorWeight: 0 });
 row('  - shape-mode level (trailing)', { levelMode: 'trailing' });
 row('  - shape-mode level (median)', { levelMode: 'median' });

@@ -533,6 +533,11 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .forecast-stage .seg.small button{font-size:1.05cqh;letter-spacing:.04em;padding:.55cqh .7cqw}
 .forecast-stage .daynav{gap:.4cqw}
 .forecast-stage .kpi .k-val{font-size:3.1cqh}
+/* a lens with more than six series shares the row out thinner */
+.forecast-stage #kpis.dense .kpi .k-val{font-size:2.5cqh}
+.forecast-stage #kpis.dense .kpi .k-lbl{font-size:1.05cqh;letter-spacing:.1em;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.forecast-stage #kpis.dense .kpi .k-sub{font-size:1.1cqh}
+.forecast-stage #kpis.dense .kpi .k-foot{font-size:1.05cqh}
 .forecast-stage .kpi .k-val small{font-size:1.4cqh;color:var(--muted);font-weight:400}
 .forecast-stage .kpi .k-foot{font-size:1.15cqh;font-weight:400;color:var(--muted)}
 .forecast-stage #chartWrap{flex:1;min-height:0;position:relative}

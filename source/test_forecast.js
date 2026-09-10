@@ -562,6 +562,37 @@ function withPromo(rows, day, runUp, lift) {
      bt[30].coldStart == null || bt[30].coldStart.n > 0, bt[30].coldStart);
 })();
 
+/* ---------------------------------------- a product launched mid-window */
+(function () {
+  /* Two years of days. Nothing until 1 Oct 2025 (a $20/day trickle in Aug-Sep),
+     then a flat $1000/day with no seasonality at all. A correct fit says every
+     month is x1; the joint fit used to say October x6 and November x11, because
+     {Oct,Nov,Dec} of 2025 and {Jan..Sep} of 2026 share no month and the year
+     effects were unidentifiable — and the trickle months made it worse. */
+  const rows = [];
+  for (let d = new Date('2024-09-10T00:00:00Z'); d <= new Date('2026-09-08T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) {
+    const iso = d.toISOString().slice(0, 10);
+    const v = iso >= '2025-10-01' ? 1000 : iso >= '2025-08-01' ? 20 : 0;
+    rows.push({ date: iso, revenue: v });
+  }
+  const se = F.fitSeason(rows, true);
+  const idx = Object.values(se.index);
+  ok('launch: no month index blows up on a flat product', Math.max(...idx) < 1.3 && Math.min(...idx) > 0.77, idx.map(v => +v.toFixed(2)));
+  ok('launch: the trickle months are not read as seasonality', se.index[8] > 0.8 && se.index[9] > 0.8, [se.index[8], se.index[9]]);
+  ok('launch: the disconnected block is reported', se.disconnected > 0, se.disconnected);
+  const p = F.project({ rows, from: '2026-09-08', horizon: 90, scenario: 'realistic', sparse: true });
+  ok('launch: the forecast is the run rate, not a x50 launch echo',
+     p.total > 60000 && p.total < 130000, Math.round(p.total));
+  ok('launch: nothing in it is NaN', p.days.every(d => isFinite(d.revenue)));
+  const bt = F.backtest(rows, { sparse: true, model: { scenario: 'realistic' } });
+  /* The trickle counts as the first sale, so the last two origins do see a
+     (tiny) prior year; what matters is that the cold-start figure is measured
+     and finite either way, and that the model does not over-forecast a ramp. */
+  ok('launch: the cold-start error is measured and finite',
+     bt[30] && bt[30].coldStart && isFinite(bt[30].coldStart.mape) && bt[30].coldStart.n > 30, bt[30] && bt[30].coldStart);
+  /* Dense revenue is unaffected: one connected panel, no trickle months. */
+})();
+
 /* ------------------------------------------------- the real books */
 let REAL = null;
 try {

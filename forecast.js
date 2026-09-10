@@ -65,7 +65,7 @@ var DLforecast = (function () {
     rows.forEach(r => { if (keep(r)) (b[dow(r.date)] = b[dow(r.date)] || []).push(r.revenue); });
     const all = mean(Object.values(b).flat());
     const out = {};
-    for (let i = 0; i < 7; i++) out[i] = (b[i] && all) ? mean(b[i]) / all : 1;
+    for (let i = 0; i < 7; i++) out[i] = (b[i] && all > 0 && mean(b[i]) > 0) ? mean(b[i]) / all : 1;
     return out;
   }
 
@@ -114,7 +114,59 @@ var DLforecast = (function () {
       if (!Object.keys(cell[y]).length) delete cell[y];
     }
     const obs = [];                                    // {y, m, log daily mean}
-    for (const y in cell) for (const m in cell[y]) obs.push({ y, m: +m, v: Math.log(mean(cell[y][m])) });
+    /* A month at (or near) 0 — a product before its launch, read as sparse — is
+       not an observation of the month's shape; log(0) would poison the fit, and
+       a trickle month at 1% of the series' run rate (PRO Mat sold $597 in the
+       August before its October launch) would say the same thing less loudly:
+       it made October read as x6 and November as x11 "seasonality". Under a
+       tenth of the series' own daily mean, the month is not trading. */
+    const overall = mean(Object.values(cell).flatMap(y => Object.values(y).flat()));
+    for (const y in cell) for (const m in cell[y]) {
+      const mu = mean(cell[y][m]);
+      if (mu > 0 && (!(overall > 0) || mu >= 0.1 * overall)) obs.push({ y, m: +m, v: Math.log(mu) });
+    }
+
+    /* The year and month effects are only separable where the panel is
+       CONNECTED: some month has to be observed in two different years, or the
+       fit cannot tell "2026 is a bigger year" from "these are bigger months".
+       A product launched in October has {Oct, Nov, Dec} in one year and
+       {Jan..Aug} in the next with nothing in common, and alternating least
+       squares on that returns whatever it started from. Keep the largest
+       connected block (most cells) and report the months it could not reach as
+       unobserved, index 1 — the same treatment a month no year has gets. */
+    const comp = {}; let ncomp = 0;
+    const adj = {};
+    obs.forEach(o => { (adj['y' + o.y] = adj['y' + o.y] || new Set()).add('m' + o.m); (adj['m' + o.m] = adj['m' + o.m] || new Set()).add('y' + o.y); });
+    Object.keys(adj).forEach(start => {
+      if (comp[start] != null) return;
+      const id = ncomp++; const stack = [start];
+      while (stack.length) { const n = stack.pop(); if (comp[n] != null) continue; comp[n] = id; adj[n].forEach(x => stack.push(x)); }
+    });
+    /* A copy, not an alias: emptying `obs` below to refill it from itself
+       silently produced a panel with no cells at all. */
+    let kept = obs.slice(), dropped = 0;
+    if (ncomp > 1) {
+      const size = {}; obs.forEach(o => size[comp['y' + o.y]] = (size[comp['y' + o.y]] || 0) + 1);
+      const best = +Object.keys(size).reduce((a, b) => size[b] > size[a] ? b : a);
+      kept = obs.filter(o => comp['y' + o.y] === best);
+      dropped = obs.length - kept.length;
+    }
+    obs.length = 0; kept.forEach(o => obs.push(o));
+
+    /* One year of a series LAUNCHED inside the data cannot separate its months
+       from its ramp: PRO Mat went $32K in January to $157K in August and that
+       read as an August x2.5 "season", deflating its own run rate by as much.
+       So a series whose first sale is well inside the window gets a flat index
+       until a month repeats, and the page's "no prior year" flag carries it.
+       A series that is already trading on the first day of the data (the P&L
+       itself in 2025) is different: its history is unknown, not zero, and its
+       one year of shape is the best evidence there is — using it takes the
+       cold-start error from 43% to 27%. */
+    const sorted = rows.filter(r => r && r.date).map(r => r.date).sort();
+    const firstRow = sorted[0] || null;
+    const firstSale = (rows.filter(r => r.revenue > 0).map(r => r.date).sort()[0]) || firstRow;
+    const launched = !!(firstRow && firstSale && firstSale > addDays(firstRow, 60));
+    const singleYear = new Set(obs.map(o => o.y)).size < 2 && launched;
 
     const years = [...new Set(obs.map(o => o.y))];
     const months = [...new Set(obs.map(o => o.m))];
@@ -136,12 +188,12 @@ var DLforecast = (function () {
 
     const index = {}, n = {};
     for (let m = 1; m <= 12; m++) {
-      index[m] = months.includes(m) ? Math.exp(Bm[m]) : 1;
-      n[m] = obs.filter(o => o.m === m).length;
+      index[m] = (months.includes(m) && !singleYear) ? Math.exp(Bm[m]) : 1;
+      n[m] = obs.filter(o => o.m === m).length;     // still counted, so the page can say "seen once"
     }
     const yearLevel = {};
     years.forEach(y => yearLevel[y] = Math.exp(A[y]));
-    return { index, observations: n, yearLevel, cells: obs.length };
+    return { index, observations: n, yearLevel, cells: obs.length, disconnected: dropped, singleYear, launched };
   }
 
   /* Year-on-year growth from whole months present in both years, so a partial
@@ -157,11 +209,19 @@ var DLforecast = (function () {
       m[k].sum += r.revenue; m[k].days++;
     });
     const daysIn = k => new Date(Date.UTC(+k.slice(0,4), +k.slice(5,7), 0)).getUTCDate();
+    /* A month at under a tenth of the series' own daily rate is a trickle (the
+       August before a product's October launch), and August-over-August on it
+       would read x263 as growth. Same rule the month index applies. */
+    const allDays = Object.values(m).reduce((a, x) => a + x.days, 0);
+    const overallRate = allDays ? Object.values(m).reduce((a, x) => a + x.sum, 0) / allDays : 0;
+    const trading = k => m[k].days > 0 && m[k].sum / m[k].days >= 0.1 * overallRate;
     const ratios = [];
     for (const k in m) {
       const y = +k.slice(0, 4), prev = (y - 1) + k.slice(4);
       if (!m[prev]) continue;
       if (m[k].days < daysIn(k) || m[prev].days < daysIn(prev)) continue;   // whole months only
+      if (!(m[prev].sum > 0) || !(m[k].sum > 0)) continue;                    // a launch is not growth
+      if (!trading(prev) || !trading(k)) continue;
       ratios.push(m[k].sum / m[prev].sum);
     }
     /* Two readings of the same ratios. `yoy` is the median — robust, but on a
@@ -172,7 +232,7 @@ var DLforecast = (function () {
        most resembles. The ablation study picks between them. */
     const dated = Object.keys(m).filter(k => m[(+k.slice(0, 4) - 1) + k.slice(4)])
       .filter(k => { const prev = (+k.slice(0, 4) - 1) + k.slice(4);
-                     return m[k].days >= daysIn(k) && m[prev].days >= daysIn(prev); })
+                     return m[k].days >= daysIn(k) && m[prev].days >= daysIn(prev) && trading(prev) && trading(k); })
       .sort().map(k => m[k].sum / m[(+k.slice(0, 4) - 1) + k.slice(4)].sum);
     const lastN = dated.slice(-3);
     ratios.sort((a, b) => a - b);
@@ -765,6 +825,10 @@ var DLforecast = (function () {
        more the business has changed since. */
     const byDate = {}; rows.forEach(r => { byDate[r.date] = r.revenue; });
     const lastSeen = rows[rows.length - 1].date;
+    /* When the series began: the first day it sold anything. Last year's days
+       before that are the absence of the product, not quiet days, and must not
+       be offered as a prior. A zero AFTER it (New Zealand on a Tuesday) is. */
+    const firstSale = (rows.find(r => r.revenue > 0) || rows[0]).date;
     const yearBefore = d => { const t = new Date(d + 'T00:00:00Z'); t.setUTCFullYear(t.getUTCFullYear() - 1); return iso(t); };
     const priorAt = date => {
       const ly = yearBefore(date);
@@ -773,6 +837,7 @@ var DLforecast = (function () {
         const d = addDays(ly, k);
         if (byDate[d] != null && d <= lastSeen) { s2 += byDate[d]; n++; }
       }
+      if (addDays(ly, priorSmooth) < firstSale) return null;      // before the series existed
       return n >= Math.max(1, priorSmooth + 1) ? s2 / n : null;   // need most of the window, or don't use it
     };
     /* Overridable so the ablation harness can measure what the blend earns;
@@ -944,6 +1009,7 @@ var DLforecast = (function () {
     const sparse = !!(opts.sparse || (opts.model && opts.model.sparse));
     const src = (rows || []).filter(r => r.date && keeper(sparse)(r)).sort((a, b) => a.date < b.date ? -1 : 1);
     const byDate = {}; src.forEach(r => byDate[r.date] = r.revenue);
+    const firstSale = (src.find(r => r.revenue > 0) || src[0] || {}).date || '0000-00-00';
     const horizons = opts.horizons || [30, 60, 90];
     const step = opts.step || 7;
     const minHistory = opts.minHistory || 90;
@@ -966,7 +1032,7 @@ var DLforecast = (function () {
            the model does now — and dropping them silently would overstate it, so
            both are returned and the page shows both. */
         let cover = 0;
-        for (let k = 1; k <= h; k++) if (byDate[yearBefore(addDays(from, k))] != null) cover++;
+        for (let k = 1; k <= h; k++) { const ly = yearBefore(addDays(from, k)); if (byDate[ly] != null && ly >= firstSale) cover++; }
         (cover / h >= 0.8 ? out[h].errors : out[h].cold).push((p.total - act) / act);
         if (cover / h >= 0.8) out[h].origins.push(from);
       });
@@ -976,14 +1042,18 @@ var DLforecast = (function () {
     horizons.forEach(h => {
       const e = out[h].errors.slice().sort((a, b) => a - b);
       const c = out[h].cold.slice().sort((a, b) => a - b);
+      const coldStart = c.length ? { n: c.length, mape: mean(c.map(Math.abs)), bias: mean(c) } : null;
+      /* No origin with a prior year, but some without: a product launched inside
+         the window. Report the cold-start figure rather than nothing, flagged, so
+         the page can show a measured error instead of a blank. */
       summary[h] = e.length ? {
         n: e.length,
         mape: mean(e.map(Math.abs)),
         bias: mean(e),
         p10: q(e, 0.1), p25: q(e, 0.25), median: q(e, 0.5), p75: q(e, 0.75), p90: q(e, 0.9),
         origins: [out[h].origins[0], out[h].origins[out[h].origins.length - 1]],
-        coldStart: c.length ? { n: c.length, mape: mean(c.map(Math.abs)), bias: mean(c) } : null,
-      } : null;
+        coldStart,
+      } : coldStart ? { n: 0, mape: null, bias: null, coldOnly: true, coldStart } : null;
     });
     return summary;
   }
