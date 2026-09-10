@@ -4,7 +4,7 @@
 // null = not yet tracked that day (NOT zero) — keeps baselines honest.
 window.DL_PULSE = {
   meta: { source:"PostHog · web analytics", asOf:"2026-07-05", trackedFrom:"2026-06-18",
-    note:"Daily site events (UTC). Baselines lengthen automatically as history accrues." },
+    note:"Daily site events (this snapshot in UTC days; live pulls cut days on Melbourne time). Baselines lengthen automatically as history accrues." },
   days: ["2026-06-18","2026-06-19","2026-06-20","2026-06-21","2026-06-22","2026-06-23","2026-06-24","2026-06-25","2026-06-26","2026-06-27","2026-06-28","2026-06-29","2026-06-30","2026-07-01","2026-07-02","2026-07-03","2026-07-04","2026-07-05"],
   series: {
     sessions: [4097,4673,3131,2836,2883,2705,2972,2509,3038,2653,3223,4566,5912,3655,2601,2363,3170,3355],

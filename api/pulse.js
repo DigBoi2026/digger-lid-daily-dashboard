@@ -14,10 +14,23 @@
 const HOST = (process.env.POSTHOG_HOST || 'https://us.posthog.com').replace(/\/$/, '');
 const PID  = process.env.POSTHOG_PROJECT_ID || '475333';
 
-// 62 full days ending yesterday (exclude today's partial day).
-const WINDOW = "timestamp >= toStartOfDay(now()) - INTERVAL 62 DAY AND timestamp < toStartOfDay(now())";
+/* WHOSE DAY. PostHog stores events in UTC and used to be bucketed by UTC day,
+   which put its "yesterday" ten hours out of step with the sheet and Shopify —
+   the site signals for 10 September were not complete until 10am on the 11th,
+   Brisbane time, so the Pulse page opened on a day whose revenue was in but
+   whose sessions were not. Days are now cut on Melbourne time (asked for by
+   name). NOTE: Melbourne observes daylight saving (first Sunday of October to
+   first Sunday of April), while the store and the sheet close their day on
+   AEST all year, so from October the site's day boundary sits one hour after
+   theirs. Override with POSTHOG_TZ=Australia/Brisbane to pin the two together. */
+const TZ = process.env.POSTHOG_TZ || 'Australia/Melbourne';
+const LOCAL = `toTimeZone(timestamp, '${TZ}')`;
+const TODAY_LOCAL = `toStartOfDay(toTimeZone(now(), '${TZ}'))`;
+
+// 62 full local days ending yesterday (exclude today's partial day).
+const WINDOW = `timestamp >= ${TODAY_LOCAL} - INTERVAL 62 DAY AND timestamp < ${TODAY_LOCAL}`;
 const Q_DAILY = `
-SELECT toString(toDate(timestamp)) AS d,
+SELECT toString(toDate(${LOCAL})) AS d,
   uniqIf($session_id, event = '$pageview')   AS sessions,
   countIf(event = '$pageview')               AS pageviews,
   countIf(event = 'Product Added')           AS atc,
@@ -32,7 +45,7 @@ const NAMED_CHANNELS = ['Organic Social', 'Direct', 'Paid Social', 'Organic Sear
 // Filter to the named channels (keeps the row count well under the query API's cap so recent
 // days aren't truncated) — "Other" is derived from total sessions in the handler.
 const Q_CHAN = `
-SELECT toString(toDate(timestamp)) AS d, session.$channel_type AS ch, uniq($session_id) AS s
+SELECT toString(toDate(${LOCAL})) AS d, session.$channel_type AS ch, uniq($session_id) AS s
 FROM events WHERE event = '$pageview' AND ${WINDOW}
   AND session.$channel_type IN (${NAMED_CHANNELS.map(c => `'${c}'`).join(', ')})
 GROUP BY d, ch ORDER BY d LIMIT 2000`;
@@ -74,7 +87,7 @@ async function buildPulse() {
     const payload = {
       meta: { source: 'PostHog · web analytics', asOf: days[days.length - 1] || null,
         trackedFrom: days[0] || null, live: true,
-        note: 'Live daily site signals through yesterday (full days).' },
+        note: `Live daily site signals through yesterday (full days, ${TZ}).`, timezone: TZ },
       days, series, channels,
     };
   return payload;
@@ -92,3 +105,4 @@ module.exports = async (req, res) => {
 };
 
 module.exports.buildPulse = buildPulse;   // shared with the AI read subsystem
+module.exports._queries = { Q_DAILY, Q_CHAN, TZ };   // for offline unit testing
