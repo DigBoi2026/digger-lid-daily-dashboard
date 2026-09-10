@@ -180,6 +180,38 @@ var DLforecast = (function () {
       note: 'Sites closed to late January. Weakest index of the year at 0.66.' },
   ];
 
+  /* ------------------------------------------------------------- metrics */
+
+  /* Re-point the whole engine at a different measure.
+
+     Everything below — the day-of-week shape, the month index, the growth rate,
+     the level, the sale periods, the backtest — is written against `revenue`
+     because that is what it was built for. None of it is actually specific to
+     money: an order count has a weekly rhythm and a November too. So rather
+     than thread a metric key through fifteen functions, a row list is mapped
+     once and the engine runs on it unchanged. One implementation, one set of
+     answers, whatever is being forecast.
+
+     PENDING IS PER-MEASURE, and getting that wrong throws away good data. A day
+     the sheet has not finished carries revenue and orders but no ad spend, so it
+     is unusable for a revenue-and-profit forecast and perfectly good for an
+     order-count one. `pending` is therefore cleared unless the caller says the
+     measure depends on the unfilled fields. */
+  function asMetric(rows, key, opts) {
+    opts = opts || {};
+    const derive = typeof key === 'function' ? key : (r => r[key]);
+    return (rows || []).map(r => {
+      const v = derive(r);
+      return {
+        date: r.date,
+        revenue: (v == null || isNaN(v)) ? 0 : +v,
+        pending: opts.keepPending ? (r.pending || null) : null,
+        /* Carried through so fitPnl still works when the measure IS revenue. */
+        revExGst: r.revExGst, totalVC: r.totalVC, totalAds: r.totalAds, totalFC: r.totalFC,
+      };
+    }).filter(r => r.date);
+  }
+
   /* ------------------------------------------------------- sale periods */
 
   /* WHY FATHER'S DAY IS A SALE PERIOD AND EOFY IS NOT.
@@ -900,7 +932,7 @@ var DLforecast = (function () {
     return summary;
   }
 
-  return { addDays, dow, monthOf, daysInMonth, nthDowOfMonth, fitDow, fitSeason, fitGrowth,
+  return { addDays, dow, monthOf, daysInMonth, nthDowOfMonth, asMetric, fitDow, fitSeason, fitGrowth,
            priorShaper, fitSale, salePeriodModifiers, SALE_PERIODS,
            composeMods, observedCeiling, fitPnl, projectPnl, backtest,
            levelOf, project, EVENTS, SCENARIOS, _mean: mean, _sum: sum };

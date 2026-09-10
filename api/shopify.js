@@ -4,6 +4,7 @@
    the SAME shapes the embedded snapshots use, so the pages upgrade transparently:
      /api/shopify?dataset=products  → window.DL_SHOPIFY shape (Products page)
      /api/shopify?dataset=region    → window.DL_REGION shape (Region page)
+     /api/shopify?dataset=geo       → daily AU / NZ / other net sales (Forecast country lens)
 
    Required environment variables (Vercel → Settings → Environment Variables):
      SHOPIFY_STORE   your-store            (the *.myshopify.com subdomain, no suffix)
@@ -244,6 +245,85 @@ async function buildProducts(today) {
     keys: KEYS, daily, windows, winTotals, winPrevTotals, monthly, catMonthly };
 }
 
+/* ---------------------------------- geo --------------------------------- */
+
+/* Daily net sales split AU / NZ / everywhere else, for the Forecast page's
+   country lens.
+
+   THREE QUERIES, NOT ONE, and the reason matters. `GROUP BY shipping_country,
+   day` returns only the country-days that had a sale, which is sparse and
+   unbounded — fifteen countries over two years is thousands of rows and the
+   shape changes with trade. Asking for the total, then Australia, then New
+   Zealand gives three dense series of one row per day, and everywhere else
+   falls out as total minus the two. That also sweeps up the orders Shopify
+   records with no shipping country at all, which a country-grouped query would
+   have silently dropped on the floor.
+
+   Sequenced rather than parallel: a shopifyqlQuery costs about 65 of a
+   1000-point bucket and firing them together is what used to trip the
+   throttle.
+
+   NOTE ON THE MEASURE. This is net_sales on shipping address, which is NOT the
+   P&L's revenue — that includes GST and is recorded against the whole business,
+   not a destination. The two will not tie, and the page says so. The workbook's
+   own Country 2/3/4 blocks are the source that would tie, and they are empty on
+   every day of every month; when they are filled this route stops being the
+   place this comes from. */
+async function buildGeo(today) {
+  const since = iso(addDays(today, -730));
+  const until = iso(addDays(today, 1));
+  const one = q => shopifyql(q);
+
+  const totRows = await one(
+    `FROM sales SHOW net_sales, orders GROUP BY day SINCE ${since} UNTIL ${until} ORDER BY day`);
+  const auRows = await one(
+    `FROM sales SHOW net_sales, orders WHERE shipping_country = 'Australia' GROUP BY day SINCE ${since} UNTIL ${until} ORDER BY day`);
+  const nzRows = await one(
+    `FROM sales SHOW net_sales, orders WHERE shipping_country = 'New Zealand' GROUP BY day SINCE ${since} UNTIL ${until} ORDER BY day`);
+
+  const bucket = rows => {
+    const m = {};
+    (rows || []).forEach(r => {
+      const d = String(r.day || '').slice(0, 10);
+      if (!d) return;
+      m[d] = { net: n2(r.net_sales), orders: +r.orders || 0 };
+    });
+    return m;
+  };
+  const T = bucket(totRows), A = bucket(auRows), N = bucket(nzRows);
+
+  const daily = Object.keys(T).sort().map(d => {
+    const t = T[d], a = A[d] || { net: 0, orders: 0 }, z = N[d] || { net: 0, orders: 0 };
+    /* Clamped at zero: a refund landing on a day with no matching sale can make
+       the residual negative, which is an artefact of net_sales being net, not a
+       negative country. */
+    return {
+      date: d,
+      total: t.net, totalOrders: t.orders,
+      au: a.net, auOrders: a.orders,
+      nz: z.net, nzOrders: z.orders,
+      other: n2(Math.max(0, t.net - a.net - z.net)),
+      otherOrders: Math.max(0, t.orders - a.orders - z.orders),
+    };
+  });
+
+  const sum = k => n2(daily.reduce((x, r) => x + (r[k] || 0), 0));
+  return {
+    meta: {
+      source: 'Shopify · ShopifyQL (net sales by shipping country)',
+      currency: 'AUD', asOf: iso(today), since, until, days: daily.length,
+      measure: 'net_sales',
+      caveat: 'Net sales on shipping address. NOT the P&L revenue — that includes GST and ' +
+              'is not recorded by destination — so these totals do not tie to the rest of ' +
+              'the board, and there is no cost data per country, so this supports revenue ' +
+              'and orders only, never profit.',
+      ties_to_pnl: false,
+    },
+    totals: { total: sum('total'), au: sum('au'), nz: sum('nz'), other: sum('other') },
+    daily,
+  };
+}
+
 /* -------------------------------- region -------------------------------- */
 async function buildRegion(today) {
   const M = twelveMonths(today);
@@ -293,7 +373,9 @@ module.exports = async (req, res) => {
   try {
     const dataset = (req.query && req.query.dataset) || 'products';
     const today = new Date(); today.setUTCHours(0, 0, 0, 0);
-    const payload = dataset === 'region' ? await buildRegion(today) : await buildProducts(today);
+    const payload = dataset === 'region' ? await buildRegion(today)
+                  : dataset === 'geo' ? await buildGeo(today)
+                  : await buildProducts(today);
     res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1800');
     res.setHeader('Content-Type', 'application/json');
     res.status(200).send(JSON.stringify(payload));
@@ -318,6 +400,7 @@ module.exports = async (req, res) => {
 
 module.exports.buildProducts = buildProducts;     // shared with the AI read subsystem
 module.exports.buildRegion = buildRegion;         // shared with the AI read subsystem
+module.exports.buildGeo = buildGeo;               // the Forecast page's country lens
 module.exports.categorize = categorize;   // for offline unit testing
 module.exports.accessToken = accessToken;         // for offline unit testing
 module.exports.storeDomain = storeDomain;         // for offline unit testing

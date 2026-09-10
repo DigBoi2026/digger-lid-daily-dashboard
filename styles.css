@@ -378,6 +378,20 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .chartkey .env::before{border-top-style:dotted;border-color:var(--muted)}
 .chartkey .sale::before{height:.9cqh;border:0;background:rgba(245,235,25,.10);
   outline:1px solid rgba(245,235,25,.25)}
+/* One key entry per series on a multi-series lens, in that series' own colour. */
+.chartkey .ser::before{border-color:var(--sc)}
+.chartkey .ser{color:var(--dl-white)}
+
+/* A lens whose measure the P&L cannot price says so in a tile of its own,
+   because the tile row is the only part of this page a passing glance takes in. */
+.kpi.warnkpi{background:linear-gradient(180deg,rgba(255,176,32,.12),rgba(255,176,32,.04));
+  border-color:rgba(255,176,32,.4)}
+.kpi.warnkpi::before{background:var(--warn)}
+.kpi.warnkpi .k-lbl{color:var(--warn)}
+.kpi.warnkpi .k-val{font-size:1.8cqh;color:var(--warn)}
+.kpi.warnkpi .k-foot{font-size:1.1cqh;font-weight:400;color:var(--muted);line-height:1.3;
+  white-space:normal;margin-top:.3cqh;overflow:hidden}
+.forecast-stage .kpi .k-foot{white-space:normal}
 
 /* Mini bar charts in the rail: twelve values do not need a charting library. */
 /* Twelve rows in a short panel, so nothing may be taller than its own track.
@@ -387,10 +401,15 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
    its bar, and the scroll is there as a valve rather than as the plan. */
 .minibars{display:flex;flex-direction:column;justify-content:space-between;flex:1;min-height:0;
   gap:.1cqh;overflow-y:auto;scrollbar-gutter:stable}
-.mb{flex:0 0 auto;display:grid;grid-template-columns:2.6cqw 1fr 2.6cqw;align-items:center;gap:.4cqw}
+/* `auto` on the value column, not a fixed width: the rails carry a 0.92 season
+   index on one lens and a 1,279-order count on another, and a fixed track
+   clipped the second. */
+.mb{flex:0 0 auto;display:grid;grid-template-columns:2.6cqw 1fr auto;align-items:center;gap:.4cqw}
 .mb-l{font-size:1cqh;line-height:1;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
-.mb-v{font-size:1cqh;line-height:1;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
-.mb-t{position:relative;height:1.05cqh;background:var(--panel-2);border-radius:.3cqh;overflow:visible}
+.mb-v{font-size:1cqh;line-height:1;color:var(--muted);text-align:right;
+  font-variant-numeric:tabular-nums;white-space:nowrap;min-width:2.6cqw}
+.mb-t{position:relative;height:1.05cqh;background:var(--panel-2);border-radius:.3cqh;
+  overflow:hidden;min-width:0}
 .mb-t i{position:absolute;left:0;top:0;bottom:0;border-radius:.3cqh;background:rgba(245,235,25,.45)}
 /* A month fitted on a single year is drawn hollow: the sample size travels with
    the figure instead of sitting in a footnote. */
@@ -425,11 +444,21 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
    about 20px of panel overflow once a fixed-height strip sits beneath it. */
 .forecast-stage #chartWrap canvas{position:absolute;inset:0}
 
-.chartbtns{display:flex;gap:.4cqw}
+.chartbtns{display:flex;gap:.5cqw;align-items:center;flex-shrink:0}
+.chartbtns .seg{margin:0}
+.chartbtns .seg button{padding:.4cqh .6cqw}
+/* The head now carries a title, a key and three controls, so it wraps rather
+   than squeezing any of them. */
+.chartpanel .p-head{flex-wrap:wrap;gap:.3cqh .8cqw}
 .chartbtns button{background:var(--panel-2);border:1px solid var(--line);color:var(--muted);
   border-radius:.5cqh;font-family:var(--font-head);font-size:1.05cqh;font-weight:700;
   text-transform:uppercase;letter-spacing:.1em;padding:.35cqh .7cqw;cursor:pointer;white-space:nowrap}
-.chartbtns button:hover{color:var(--dl-yellow);border-color:var(--dl-yellow)}
+/* :not(.active) matters. Both selectors weigh the same, this one comes later in
+   the file, so hovering the SELECTED lens turned its label yellow on a yellow
+   background and the word disappeared. */
+.chartbtns button:not(.active):hover{color:var(--dl-yellow);border-color:var(--dl-yellow)}
+.chartbtns .seg button.active{background:var(--dl-yellow);color:var(--dl-black);
+  border-color:var(--dl-yellow)}
 
 /* ---- the timeline strip ---------------------------------------------------
    Two lanes under the chart, sharing its x-axis: what each month is worth, and
@@ -501,7 +530,8 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
   text-transform:none;margin-left:.4cqw;font-size:1.05cqh}
 .modal .hundredwrap{flex:1;min-height:0}
 .forecast-stage .daynav{justify-self:center;gap:.5cqw}
-.forecast-stage .seg.small button{font-size:1.15cqh;letter-spacing:.06em}
+.forecast-stage .seg.small button{font-size:1.05cqh;letter-spacing:.04em;padding:.55cqh .7cqw}
+.forecast-stage .daynav{gap:.4cqw}
 .forecast-stage .kpi .k-val{font-size:3.1cqh}
 .forecast-stage .kpi .k-val small{font-size:1.4cqh;color:var(--muted);font-weight:400}
 .forecast-stage .kpi .k-foot{font-size:1.15cqh;font-weight:400;color:var(--muted)}

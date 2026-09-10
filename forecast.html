@@ -85,6 +85,15 @@
           <div class="p-title">Forecast <span id="chartSpan">Map</span></div>
           <div class="chartkey" id="chartKey"></div>
           <div class="chartbtns">
+            <!-- The lens sits with the chart rather than in the header: it says what
+                 the chart is OF, and three selectors would not fit beside the nav —
+                 they cost .hleft 348px of overflow when they were up there. -->
+            <div class="seg small" id="lensSeg" role="group" aria-label="Select what to forecast"
+                 title="What the forecast is of">
+              <button data-lens="total" class="active">TOTAL</button>
+              <button data-lens="customers">CUSTOMERS</button>
+              <button data-lens="countries">COUNTRIES</button>
+            </div>
             <button id="hundredBtn" title="Where every $100 of sales goes">$100 OF SALES</button>
             <button id="declBtn" title="Sale periods and your modifiers">SALE PERIODS &amp; MODIFIERS</button>
           </div>

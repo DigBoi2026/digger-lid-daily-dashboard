@@ -194,6 +194,45 @@ function synth(startYear, years, opts) {
        from: '2025-12-31', horizon: 30 }).drift >= 1 / (Math.pow(Math.max(g.high, 1.05), 28 / 365)) - 0.01);
 })();
 
+/* ------------------------------------------------------------- asMetric */
+
+/* Re-pointing the engine at a different measure. The whole point is that
+   nothing else changes, so these check the mapping is faithful and — the part
+   that matters — that PENDING is handled per-measure. A day the sheet has not
+   finished carries revenue and orders but no ad spend: unusable for revenue,
+   perfectly good for an order count. Dropping those days from an order forecast
+   would throw away real data for no reason. */
+(() => {
+  const rows = [
+    { date: '2026-01-01', revenue: 100, orders: 10, newOrders: 7, pending: ['adSpend', 'profit'] },
+    { date: '2026-01-02', revenue: 200, orders: 20, newOrders: 15, pending: null },
+    { date: '2026-01-03', revenue: 0, orders: 0, newOrders: null, pending: null },
+  ];
+  const o = F.asMetric(rows, 'orders');
+  ok('asMetric maps a named field onto revenue', o.map(r => r.revenue).join() === '10,20,0', o);
+  ok('asMetric keeps the dates', o.map(r => r.date).join() === '2026-01-01,2026-01-02,2026-01-03');
+  ok('asMetric clears pending by default — orders do not depend on ad spend',
+     o.every(r => r.pending === null), o.map(r => r.pending));
+  ok('asMetric keeps pending when the caller says the measure needs it',
+     F.asMetric(rows, 'revenue', { keepPending: true })[0].pending.length === 2);
+  const d = F.asMetric(rows, r => Math.max(0, (r.orders || 0) - (r.newOrders || 0)));
+  ok('asMetric takes a function, for a derived series', d.map(r => r.revenue).join() === '3,5,0', d);
+  ok('asMetric turns a null into 0 rather than NaN',
+     F.asMetric([{ date: '2026-01-01', orders: null }], 'orders')[0].revenue === 0);
+  ok('asMetric drops rows with no date', F.asMetric([{ orders: 5 }], 'orders').length === 0);
+  ok('asMetric carries the P&L fields through, so fitPnl still works on revenue',
+     F.asMetric([{ date: '2026-01-01', revenue: 9, revExGst: 8, totalVC: 4, totalAds: 2, totalFC: 1 }],
+       'revenue')[0].totalFC === 1);
+
+  /* And the engine really does run on the mapped series. */
+  const synthRows = synth(2024, 2);
+  const withOrders = synthRows.map(r => Object.assign({}, r, { orders: Math.round(r.revenue / 300) }));
+  const p = F.project({ rows: F.asMetric(withOrders, 'orders'), from: '2025-12-31', horizon: 30 });
+  ok('the engine projects an order count like any other series',
+     p && p.total > 0 && p.days.length === 30, p && p.total);
+  ok('and its level is in orders, not dollars', p.level < 200, p.level);
+})();
+
 /* --------------------------------------------------------- sale periods */
 
 (() => {

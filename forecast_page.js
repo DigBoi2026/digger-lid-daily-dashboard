@@ -23,7 +23,9 @@ const EDIT_KEY = 'dl_forecast_sale_edit';     // and lifts they have re-sized
 
 const S = { scen: 'realistic', hor: 90, live: 'snap',
             mods: [], saleOff: [], saleEdit: {}, sale: [], ceiling: null,
-            notesMode: 'simple', view: 'map' };
+            notesMode: 'simple', view: 'map', lens: 'total' };
+let GEO = null;            // Shopify daily AU/NZ/other, fetched only when asked for
+let GEO_STATE = 'idle';    // idle | loading | ready | failed
 let DATA = window.DL_DATA || null;
 const PRIOR = window.DL_PRIOR || null;
 let CHART = null;
@@ -39,6 +41,11 @@ const money = (n, c = false) => {
   return n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 });
 };
 const pct = (n, d = 1) => n == null || isNaN(n) ? '—' : (n > 0 ? '+' : '') + n.toFixed(d) + '%';
+/* A plain count, for the lenses whose measure is orders rather than dollars.
+   Was used before it existed, which the safe() wrapper turned into the New vs
+   Returning lens quietly falling back to the Total tiles — a silent wrong
+   answer, which is the failure mode this whole board is built to avoid. */
+const numf = n => n == null || isNaN(n) ? '—' : Math.round(n).toLocaleString('en-AU');
 const mult = n => n == null || isNaN(n) ? '—' : 'x' + n.toFixed(2);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const yesterdayISO = () => { const t = new Date(); t.setDate(t.getDate() - 1); t.setHours(0, 0, 0, 0); return t.toISOString().slice(0, 10); };
@@ -139,10 +146,126 @@ function run(scen, hor) {
                         scenario: scen || S.scen, modifiers: allMods(), observedCeiling: S.ceiling });
 }
 
+/* ------------------------------------------------------------------ lenses */
+
+/* WHAT THE FORECAST IS OF.
+
+   Three lenses over one engine. Each supplies its own series and its own units;
+   nothing about the model changes, because a weekly rhythm and a November apply
+   to an order count and a country as much as to a dollar.
+
+   The three are NOT equally well founded, and the page says which is which
+   rather than presenting them as peers:
+
+     total       the P&L's own revenue. Everything ties, profit included.
+     customers   ORDER COUNTS only. The sheet carries newOrders and orders daily
+                 for every one of its 527 days, so the split is measured — but it
+                 carries no revenue split, and Shopify has no customer_type
+                 column either, so a revenue-per-group figure would rest on
+                 assuming the two spend alike. That assumption cannot even be
+                 tested against this data, so it is not made.
+     countries   Shopify net sales on shipping address. A DIFFERENT MEASURE from
+                 the P&L: it excludes GST and is recorded by destination, so the
+                 totals do not tie to the rest of the board and there is no cost
+                 data per country. Revenue and orders only, never profit. The
+                 workbook's own Country 2/3/4 blocks would tie, and are $0.00 on
+                 every day of every month. */
+const LENSES = {
+  total: {
+    label: 'Total', unit: 'money', profit: true, ties: true,
+    note: 'the P&L’s own revenue',
+    build(list) { return [{ id: 'total', name: 'Revenue', rows: list, primary: true }]; },
+  },
+  customers: {
+    label: 'New vs returning', unit: 'orders', profit: false, ties: true,
+    note: 'order counts from the sheet · measured, not assumed',
+    warn: 'Order counts only. The sheet has no revenue split by customer, and neither ' +
+          'does Shopify, so a per-group revenue figure would assume new and returning ' +
+          'customers spend the same per order — an assumption this data cannot test.',
+    build(list) {
+      return [
+        { id: 'new', name: 'New customers', rows: F.asMetric(list, 'newOrders'), primary: true },
+        { id: 'ret', name: 'Returning',
+          rows: F.asMetric(list, r => Math.max(0, (r.orders || 0) - (r.newOrders || 0))) },
+      ];
+    },
+  },
+  countries: {
+    label: 'AU / NZ / rest', unit: 'money', profit: false, ties: false,
+    note: 'Shopify net sales by shipping country',
+    warn: 'Net sales on shipping address — excludes GST and is recorded by destination, ' +
+          'so these totals do NOT tie to the board’s revenue, and there is no cost data ' +
+          'per country, so no profit. Your workbook’s Country 2/3/4 blocks would tie; ' +
+          'they are $0.00 on every day of every month.',
+    needs: 'geo',
+    build(list, geo) {
+      if (!geo || !geo.daily) return null;
+      const mk = key => F.asMetric(geo.daily, key);
+      return [
+        { id: 'au', name: 'Australia', rows: mk('au'), primary: true },
+        { id: 'nz', name: 'New Zealand', rows: mk('nz') },
+        { id: 'other', name: 'Rest of world', rows: mk('other') },
+      ];
+    },
+  },
+};
+
+const lens = () => LENSES[S.lens] || LENSES.total;
+
+/* Shopify is only asked for when the country lens is actually selected: it is
+   three queries against a rate-limited API, and nobody looking at the total
+   forecast should pay for them. */
+async function ensureGeo() {
+  if (GEO_STATE === 'loading' || GEO_STATE === 'ready') return;
+  GEO_STATE = 'loading'; render();
+  try {
+    const r = await fetch('/api/shopify?dataset=geo');
+    if (!r.ok) throw new Error('http-' + r.status);
+    const j = await r.json();
+    if (!(j.daily || []).length) throw new Error('no rows');
+    GEO = j; GEO_STATE = 'ready';
+  } catch (e) { GEO = null; GEO_STATE = 'failed'; }
+  render();
+}
+
+/* Every lens's series, projected. The primary carries the fan and the rails. */
+function runLens(list, hor) {
+  const L = lens();
+  const built = L.build(list, GEO);
+  if (!built) return null;
+  return built.map(sr => {
+    const out = { id: sr.id, name: sr.name, primary: !!sr.primary, rows: sr.rows };
+    const from = anchorOf(sr.rows.length ? sr.rows : list);
+    /* Sale periods are re-fitted per series rather than reused from revenue: a
+       promotion lifts order counts and dollars by different amounts, and
+       Australia by a different amount again. */
+    let mods = activeSale();
+    if (!(L.unit === 'money' && L.ties)) {
+      try {
+        const yrs = new Set(sr.rows.map(r => r.date.slice(0, 4)));
+        yrs.add(String(+from.slice(0, 4) + 1));
+        mods = F.salePeriodModifiers(sr.rows, { years: [...yrs].sort(), overrides: S.saleEdit })
+          .filter(m => S.saleOff.indexOf(m.key) === -1);
+      } catch (e) { mods = []; }
+    }
+    out.mods = mods;
+    ['pessimistic', 'realistic', 'optimistic'].forEach(sc => {
+      const o = { rows: sr.rows, from, horizon: hor, scenario: sc,
+                  modifiers: mods, observedCeiling: S.ceiling };
+      out[sc] = L.profit ? F.projectPnl(o) : F.project(o);
+    });
+    return out;
+  });
+}
+
 /* ------------------------------------------------------------------- KPIs */
 
 function renderKpis(p, ctx) {
   const el = document.getElementById('kpis');
+  /* A lens whose measure is not the P&L's revenue gets its own tiles: quoting a
+     profit, a MER or a breakeven against an order count or a shipping-address
+     net-sales figure would be inventing a relationship the data does not have. */
+  if (ctx.L && ctx.L !== LENSES.total) return renderKpisLens(p, ctx);
   const ly = priorSameDates(ctx.list, F.addDays(p.from, 1), F.addDays(p.from, p.horizon));
   const yoy = ly.sum ? (p.total / ly.sum - 1) * 100 : null;
   const nov = p.months.find(m => m.month.slice(5) === '11');
@@ -177,33 +300,102 @@ function renderKpis(p, ctx) {
     </div>`).join('');
 }
 
+
+/* Tiles for a lens the P&L cannot price: one per series, plus the mix and the
+   caveat. No profit, no MER, no breakeven — none of those exist for an order
+   count or for net sales by destination. */
+function renderKpisLens(p, ctx) {
+  const el = document.getElementById('kpis');
+  const L = ctx.L, unit = L.unit;
+  const fmt = v => unit === 'orders' ? numf(v) : money(v, true);
+  const label = S.hor === 'EOY' ? 'to year end' : 'next ' + p.horizon + ' days';
+
+  if (!ctx.series) {
+    el.innerHTML = `<div class="kpi accent" style="grid-column:1/-1">
+      <div class="k-lbl">${esc(L.label)}</div>
+      <div class="k-val">${GEO_STATE === 'loading' ? 'Loading…'
+        : GEO_STATE === 'failed' ? 'Shopify unavailable' : '—'}</div>
+      <div class="k-sub">${GEO_STATE === 'failed'
+        ? 'The country split comes from Shopify and the request did not come back. It is rate-limited — try again in a minute.'
+        : 'Fetching daily net sales by shipping country from Shopify.'}</div></div>`;
+    return;
+  }
+
+  const tot = ctx.series.reduce((a, sr) => a + sr[S.scen].total, 0);
+  const tiles = ctx.series.map((sr, i) => {
+    const sp = sr[S.scen];
+    const ly = priorSameDates(sr.rows, F.addDays(sp.from, 1), F.addDays(sp.from, sp.horizon));
+    const yoy = ly.sum ? (sp.total / ly.sum - 1) * 100 : null;
+    return { lbl: sr.name + ' · ' + label, val: fmt(sp.total), accent: !!sr.primary,
+      sub: 'share <b>' + (tot ? (sp.total / tot * 100).toFixed(0) : '—') + '%</b>' +
+           (ly.sum ? ' · last year ' + fmt(ly.sum) : ''),
+      foot: yoy != null
+        ? '<span class="delta ' + (yoy > 0 ? 'up' : 'down') + '">' + (yoy > 0 ? '▲' : '▼') + ' ' +
+          Math.abs(yoy).toFixed(0) + '%</span> vs last year' : 'no prior year' };
+  });
+  tiles.push({ lbl: 'Combined · ' + label, val: fmt(tot),
+    sub: ctx.series.length + ' series · ' + esc(L.note),
+    foot: L.ties ? 'ties to the board' : '<span class="delta down">does not tie to the board</span>' });
+  /* The caveat gets a tile of its own rather than a footnote, because the tile
+     row is the only part of this page a passing glance takes in. */
+  /* The caveat gets a tile, but a short one: the full sentence overflowed the
+     box at every viewport, and a warning spilling out of its own border reads as
+     a rendering fault rather than as a warning. Headline on the face, whole
+     thing in the tooltip. */
+  const brief = unit === 'orders'
+    ? 'No revenue split exists, so none is shown.'
+    : 'Different measure from the P&L. Does not tie. No profit.';
+  tiles.push({ lbl: 'Read this first', val: unit === 'orders' ? 'Orders only' : 'Revenue only',
+    sub: '', foot: brief, warn: true, title: L.warn || '' });
+
+  el.innerHTML = tiles.slice(0, 6).map(t => `<div class="kpi${t.accent ? ' accent' : ''}${t.warn ? ' warnkpi' : ''}"${
+      t.title ? ` title="${esc(t.title)}"` : ''}>
+      <div class="k-top"><div class="k-lbl">${t.lbl}</div></div>
+      <div class="k-val">${t.val}</div>
+      <div class="k-sub">${t.sub || ''}</div>
+      <div class="k-foot">${t.foot || ''}</div>
+    </div>`).join('');
+}
+
 const nearestHorizon = h => [30, 60, 90].reduce((a, b) => Math.abs(b - h) < Math.abs(a - h) ? b : a);
 
 /* -------------------------------------------------------------- scenarios */
 
 function renderScenarios(ctx) {
   const el = document.getElementById('scenList');
+  const U = ctx.L && ctx.L.unit === 'orders';
+  const f = v => U ? numf(v) : money(v, true);
   const defs = [
     ['pessimistic', 'Growth stops dead, and the big months land 15% short.'],
     ['realistic',   'The current trajectory continues; events repeat as they have.'],
     ['optimistic',  'Growth holds at its year-on-year rate, events scale with it.'],
   ];
   el.innerHTML = defs.map(([k, why]) => {
-    const p = ctx.scen[k];
+    /* On a lens with several series the card totals them, and there is no
+       profit figure to show because the measure has no cost side. */
+    const tot = ctx.series ? ctx.series.reduce((a, sr) => a + sr[k].total, 0) : ctx.scen[k].total;
+    const pr = (ctx.L && ctx.L.profit) ? ctx.scen[k].profit : null;
     const on = k === S.scen;
     return `<button class="scenrow${on ? ' on' : ''}" data-scen="${k}">
-      <div class="sr-top"><span class="sr-name">${k}</span><span class="sr-rev">${money(p.total, true)}</span></div>
-      <div class="sr-bot"><span class="sr-why">${why}</span><span class="sr-pr ${p.profit < 0 ? 'neg' : 'pos'}">${money(p.profit, true)}</span></div>
+      <div class="sr-top"><span class="sr-name">${k}</span><span class="sr-rev">${f(tot)}</span></div>
+      <div class="sr-bot"><span class="sr-why">${why}</span>${pr != null
+        ? `<span class="sr-pr ${pr < 0 ? 'neg' : 'pos'}">${money(pr, true)}</span>` : ''}</div>
     </button>`;
   }).join('');
   el.querySelectorAll('.scenrow').forEach(b => b.onclick = () => { S.scen = b.dataset.scen; render(); });
 
   const p = ctx.scen[S.scen];
-  document.getElementById('scenNote').textContent =
-    'spread ' + money(ctx.scen.optimistic.total - ctx.scen.pessimistic.total, true);
-  document.getElementById('beVal').textContent = p.breakevenPerDay ? money(p.breakevenPerDay, true) + '/d' : '—';
-  document.getElementById('beSub').textContent = p.pnl
-    ? 'to cover ads + ' + money(p.pnl.fcPerDay, true) + ' fixed' : '';
+  const spread = ctx.series
+    ? ctx.series.reduce((a, sr) => a + sr.optimistic.total, 0) -
+      ctx.series.reduce((a, sr) => a + sr.pessimistic.total, 0)
+    : ctx.scen.optimistic.total - ctx.scen.pessimistic.total;
+  document.getElementById('scenNote').textContent = 'spread ' + f(spread);
+  const onPnl = ctx.L && ctx.L.profit;
+  document.getElementById('beVal').textContent =
+    (onPnl && p.breakevenPerDay) ? money(p.breakevenPerDay, true) + '/d' : 'n/a';
+  document.getElementById('beSub').textContent = onPnl && p.pnl
+    ? 'to cover ads + ' + money(p.pnl.fcPerDay, true) + ' fixed'
+    : 'no cost side to this measure';
 
   const b30 = BT && BT[30], b90 = BT && BT[90];
   document.getElementById('acc30').textContent = b30 ? '±' + (b30.mape * 100).toFixed(0) + '%' : '…';
@@ -234,6 +426,10 @@ function smooth(vals, n) {
 
    Sale-period windows are shaded and today is marked, so the shape reads as a
    map of the year ahead rather than a line that happens to bend. */
+/* Distinct hues for a multi-series lens. Yellow stays the brand's primary and
+   the other two are chosen to survive being drawn over the sale-period wash. */
+const SERIES_COLOR = ['rgba(245,235,25,0.95)', 'rgba(57,217,138,0.95)', 'rgba(120,190,255,0.95)'];
+
 function renderChart(p, ctx) {
   const wrap = document.getElementById('chartWrap');
   const cv = document.getElementById('fcChart');
@@ -243,6 +439,12 @@ function renderChart(p, ctx) {
     return;
   }
   const HIST = 70, SM = 7;
+  if (!ctx.series) { document.getElementById('chartKey').textContent = ''; }
+  /* The axis speaks the lens's unit. It read "$160" against an order count
+     until this existed — a dollar sign on a number of orders is not a cosmetic
+     slip, it is the chart asserting something false. */
+  const isOrders = !!(ctx.L && ctx.L.unit === 'orders');
+  const axf = v => isOrders ? numf(v) : money(v, true);
   const hist = ctx.list.filter(r => r.date <= p.from).slice(-HIST);
   const labels = hist.map(r => r.date).concat(p.days.map(d => d.date));
   const actual = smooth(hist.map(r => r.revenue), SM);
@@ -259,28 +461,49 @@ function renderChart(p, ctx) {
   const pess = line(ctx.scen.pessimistic.days);
 
   const b = BT && BT[nearestHorizon(p.horizon)];
-  const lo = b ? real.map(v => v * (1 + b.p10)) : null;
-  const hi = b ? real.map(v => v * (1 + b.p90)) : null;
+  const single = !ctx.series || ctx.series.length < 2;
+  const lo = (b && single) ? real.map(v => v * (1 + b.p10)) : null;
+  const hi = (b && single) ? real.map(v => v * (1 + b.p90)) : null;
   const fwd = a => pad.concat([join], a);
 
   const Y = 'rgba(245,235,25,';
   const ds = [];
-  // the scenario fan, drawn first so every line sits on top of it
-  ds.push({ label: 'Pessimistic', data: fwd(pess), borderColor: Y + '0.45)',
-            borderWidth: 1.4, pointRadius: 0, tension: .3, fill: '+1',
-            backgroundColor: Y + '0.13)' });
-  ds.push({ label: 'Optimistic', data: fwd(opt), borderColor: Y + '0.45)',
-            borderWidth: 1.4, pointRadius: 0, tension: .3, fill: false });
-  if (lo) {
-    ds.push({ label: 'Measured low', data: fwd(lo), borderColor: 'rgba(179,171,172,0.42)',
-              borderWidth: 1, borderDash: [2, 3], pointRadius: 0, tension: .3, fill: false });
-    ds.push({ label: 'Measured high', data: fwd(hi), borderColor: 'rgba(179,171,172,0.42)',
-              borderWidth: 1, borderDash: [2, 3], pointRadius: 0, tension: .3, fill: false });
+  /* One series: the scenario fan and the measured envelope, as before. Several:
+     a line per series instead, because three fans over each other is a
+     colour-mixing puzzle rather than a chart — the spread for the selected
+     scenario is in the KPI tiles and the rail. */
+  if (single) {
+    ds.push({ label: 'Pessimistic', data: fwd(pess), borderColor: Y + '0.45)',
+              borderWidth: 1.4, pointRadius: 0, tension: .3, fill: '+1',
+              backgroundColor: Y + '0.13)' });
+    ds.push({ label: 'Optimistic', data: fwd(opt), borderColor: Y + '0.45)',
+              borderWidth: 1.4, pointRadius: 0, tension: .3, fill: false });
+    if (lo) {
+      ds.push({ label: 'Measured low', data: fwd(lo), borderColor: 'rgba(179,171,172,0.42)',
+                borderWidth: 1, borderDash: [2, 3], pointRadius: 0, tension: .3, fill: false });
+      ds.push({ label: 'Measured high', data: fwd(hi), borderColor: 'rgba(179,171,172,0.42)',
+                borderWidth: 1, borderDash: [2, 3], pointRadius: 0, tension: .3, fill: false });
+    }
+    ds.push({ label: 'Actual', data: actual.concat(new Array(p.days.length).fill(null)),
+              borderColor: Y + '0.95)', borderWidth: 2.6, pointRadius: 0, tension: .3, fill: false });
+    ds.push({ label: 'Realistic', data: fwd(real), borderColor: Y + '0.95)',
+              borderDash: [6, 4], borderWidth: 2.6, pointRadius: 0, tension: .3, fill: false });
+  } else {
+    ctx.series.forEach((sr, i) => {
+      const c = SERIES_COLOR[i % SERIES_COLOR.length];
+      const sp = sr[S.scen] || sr.realistic;
+      const h2 = sr.rows.filter(r => r.date <= p.from).slice(-HIST);
+      const av = smooth(h2.map(r => r.revenue), SM);
+      const t2 = h2.slice(-(SM - 1)).map(r => r.revenue);
+      const fl = smooth(t2.concat(sp.days.map(d => d.revenue)), SM).slice(SM - 1);
+      ds.push({ label: sr.name, data: av.concat(new Array(sp.days.length).fill(null)),
+                borderColor: c, borderWidth: 2.4, pointRadius: 0, tension: .3, fill: false });
+      ds.push({ label: sr.name + ' · forecast',
+                data: new Array(h2.length - 1).fill(null).concat([av[av.length - 1]], fl),
+                borderColor: c, borderDash: [6, 4], borderWidth: 2.4, pointRadius: 0,
+                tension: .3, fill: false });
+    });
   }
-  ds.push({ label: 'Actual', data: actual.concat(new Array(p.days.length).fill(null)),
-            borderColor: Y + '0.95)', borderWidth: 2.6, pointRadius: 0, tension: .3, fill: false });
-  ds.push({ label: 'Realistic', data: fwd(real), borderColor: Y + '0.95)',
-            borderDash: [6, 4], borderWidth: 2.6, pointRadius: 0, tension: .3, fill: false });
 
   /* Shading and markers, drawn straight onto the canvas rather than pulled in
      as an annotation plugin — three shapes do not justify another dependency. */
@@ -343,25 +566,28 @@ function renderChart(p, ctx) {
           itemSort: (a, z) => z.parsed.y - a.parsed.y,
           callbacks: {
             title: it => niceFull(it[0].label),
-            label: i => i.dataset.label + ': ' + money(i.parsed.y, true) + '/day',
+            label: i => i.dataset.label + ': ' + axf(i.parsed.y) + (isOrders ? ' orders/day' : '/day'),
           },
         },
       },
       scales: {
         x: { grid: { color: grid }, ticks: { color: tick, maxTicksLimit: 10,
              callback(v) { const d = this.getLabelForValue(v); return d ? isoToNice(d) : ''; } } },
-        y: { grid: { color: grid }, ticks: { color: tick, callback: v => money(v, true) }, beginAtZero: true },
+        y: { grid: { color: grid }, ticks: { color: tick, callback: v => axf(v) }, beginAtZero: true },
       },
     },
   });
 
   document.getElementById('chartSpan').textContent =
     'Map · ' + isoToNice(hist[0].date) + ' → ' + isoToNice(p.days[p.days.length - 1].date);
-  document.getElementById('chartKey').innerHTML =
-    `<span class="k act">Actual</span><span class="k real">Realistic</span>
-     <span class="k fan">Scenario range</span>
-     ${b ? '<span class="k env">Measured error at ' + nearestHorizon(p.horizon) + 'd</span>' : ''}
-     ${bands.length ? '<span class="k sale">Sale period</span>' : ''}`;
+  document.getElementById('chartKey').innerHTML = single
+    ? `<span class="k act">Actual</span><span class="k real">Realistic</span>
+       <span class="k fan">Scenario range</span>
+       ${b ? '<span class="k env">Measured error at ' + nearestHorizon(p.horizon) + 'd</span>' : ''}
+       ${bands.length ? '<span class="k sale">Sale period</span>' : ''}`
+    : ctx.series.map((sr, i) => `<span class="k ser" style="--sc:${SERIES_COLOR[i % SERIES_COLOR.length]}">${esc(sr.name)}</span>`).join('') +
+      '<span class="k real">solid actual · dashed forecast</span>' +
+      (bands.length ? '<span class="k sale">Sale period</span>' : '');
 }
 
 /* ------------------------------------------------------- the timeline strip */
@@ -398,7 +624,10 @@ function renderTimeline(p, ctx) {
 
   /* ---- lane 1: months, with the numbers that used to be in the table ---- */
   const byMonth = {};
-  ctx.list.forEach(r => {
+  /* The lens's own rows, so a country lane sums Australian net sales rather
+     than the whole book's revenue. */
+  const srcRows = (ctx.pri && ctx.pri.rows) || ctx.list;
+  srcRows.forEach(r => {
     if (r.date < first || r.date > last || !(r.revenue > 0)) return;
     const k = r.date.slice(0, 7);
     (byMonth[k] = byMonth[k] || { actual: 0, days: 0 });
@@ -421,24 +650,25 @@ function renderTimeline(p, ctx) {
        year; a month already banked shows what it actually took. Never mixed —
        labelling a projection and a result the same way is how a forecast gets
        quoted back as a fact. */
+    const fmtv = (ctx.L && ctx.L.unit === 'orders') ? (v => numf(v)) : (v => money(v, true));
     let head, sub;
     if (m) {
       const ds = p.days.filter(d => d.month === k);
-      const ly = priorSameDates(ctx.list, ds[0].date, ds[ds.length - 1].date);
-      head = money(m.revenue, true);
+      const ly = priorSameDates(srcRows, ds[0].date, ds[ds.length - 1].date);
+      head = fmtv(m.revenue);
       /* The day count leads on a part month. $197K for the 22 days left of
          September is not September, and the figure is quoted against the same
          22 days last year, so both halves of the comparison need saying. */
       sub = (ds.length < dim ? ds.length + 'd · ' : '') +
             (ly.sum ? 'x' + (m.revenue / ly.sum).toFixed(2) + ' vs last yr' : 'no prior year');
     } else {
-      head = money(b.actual, true);
+      head = fmtv(b.actual);
       /* A banked month reports the same measure as a forecast one — its
          year-on-year — so the two lanes read as one series rather than as two
          different kinds of number that happen to sit side by side. */
       const a2 = k + '-01' < first ? first : k + '-01';
       const z2 = k + '-' + String(b.days).padStart(2, '0');
-      const ly = priorSameDates(ctx.list, a2, z2 > last ? last : z2);
+      const ly = priorSameDates(srcRows, a2, z2 > last ? last : z2);
       sub = (b.days < dim ? b.days + ' of ' + dim + 'd · ' : '') +
             (ly.sum ? 'x' + (b.actual / ly.sum).toFixed(2) + ' vs last yr' : 'no prior year');
     }
@@ -530,7 +760,11 @@ function miniBars(el, rows, opts) {
     return `<div class="mb${r.hi ? ' hi' : ''}${r.thin ? ' thin' : ''}" title="${esc(r.title || r.label)}">
       <div class="mb-l">${esc(r.label)}</div>
       <div class="mb-t"><i style="width:${w.toFixed(1)}%"></i>${
-        opts.mark != null ? `<u style="left:${((opts.mark - base) / (max - base) * 100).toFixed(1)}%"></u>` : ''}</div>
+        /* Clamped: the reference marker is a value on the same scale, and on the
+           order-count lens the year-on-year figures run past the bar scale's
+           top, which put left at 130% and pushed the track's own width out. */
+        opts.mark != null ? `<u style="left:${Math.max(0, Math.min(100,
+          (opts.mark - base) / (max - base) * 100)).toFixed(1)}%"></u>` : ''}</div>
       <div class="mb-v">${esc(r.text)}</div></div>`;
   }).join('');
 }
@@ -655,6 +889,15 @@ function hundredBar(h, label, sub, compact) {
 
 function renderHundred(p, ctx) {
   const el = document.getElementById('hundredWrap');
+  /* Costs are recorded for the business, not per customer group and not per
+     destination, so there is no honest $100 to break down on the other lenses. */
+  if (ctx.L && !ctx.L.profit) {
+    el.innerHTML = `<div class="empty">Your costs are recorded for the business as a whole —
+      not per customer group and not per destination — so there is no cost breakdown for
+      the <b>${esc(ctx.L.label)}</b> lens. Switch to <b>Total</b> for this.</div>`;
+    document.getElementById('hundredNote').textContent = 'available on the Total lens';
+    return;
+  }
   const complete = ctx.list.filter(r => r.revenue > 0 && !r.pending && r.totalFC != null);
   const last30 = complete.slice(-30);
   const now = hundredOf(last30);
@@ -1160,7 +1403,11 @@ function render() {
              yoy: whole ? byM[k].s / byM[pv].s : null };
   });
 
-  const ctx = { list, scen, eoy, yoy };
+  /* Every lens's series, projected once and shared by every renderer. */
+  const L = lens();
+  const series = runLens(list, hor);
+  const ctx = { list, scen, eoy, yoy, L, series,
+                pri: series && series.find(x => x.primary) };
   /* The header shows the forecast ORIGIN, which is the last complete day — not
      the newest row. The newest row can be a day the sheet has not finished, and
      the forecast does not start from one. */
@@ -1174,11 +1421,14 @@ function render() {
   /* One section failing must not take the rest of the page with it. */
   const safe = (name, fn) => { try { fn(); } catch (e) { console.error('forecast: ' + name + ' failed', e); } };
   if (S.view === 'map') {
+    /* Everything but the KPI tiles reads the PRIMARY series, so the rails and
+       the timeline describe whatever the lens is actually forecasting. */
+    const pv = (ctx.pri && ctx.pri[S.scen]) || p;
     safe('kpis', () => renderKpis(p, ctx));
     safe('scenarios', () => renderScenarios(ctx));
-    safe('chart', () => renderChart(p, ctx));
-    safe('timeline', () => renderTimeline(p, ctx));
-    safe('trends', () => renderTrends(p, ctx));
+    safe('chart', () => renderChart(pv, ctx));
+    safe('timeline', () => renderTimeline(pv, ctx));
+    safe('trends', () => renderTrends(pv, ctx));
     safe('hundred', () => renderHundred(p, ctx));
     safe('sales', () => renderSales(p));
     safe('modifiers', () => renderMods(p));
@@ -1264,6 +1514,12 @@ function wire() {
     const open = [...document.querySelectorAll('.modal')].some(m => !m.hidden);
     if (open) { closeModals(); return; }              // a modal first, then the view
     if (S.view !== 'map') { setView('map'); render(); }
+  });
+  document.querySelectorAll('#lensSeg button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('#lensSeg button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active'); S.lens = b.dataset.lens;
+    render();
+    if (lens().needs === 'geo') ensureGeo();
   });
   document.querySelectorAll('#horSeg button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#horSeg button').forEach(x => x.classList.remove('active'));
