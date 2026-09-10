@@ -542,193 +542,161 @@ function loadMods() {
 
 /* --------------------------------------------------------------- notes */
 
-/* HOW THIS FORECAST WORKS, on the page rather than in a commit message.
+/* HOW THIS FORECAST WORKS — a diagram and the arithmetic, nothing else.
 
-   Written to be read by someone who runs the business, not someone who builds
-   models: plain sentences, every claim carrying the actual number from the
-   actual book, and the limits stated as plainly as the capabilities. The
-   numbers are live — they come from the projection currently on screen — so
-   this cannot drift out of date the way a static help page would. */
+   This was nine sections of prose. Prose was the wrong instrument: the thing a
+   reader needs is the SHAPE of the calculation — what feeds what, in what order
+   — and a paragraph can only describe a shape one clause at a time. A diagram
+   shows it at once, and the formula underneath it is the same thing again in
+   twelve lines, with every symbol carrying its live value.
+
+   The numbers come from the projection currently on screen, so this cannot
+   drift out of date the way a written page would. */
+
+const SYM = {
+  L: 'run rate', g: 'drift', D: 'weekday', S: 'month',
+  Y: 'year on year', M: 'modifiers', w: 'blend',
+  c: 'contribution', a: 'ad rate', F: 'fixed cost',
+};
+
 function renderNotes(p) {
   const el = document.getElementById('notesBody');
-  const g = p.basis.growth, se = p.basis.season, pnl = p.pnl;
-  const b30 = BT && BT[30], b60 = BT && BT[60], b90 = BT && BT[90];
+  const b = p.basis, pnl = p.pnl, g = b.growth;
+  const dowVals = Object.keys(b.dowIdx).map(k => b.dowIdx[k]);
+  const seaVals = [];
+  for (let m = 1; m <= 12; m++) if (b.season.observations[m]) seaVals.push(b.season.index[m]);
+  const rng = a => Math.min.apply(null, a).toFixed(2) + '–' + Math.max.apply(null, a).toFixed(2);
+  const b30 = BT && BT[30], b90 = BT && BT[90];
   const lc = levelCorrected(p);
-  const yl = se.yearLevel || {};
-  const yrs = Object.keys(yl).sort();
-  const nov = se.index[11], jan = se.index[1];
+  const nMods = (p.modifiers || []).length;
 
-  const sec = (title, body) => `<section><h3>${title}</h3>${body}</section>`;
-  const dl = pairs => '<dl>' + pairs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>';
+  /* ---- the diagram -------------------------------------------------------
+     Hand-authored SVG rather than a library: it is one fixed picture of one
+     fixed pipeline, and the whole point is that it shows the real mechanism —
+     including the two things a box-and-arrow sketch usually leaves out, that
+     history is corrected BEFORE anything is fitted, and that the same M does
+     both the dividing and the multiplying. */
+  const W = 760, H = 592;
+  const box = (x, y, w, h, title, sub, cls) =>
+    `<g class="${cls || ''}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6"/>
+      <text x="${x + w / 2}" y="${y + (sub ? 17 : h / 2 + 4)}" class="bt">${title}</text>
+      ${sub ? `<text x="${x + w / 2}" y="${y + 33}" class="bs">${sub}</text>` : ''}</g>`;
+  /* SVG has no <sup>, so an exponent needs a raised tspan — without it
+     "g^(k/28)" sits in the box as literal characters and reads as a typo. */
+  const sup = (t, e) => t + '<tspan dy="-4" font-size="7.5">' + e + '</tspan>';
+  const sub_ = (t, e) => t + '<tspan dy="3" font-size="7.5">' + e + '</tspan>';
+  const arrow = (x1, y1, x2, y2) =>
+    `<path d="M${x1} ${y1} L${x2} ${y2}" class="ar" marker-end="url(#ah)"/>`;
+  const elbow = (x1, y1, x2, y2) =>
+    `<path d="M${x1} ${y1} V${(y1 + y2) / 2} H${x2} V${y2}" class="ar" marker-end="url(#ah)"/>`;
 
-  el.innerHTML =
-    sec('The short version', `
-      <p>The forecast asks one question: <b>how big is the business right now, and what
-      does the calendar do to it next?</b> It answers by measuring four things from your
-      own two years of daily numbers — the weekly rhythm, the shape of the year, the rate
-      you are growing, and today's underlying run rate — and then multiplying them
-      together, day by day, for as far ahead as you ask.</p>
-      <p>Nothing in it is a rule of thumb or an industry benchmark. Every figure below was
-      read out of your P&amp;L sheet, and the page recalculates them whenever the sheet
-      updates.</p>`) +
+  const fits = [
+    ['D', SYM.D, rng(dowVals)],
+    ['S', SYM.S, rng(seaVals)],
+    ['Y', SYM.Y, 'x' + (g.yoy || 1).toFixed(2)],
+    ['L', SYM.L, money(p.level) + '/d'],
+  ];
+  /* A left gutter, reserved for the loop. Laid out from constants rather than
+     by eye: the first cut ran the loop and its label straight through the
+     weekday box, because both were positioned independently. */
+  const GUT = 58, BW = 165, STEP = 177;
+  const svg = `<svg viewBox="0 0 ${W} ${H}" class="fcdiag" role="img"
+      aria-label="How the forecast is calculated, step by step">
+    <defs><marker id="ah" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="5" markerHeight="5"
+      orient="auto"><path d="M0 0 L8 4 L0 8 z" class="ahd"/></marker></defs>
 
-    sec('Why this business needs a forecast built this way', `
-      <p>Most forecasts assume a trend with some noise on top. Yours is not that. In 2025,
-      June and November earned <b>+$48,917</b> and <b>+$103,174</b> while the other seven
-      months lost <b>$50,772</b> between them. The year is made in two months.</p>
-      <p>A model that smooths over that is worse than useless — it will tell you a calm
-      October is a problem and a huge November is luck. So the shape of the year is the
-      first thing this one fits, not an afterthought.</p>`) +
+    ${box(230, 8, 300, 34, 'YOUR BOOK', '2025 + 2026, every day', 'src')}
+    ${arrow(380, 42, 380, 62)}
 
-    sec('The four things it measures', dl([
-      ['Weekly rhythm',
-        `Monday to Wednesday run about 15% above average, Saturday about 25% below. Fitted
-         across both years, because how a trade customer shops through the week does not
-         change from one year to the next.`],
-      ['Shape of the year',
-        `A number per month saying how big it is relative to a typical month.
-         November is <b>${nov ? nov.toFixed(2) : '—'}</b> — over twice a normal month —
-         and January the weakest at <b>${jan ? jan.toFixed(2) : '—'}</b>, when sites are
-         shut. Year and month are solved together rather than one year at a time, because
-         2025 has nine months in it including both giants while 2026 has more months but
-         no BFCM yet, and averaging those two directly makes every figure wrong.`],
-      ['Growth rate',
-        `<b>x${g.yoy ? g.yoy.toFixed(2) : '—'}</b> year on year, the middle of
-         ${g.n} whole months compared like for like, ranging
-         x${g.low ? g.low.toFixed(2) : '—'} to x${g.high ? g.high.toFixed(2) : '—'}.
-         Only whole months count: comparing eight days of September to a full September
-         once read a <b>+132%</b> month as <b>−32%</b>.`],
-      ['Run rate today',
-        `<b>${money(p.level)}</b> a day, from the last 28 complete days with the season
-         and the weekday taken out, so it is comparable to any other time of year.
-         Days the sheet has not finished are excluded — a day with revenue typed but no ad
-         spend is a real day of trade with a fictional cost side.
-         ${lc ? `And ${esc(lc.name)} is divided out of it, because a fortnight of
-         discounting is not a new run rate.` : ''}`],
-    ])) +
+    ${box(230, 62, 300, 34, '÷ M', 'take out what you have declared', 'corr')}
+    ${arrow(380, 96, 380, 116)}
+    ${box(230, 116, 300, 30, 'BASELINE HISTORY', null, 'src')}
 
-    sec('How a day ahead gets its number', `
-      <p>Two independent estimates, blended:</p>
-      <ol>
-        <li><b>From today's trajectory.</b> Run rate x growth x that weekday x that month.</li>
-        <li><b>From the same days last year</b>, smoothed over a week either side, then
-        scaled up by the growth rate. This one carries events the month figure cannot see,
-        because it knows what actually happened on the 24th of November.</li>
-      </ol>
-      <p>Last year gets <b>${(p.priorWeight * 100).toFixed(0)}%</b> of the weight at this
-      horizon, and less the further out you look — last year tells you a great deal about
-      next week and much less about next quarter. Blending beat either one alone at every
-      distance tested: 30-day error fell from 21.6% to about 15%.</p>`) +
+    ${fits.map((f, i) => {
+      const x = GUT + i * STEP;
+      return elbow(380, 146, x + BW / 2, 176) + box(x, 176, BW, 44, f[0] + ' · ' + f[1], f[2], 'fit');
+    }).join('')}
 
-    sec('Three separate things, and why they are separate', dl([
-      ['Seasonal trend',
-        `Fitted from history, and not optional. It is not an adjustment to the forecast,
-         it is the forecast's shape. EOFY and BFCM live here: they are month-aligned, so
-         the month figure prices them exactly, and declaring them again anywhere else
-         would count them twice.`],
-      ['Sale periods',
-        `Measured from the book, recurring, dated by rule each year. Father's Day is one
-         because it <i>cannot</i> live in the seasonal trend: it is the first Sunday of
-         September, its run-up sits in August and its payback in September, so no
-         per-month figure can hold it. 2026 measured <b>+47%</b> over fourteen days
-         against its own pre-promotion August; 2025 measured <b>−10%</b>, which is to say
-         2025 ran no promotion. For a year still ahead you can re-size the lift, and the
-         measured ramp scales with it — the shape is how your customers behave, the size
-         is your decision.`],
-      ['Your modifiers',
-        `Things you assert about the future that two years of history cannot know: a
-         launch, a price change, a new channel. Nothing here is measured and nothing is on
-         by default.`],
-    ]) + `
-      <p><b>They overlap, and the page says so.</b> Factors multiply, so a +47% sale period
-      and a +30% launch over the same days make +91%, not +77%. That is the right treatment
-      for effects that stack, and it is also the easiest way to forecast a number with no
-      precedent by accident — so every overlap is named with its combined effect, and
-      compared against the biggest lift your book has ever recorded
-      ${S.ceiling ? '(' + pct((S.ceiling - 1) * 100, 0) + ')' : ''}. It is never clipped:
-      the assertion is yours, and quietly shrinking your number would be worse than a
-      large one you can see.</p>
-      <p>A declaration also applies <i>backwards</i>. Anything you declare is divided out
-      of history first, everything is fitted on what is left, and it is multiplied back on
-      to the days ahead. Correcting after the fit does not work: a promotion left
-      undeclared contaminates the month figures and the growth rate too, and nothing
-      downstream can reach a season figure that has already swallowed it.</p>`) +
+    <!-- D, S and L feed A; Y feeds B. That is exactly what the formula says, and
+         a fifth arrow from Y into A (the drift cap) would be true but would cost
+         more legibility than it buys — the symbol table carries it instead. -->
+    ${[0, 1, 3].map(i => elbow(GUT + i * STEP + BW / 2, 220, 225, 262)).join('')}
+    ${elbow(GUT + 2 * STEP + BW / 2, 220, 555, 262)}
 
-    sec('Profit is not forecast — it is derived', `
-      <p>Your sheet already carries an exact identity, which checks to the dollar over
-      every window tried:</p>
-      <pre>profit = revenue ex GST − variable costs − ad spend − fixed costs</pre>
-      <p>So rather than guess at profit, the forecast builds its parts:</p>` +
-      dl([
-        ['Contribution', `<b>${pnl ? (pnl.contribRate * 100).toFixed(1) : '—'}%</b> of
-          revenue after GST and variable costs. Steady to within a couple of points.`],
-        ['Ad spend', `<b>${pnl ? (pnl.adRate * 100).toFixed(1) : '—'}%</b> of revenue,
-          shaped by month — and your big months are the <i>efficient</i> ones. June 2025
-          spent 18.1c per revenue dollar; July 2026 spent 38.9c.`],
-        ['Fixed costs', `<b>${money(pnl && pnl.fcPerDay)}</b> a day. This is a staircase,
-          not a trend: salaries went $1,178/day to $1,381 to $1,463 to $1,837 to $2,081 as
-          you hired, and never came back down. So the forecast uses the latest step, not an
-          average — the only estimator that is right about a staircase.`],
-        ['Breakeven', `<b>${money(p.breakevenPerDay)}</b> a day, or
-          <b>${money(p.breakevenPerDay * 30, true)}</b> a month, just to stand still.`],
-      ]) + `
-      <p>Costs are held <b>identical across all three scenarios</b>, on purpose. What is
-      uncertain here is demand, not your cost structure — and holding costs still is what
-      shows the leverage: fixed cost is ${money(pnl && pnl.fcPerDay)} a day whatever
-      happens, so a 20% revenue miss is a far bigger than 20% profit miss. Flexing costs
-      with each scenario would hide exactly the risk the pessimistic case exists to show.</p>`) +
+    ${box(75, 262, 300, 56, 'A · TODAY’S TRAJECTORY',
+          'L · ' + sup('g', 'k/28') + ' · D · S', 'pred')}
+    ${box(405, 262, 300, 56, 'B · THE SAME DAYS LAST YEAR',
+          'smoothed ±3 days · ' + sub_('L', 'y') + ' · Y', 'pred')}
 
-    sec('What the three scenarios actually assume', dl([
-      ['Realistic', 'The current trajectory continues, and events repeat as they have.'],
-      ['Optimistic', 'Growth holds at its full year-on-year rate, and the big months scale with it.'],
-      ['Pessimistic', 'Growth stops dead, and the big months land 15% short.'],
-    ]) + `
-      <p>Each is a sentence you could defend in a board meeting, not a percentage bolted on
-      to one number. The shaded band on the chart is separate from all three: it is the
-      measured error from testing the model against your own history.</p>`) +
+    ${elbow(225, 318, 380, 356)}${elbow(555, 318, 380, 356)}
+    ${box(230, 356, 300, 40, 'BLEND', (p.priorWeight * 100).toFixed(0) + '% on B, less the further out', 'blend')}
+    ${arrow(380, 396, 380, 416)}
 
-    sec('How accurate it is, measured not claimed', `
-      <p>The model is walked forward through your book: stand at a past date, refit
-      everything using only what was known then, forecast, compare to what happened, move
-      on. Nothing leaks backwards.</p>` +
-      dl([
-        ['30 days', b30 ? `<b>±${(b30.mape * 100).toFixed(0)}%</b> across ${b30.n} past
-           starting points, running ${b30.bias < 0 ? 'low' : 'high'} by
-           ${Math.abs(b30.bias * 100).toFixed(0)}% on average` : 'measuring…'],
-        ['60 days', b60 ? `<b>±${(b60.mape * 100).toFixed(0)}%</b> across ${b60.n}` : 'measuring…'],
-        ['90 days', b90 ? `<b>±${(b90.mape * 100).toFixed(0)}%</b> across ${b90.n}` : 'measuring…'],
-        ['With no prior year', b30 && b30.coldStart
-           ? `<b>±${(b30.coldStart.mape * 100).toFixed(0)}%</b> — what the same model scored
-              from 2025 starting points, which had no BFCM anywhere in their history`
-           : 'not measurable here'],
-      ]) + `
-      <p>It runs slightly low overall. That is the honest reading of a business growing this
-      fast, and it is reported rather than corrected, because "add 15%" fitted to one
-      strong year is not a model, it is a wish.</p>`) +
+    ${box(230, 416, 300, 34, '× M', 'put your declarations back on', 'corr')}
+    ${arrow(380, 450, 380, 470)}
+    ${box(230, 470, 300, 32, 'REVENUE, ONE DAY', null, 'out')}
 
-    sec('What it cannot do', `
-      <ul>
-        <li><b>October to December are unvalidated.</b> No starting point in your data has a
-        horizon that reaches them, so BFCM — the single largest claim on this page — is
-        untested by backtest and rests on
-        <b>${se.observations[11] || 0} observed November${(se.observations[11] || 0) === 1 ? '' : 's'}</b>.
-        The 2025 evidence for what that costs is stark: standing at 4 November 2025 with
-        nothing in its history that had ever seen a BFCM, the model missed the following 30
-        days by <b>−58%</b>.</li>
-        <li><b>February to April 2025 were never filled into the workbook</b>, so those
-        months are fitted on 2026 alone and say so.</li>
-        <li><b>The month figures step at month boundaries.</b> BFCM decays over days in real
-        life; here 30 November to 1 December is a cliff, softened only by the prior-year
-        half of the blend.</li>
-        <li><b>It cannot see a decision you have not told it about.</b> A promotion, a
-        launch, a stock-out, a price rise — the 2026 Father's Day promotion was invisible to
-        every model until it was declared. That is what the modifiers are for.</li>
-        <li><b>It is a forecast, not a commitment.</b> Two years is a short book, and one of
-        them has three months missing.</li>
-      </ul>` +
-      (yrs.length >= 2 ? `<p class="foot">Fitted on ${yrs.join(' and ')} · underlying level
-        ${yrs.map(y => y + ' ' + money(yl[y]) + '/day').join(' → ')} · forecast from
-        ${niceFull(p.from)}.</p>` : '')) ;
+    <!-- the same M does both halves; drawn as one loop so that is not a claim
+         the reader has to take on trust -->
+    <path d="M230 79 H30 V433 H230" class="loop"/>
+    <text x="20" y="256" class="loopt" transform="rotate(-90 20 256)">one M, both ways</text>
+
+    ${arrow(380, 502, 380, 522)}
+    ${box(150, 522, 460, 34, 'PROFIT = REVENUE × (c − a) − F', null, 'out')}
+  </svg>`;
+
+  /* ---- the arithmetic ---------------------------------------------------- */
+  const sym = [
+    ['L', money(p.level), 'run rate a day, season and weekday out, ' +
+       (lc ? esc(lc.name) + ' out' : 'no sale period in the window')],
+    ['g', 'x' + p.drift.toFixed(3), 'per 28 days · x' + Math.pow(p.drift, 365 / 28).toFixed(2) +
+       ' a year, capped at your best YoY month'],
+    ['k', '1…' + p.horizon, 'days ahead'],
+    ['D', rng(dowVals), 'weekday · Mon–Wed high, Sat low'],
+    ['S', rng(seaVals), 'month · Jan ' + b.season.index[1].toFixed(2) +
+       ', Nov ' + b.season.index[11].toFixed(2)],
+    ['Y', 'x' + (g.yoy || 1).toFixed(2), g.n + ' whole months · x' + g.low.toFixed(2) +
+       '–x' + g.high.toFixed(2)],
+    ['w', (p.priorWeight * 100).toFixed(0) + '%', 'weight on last year, falls with k'],
+    ['M', nMods ? 'x' + p.modifierEffect.peak.toFixed(2) + ' peak' : 'x1.00',
+       nMods + ' declared · they multiply'],
+    ['c', (pnl.contribRate * 100).toFixed(1) + '%', 'of revenue after GST and variable cost'],
+    ['a', (pnl.adRate * 100).toFixed(1) + '%', 'ad spend, times that month’s efficiency'],
+    ['F', money(pnl.fcPerDay), 'fixed cost a day · the latest step, not an average'],
+  ];
+
+  el.innerHTML = `
+    <div class="ncol">${svg}
+      <p class="ncap">Read it downwards. Anything you declare is taken out of history
+      <i>before</i> the four quantities are fitted, and put back on afterwards — the same M
+      both ways, or the model would learn a fortnight of discounting as your run rate.</p>
+    </div>
+    <div class="ncol">
+      <div class="nmath">
+        <div class="nm-h">Revenue, for a day k ahead</div>
+<pre>R = [ (1−w)·A  +  w·B ] × M
+
+  A = L · g<sup>k/28</sup> · D · S
+  B = L<sub>y</sub> · Y</pre>
+        <div class="nm-h">Profit, from your sheet’s own identity</div>
+<pre>P = R × (c − a) − F</pre>
+        <div class="nm-h">Break-even</div>
+<pre>R₀ = F / (c − a) = ${money(p.breakevenPerDay)} a day</pre>
+      </div>
+      <table class="nsym"><tbody>${sym.map(r =>
+        `<tr><th>${r[0]}</th><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')}</tbody></table>
+      <div class="nacc">
+        <b>Measured</b>, walking the model forward through your book and refitting at every
+        start: <b>±${b30 ? (b30.mape * 100).toFixed(0) : '—'}%</b> at 30 days,
+        <b>±${b90 ? (b90.mape * 100).toFixed(0) : '—'}%</b> at 90.
+        <b>±${b30 && b30.coldStart ? (b30.coldStart.mape * 100).toFixed(0) : '—'}%</b>
+        without a prior year to lean on.
+        <span>Nothing validates Oct–Dec: no start in the data reaches them, so BFCM rests on
+        ${b.season.observations[11] || 0} observed November${(b.season.observations[11] || 0) === 1 ? '' : 's'}.
+        S steps at month ends, where real demand tapers. And it cannot see a decision you have not
+        declared.</span>
+      </div>
+    </div>`;
 }
 
 /* Whether a declared sale period actually overlaps the window the level is

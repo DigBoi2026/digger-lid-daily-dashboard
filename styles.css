@@ -452,21 +452,58 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
   border-radius:.5cqh;font-family:var(--font-head);font-size:1.2cqh;text-transform:uppercase;
   letter-spacing:.1em;padding:.35cqh .8cqw;cursor:pointer}
 .notes-head button:hover{color:var(--dl-yellow);border-color:var(--dl-yellow)}
-/* Two columns so a long read does not become a long scroll. */
+/* Two columns: the picture, and the same thing as arithmetic. */
 .notes-body{flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable;margin-top:1cqh;
-  columns:2;column-gap:2.4cqw;font-size:1.15cqh;line-height:1.5;color:#ddd6d7}
-.notes-body section{break-inside:avoid-column;margin-bottom:1.1cqh}
-.notes-body h3{font-family:var(--font-head);font-size:1.35cqh;text-transform:uppercase;
-  letter-spacing:.14em;color:var(--dl-yellow);margin:0 0 .4cqh}
-.notes-body p{margin:0 0 .5cqh}
-.notes-body b{color:var(--dl-white)}
-.notes-body i{color:var(--muted);font-style:italic}
-.notes-body ol,.notes-body ul{margin:.2cqh 0 .5cqh;padding-left:1.4cqw}
-.notes-body li{margin-bottom:.35cqh}
-.notes-body dl{margin:.2cqh 0 .5cqh}
-.notes-body dt{font-weight:700;color:var(--dl-white);font-size:1.1cqh;
-  text-transform:uppercase;letter-spacing:.08em;margin-top:.4cqh}
-.notes-body dd{margin:.1cqh 0 0}
-.notes-body pre{background:var(--panel-2);border:1px solid var(--line);border-radius:.5cqh;
-  padding:.5cqh .7cqw;font-size:1.05cqh;color:var(--dl-yellow);overflow-x:auto;margin:.3cqh 0 .5cqh}
-.notes-body .foot{color:var(--muted);font-size:1cqh;border-top:1px solid var(--line);padding-top:.5cqh}
+  display:grid;grid-template-columns:1.05fr 1fr;gap:1.8cqw;
+  font-size:1.15cqh;line-height:1.5;color:#ddd6d7}
+.notes-body .ncol{min-width:0}
+.notes-body .ncap{font-size:1.05cqh;color:var(--muted);line-height:1.4;margin:.6cqh 0 0}
+.notes-body .ncap i{color:var(--dl-white);font-style:italic}
+
+/* -- the diagram -- */
+.fcdiag{width:100%;height:auto;display:block}
+.fcdiag rect{fill:var(--panel-2);stroke:var(--line);stroke-width:1}
+.fcdiag .bt{font-family:var(--font-head);font-size:12px;font-weight:700;fill:var(--dl-white);
+  text-anchor:middle;letter-spacing:.06em}
+.fcdiag .bs{font-family:var(--font-body);font-size:10.5px;fill:var(--muted);text-anchor:middle}
+.fcdiag .src rect{fill:#2f2a2b}
+.fcdiag .fit rect{fill:#302b0a;stroke:#6b6209}
+.fcdiag .fit .bt{fill:var(--dl-yellow)}
+.fcdiag .pred rect{fill:var(--panel-2);stroke:var(--muted)}
+.fcdiag .blend rect{fill:#3a3407;stroke:#6b6209}
+.fcdiag .blend .bt{fill:var(--dl-yellow)}
+/* The two correction steps are the same operation, so they look the same. */
+.fcdiag .corr rect{fill:rgba(255,176,32,.10);stroke:rgba(255,176,32,.45)}
+.fcdiag .corr .bt{fill:var(--warn)}
+.fcdiag .out rect{fill:#123521;stroke:#1c6b41}
+.fcdiag .out .bt{fill:var(--good)}
+.fcdiag .ar{fill:none;stroke:var(--line);stroke-width:1.4}
+.fcdiag .ahd{fill:var(--line)}
+.fcdiag .loop{fill:none;stroke:rgba(255,176,32,.45);stroke-width:1.2;stroke-dasharray:3 3}
+.fcdiag .loopt{font-family:var(--font-head);font-size:9.5px;fill:var(--warn);
+  text-anchor:middle;letter-spacing:.14em;text-transform:uppercase}
+
+/* -- the arithmetic -- */
+.nmath{background:var(--panel-2);border:1px solid var(--line);border-radius:.7cqh;
+  padding:.8cqh 1cqw;margin-bottom:.9cqh}
+.nmath .nm-h{font-family:var(--font-head);font-size:1.05cqh;text-transform:uppercase;
+  letter-spacing:.14em;color:var(--muted);margin:.5cqh 0 .25cqh}
+.nmath .nm-h:first-child{margin-top:0}
+.nmath pre{margin:0;font-size:1.25cqh;line-height:1.55;color:var(--dl-yellow);
+  font-variant-numeric:tabular-nums;overflow-x:auto}
+.nmath pre sup,.nmath pre sub{font-size:.72em;color:var(--dl-yellow-70)}
+
+.nsym{width:100%;border-collapse:collapse;font-size:1.05cqh}
+.nsym th{width:2.2cqw;text-align:left;font-family:var(--font-head);font-size:1.3cqh;
+  color:var(--dl-yellow);font-weight:700;padding:.22cqh .4cqw .22cqh 0;vertical-align:top}
+.nsym td{padding:.22cqh .5cqw .22cqh 0;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.05)}
+.nsym td:first-of-type{white-space:nowrap;font-weight:700;color:var(--dl-white);
+  font-variant-numeric:tabular-nums}
+.nsym td:last-child{color:var(--muted);line-height:1.35}
+
+.nacc{margin-top:.9cqh;padding:.7cqh .9cqw;border-radius:.6cqh;
+  background:rgba(245,235,25,.06);border:1px solid rgba(245,235,25,.28);
+  font-size:1.05cqh;line-height:1.4;color:var(--muted)}
+.nacc b{color:var(--dl-white)}
+.nacc span{display:block;margin-top:.35cqh;padding-top:.35cqh;
+  border-top:1px solid rgba(255,255,255,.08);color:var(--warn)}
