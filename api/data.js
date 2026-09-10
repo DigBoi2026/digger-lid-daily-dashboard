@@ -369,11 +369,17 @@ async function buildData({ diag = false } = {}) {
     const meta = await sheets.spreadsheets.get({
       spreadsheetId: sheetId, fields: 'sheets.properties.title',
     });
+    /* ?diag=1&tabs=A,B lets a named tab be inspected without the route having to
+       read it for real. The workbook holds nineteen tabs — a drivers sheet, a
+       full-year plan, forward months — and none of them were reachable to look
+       at, only to guess about. */
+    const extraTabs = (opts.probeTabs || []).filter(Boolean);
     const allTitles = (meta.data.sheets || []).map(sh => sh.properties && sh.properties.title).filter(Boolean);
     const titles = new Set(allTitles);
     const missing = monthTabs.filter(m => !titles.has(m.name)).map(m => m.name);
     const tabs = monthTabs.filter(m => titles.has(m.name));
     const monthlyTab = `${YEAR_FULL} Monthly Totals`;
+    const probeOnly = extraTabs.filter(t => titles.has(t));
     const haveMonthly = titles.has(monthlyTab);
 
     if (!tabs.length) throw new Error(`No month tabs found. Looked for: ${monthTabs.map(m => m.name).join(', ')}`);
@@ -383,7 +389,9 @@ async function buildData({ diag = false } = {}) {
     // A1:AZ131 stopped mid-way through the third country block, so any
 // consolidated block below it was never read at all.
 const a1 = name => `'${name.replace(/'/g, "''")}'!A1:AZ400`;
-    const cleanRanges = tabs.map(m => a1(m.name)).concat(haveMonthly ? [a1(monthlyTab)] : []);
+    const cleanRanges = tabs.map(m => a1(m.name))
+      .concat(haveMonthly ? [a1(monthlyTab)] : [])
+      .concat(probeOnly.map(a1));
 
     const resp = await sheets.spreadsheets.values.batchGet({
       spreadsheetId: sheetId,
@@ -422,6 +430,16 @@ const a1 = name => `'${name.replace(/'/g, "''")}'!A1:AZ400`;
          to look for — a campaign calendar, a prior year, a product plan. */
       payload.diag.allTabs = allTitles;
       tabs.forEach((m, i) => { payload.diag[m.name] = probe(vr[i] && vr[i].values); });
+      // named-tab probes land after the month tabs and the monthly total
+      const probeBase = tabs.length + (haveMonthly ? 1 : 0);
+      probeOnly.forEach((name, i) => {
+        const grid = (vr[probeBase + i] && vr[probeBase + i].values) || [];
+        payload.diag['probe:' + name] = {
+          gridRows: grid.length,
+          gridCols: Math.max(0, ...grid.slice(0, 60).map(r => (r || []).length)),
+          head: grid.slice(0, 45).map(r => (r || []).slice(0, 10)),
+        };
+      });
       if (haveMonthly) payload.diag[monthlyTab] = probe(vr[tabs.length] && vr[tabs.length].values);
     }
 
@@ -430,7 +448,11 @@ const a1 = name => `'${name.replace(/'/g, "''")}'!A1:AZ400`;
 
 module.exports = async (req, res) => {
   try {
-    const payload = await buildData({ diag: !!(req.query && req.query.diag) });
+    const q = req.query || {};
+    const payload = await buildData({
+      diag: !!q.diag,
+      probeTabs: q.tabs ? String(q.tabs).split(',').map(t => t.trim()) : [],
+    });
     // Edge-cache for an hour; serve stale while revalidating.
     res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1800');
     res.setHeader('Content-Type', 'application/json');
