@@ -369,7 +369,8 @@ async function buildData({ diag = false } = {}) {
     const meta = await sheets.spreadsheets.get({
       spreadsheetId: sheetId, fields: 'sheets.properties.title',
     });
-    const titles = new Set((meta.data.sheets || []).map(sh => sh.properties && sh.properties.title));
+    const allTitles = (meta.data.sheets || []).map(sh => sh.properties && sh.properties.title).filter(Boolean);
+    const titles = new Set(allTitles);
     const missing = monthTabs.filter(m => !titles.has(m.name)).map(m => m.name);
     const tabs = monthTabs.filter(m => titles.has(m.name));
     const monthlyTab = `${YEAR_FULL} Monthly Totals`;
@@ -415,6 +416,11 @@ const a1 = name => `'${name.replace(/'/g, "''")}'!A1:AZ400`;
     // board renders as blank panels under a green "Live" pill.
     if (!daily.length || diag) {
       payload.diag = { tabsMissing: missing };
+      /* Every tab in the workbook, not just the ones this route reads. The list
+         was already being fetched to avoid a batchGet failure and then thrown
+         away, which meant there was no way to discover a tab nobody had thought
+         to look for — a campaign calendar, a prior year, a product plan. */
+      payload.diag.allTabs = allTitles;
       tabs.forEach((m, i) => { payload.diag[m.name] = probe(vr[i] && vr[i].values); });
       if (haveMonthly) payload.diag[monthlyTab] = probe(vr[tabs.length] && vr[tabs.length].values);
     }
