@@ -13,3 +13,4 @@ region_data.js
 pulse_data.js
 source/*.csv
 source/catrows.json
+source/__pycache__/
