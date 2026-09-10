@@ -27,7 +27,16 @@ name: watchdog
 on:
   schedule:
     - cron: '*/30 * * * *'
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      log_now:
+        description: 'Also record a forecast row (ignores the once-a-day guard)'
+        type: boolean
+        default: false
+
+# Only the log step writes, and only to one file.
+permissions:
+  contents: write
 
 concurrency:
   group: watchdog
@@ -83,31 +92,67 @@ jobs:
           echo "Board healthy."
 
       # One row a day, so the forecast can be checked against what actually
-      # happened rather than only in simulation. Optional on purpose: it needs a
-      # credential for the figures, so without the secret it skips rather than
-      # failing — the alarm above is the part that must never be blocked by
-      # missing configuration.
+      # happened rather than only in simulation.
+      #
+      # COMMITTED, not left in the workspace. The first cut appended to a CSV in
+      # the runner's working directory, which is deleted when the job ends — a
+      # log that logs nothing. Committing it to the repo gives a real audit
+      # trail: diffable, queryable, and it survives.
+      #
+      # Optional on purpose. It needs a credential for the figures, so with no
+      # secret it explains how to add one and exits 0. The alarm above must
+      # never be blocked by missing configuration.
       - name: Record what the forecast said
-        if: github.event_name == 'schedule'
         env:
           BASE: ${{ vars.DASHBOARD_BASE_URL || 'https://digboi-seven.vercel.app' }}
           TOKEN: ${{ secrets.WATCHDOG_TOKEN }}
+          FORCE: ${{ github.event.inputs.log_now }}
         run: |
           set -uo pipefail
           if [ -z "${TOKEN:-}" ]; then
             echo "No WATCHDOG_TOKEN secret set, so there is nothing to log with."
-            echo "Add one (CRON_SECRET or an AI token from Vercel) under"
+            echo "Add one (the CRON_SECRET or an AI token from Vercel) under"
             echo "Settings -> Secrets and variables -> Actions to start the log."
             exit 0
           fi
-          # Once a day, at whichever run lands in the 22:00 UTC hour.
-          if [ "$(date -u +%H)" != "22" ]; then
-            echo "Not the logging hour (UTC $(date -u +%H)); skipping."
+
+          # Once a day, on whichever half-hourly run lands in the 22:00 UTC
+          # hour. The dispatch input overrides it so the path can be tested by
+          # hand rather than only ever exercised unattended at 22:00.
+          if [ "${FORCE:-false}" != "true" ] && [ "$(date -u +%H)" != "22" ]; then
+            echo "Not the logging hour (UTC $(date -u +%H)) and log_now not set; skipping."
             exit 0
           fi
+
           csv=$(curl -sS --max-time 45 -H "Authorization: Bearer $TOKEN" \
                   "$BASE/api/watchdog?format=csv&t=$(date +%s)") || {
             echo "::warning title=forecast log::could not fetch the row"; exit 0; }
-          echo "$csv"
-          echo "$csv" | tail -n +2 >> forecast_log.csv || true
-          echo "::notice title=forecast logged::$(echo "$csv" | tail -n1)"
+          header=$(printf '%s\n' "$csv" | head -n1)
+          row=$(printf '%s\n' "$csv" | tail -n1)
+          case "$header" in
+            logged_on,*) : ;;
+            *) echo "::warning title=forecast log::unexpected response, not the csv row"
+               printf '%s\n' "$csv" | head -c 400; exit 0 ;;
+          esac
+
+          FILE=forecast_log.csv
+          [ -f "$FILE" ] || printf '%s\n' "$header" > "$FILE"
+
+          # Idempotent by date: a re-run, or a second run inside the same hour,
+          # must not append a duplicate row for the same day.
+          today=$(printf '%s' "$row" | cut -d, -f1)
+          if cut -d, -f1 "$FILE" | grep -qx "$today"; then
+            echo "$today is already logged; nothing to do."
+            exit 0
+          fi
+          printf '%s\n' "$row" >> "$FILE"
+
+          git config user.name  "watchdog"
+          git config user.email "watchdog@users.noreply.github.com"
+          git add "$FILE"
+          git commit -m "Log the forecast as at $today" \
+            -m "One row a day from /api/watchdog, so what the model SAID can be checked against what happened rather than only in simulation."
+          # Rebase before pushing: a half-hourly workflow can race a human push.
+          git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          echo "::notice title=forecast logged::$row"

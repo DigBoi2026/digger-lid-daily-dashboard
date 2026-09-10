@@ -139,9 +139,16 @@ not be reintroduced by the fix.
 **The forecast log.** Nothing recorded what the forecast *said*, so it could only
 ever be checked in simulation, never against what happened. One flat row —
 scenarios, profit, November, the model basis — ready to append to a sheet. The
-workflow captures it once a day if a `WATCHDOG_TOKEN` secret is set, and skips
-rather than failing if it is not: the alarm must never be blocked by missing
-configuration. By hand:
+workflow captures it once a day (the run in the 22:00 UTC hour) and **commits it
+to `forecast_log.csv`** — a diffable audit trail that survives, rather than a
+file in a runner workspace that gets deleted. Idempotent by date, so a re-run
+cannot duplicate a day.
+
+It needs a `WATCHDOG_TOKEN` repository secret (the `CRON_SECRET`, or an AI
+token) for the figures. Without one it explains how to add it and exits clean:
+**the alarm must never be blocked by missing configuration.** To test it once
+the secret is set, run the workflow by hand from the Actions tab with *"Also
+record a forecast row"* ticked. By hand from a shell:
 
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" \
