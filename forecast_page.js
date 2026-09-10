@@ -29,7 +29,13 @@ let GEO_STATE = 'idle';    // idle | loading | ready | failed
 let DATA = window.DL_DATA || null;
 const PRIOR = window.DL_PRIOR || null;
 let CHART = null;
-let BT = null;                       // measured backtest, filled in after first paint
+/* Accuracy is measured on the series that is actually on screen. Reusing
+   revenue's backtest under another lens would put a measured-looking ±13%
+   against a series that was never tested: the returning-customer count runs
+   ±27% at 30 days and ±41% at 90, so revenue's figure would understate it by
+   more than double — the exact shape of wrong this board exists to avoid. */
+const BTS = {};                      // lens key -> folded backtest, or 'failed'
+let BT = null;                       // the current lens's, filled in after first paint
 
 /* ---- formatters ---- */
 const money = (n, c = false) => {
@@ -177,7 +183,7 @@ const LENSES = {
     build(list) { return [{ id: 'total', name: 'Revenue', rows: list, primary: true }]; },
   },
   customers: {
-    label: 'New vs returning', unit: 'orders', profit: false, ties: true,
+    label: 'New vs returning', unit: 'orders', profit: false, ties: true, sparse: true,
     note: 'order counts from the sheet · measured, not assumed',
     warn: 'Order counts only. The sheet has no revenue split by customer, and neither ' +
           'does Shopify, so a per-group revenue figure would assume new and returning ' +
@@ -191,12 +197,18 @@ const LENSES = {
     },
   },
   countries: {
-    label: 'AU / NZ / rest', unit: 'money', profit: false, ties: false,
+    label: 'AU / NZ / rest', unit: 'money', profit: false, ties: false, sparse: true,
     note: 'Shopify net sales by shipping country',
     warn: 'Net sales on shipping address — excludes GST and is recorded by destination, ' +
           'so these totals do NOT tie to the board’s revenue, and there is no cost data ' +
           'per country, so no profit. Your workbook’s Country 2/3/4 blocks would tie; ' +
-          'they are $0.00 on every day of every month.',
+          'they are $0.00 on every day of every month. Australia is forecastable and ' +
+          'measures ±24% at 30 days. New Zealand and the rest are not: they take orders ' +
+          'on a third of days, they have swung between 1% and 6% of sales quarter to ' +
+          'quarter, and the model’s measured error on them is larger than the figure ' +
+          'itself — read them as scale, not as a forecast. “Rest of world” is also a ' +
+          'residual (total less AU less NZ), so it carries any order with no country ' +
+          'recorded against it.',
     needs: 'geo',
     build(list, geo) {
       if (!geo || !geo.daily) return null;
@@ -225,7 +237,7 @@ async function ensureGeo() {
     if (!(j.daily || []).length) throw new Error('no rows');
     GEO = j; GEO_STATE = 'ready';
   } catch (e) { GEO = null; GEO_STATE = 'failed'; }
-  render();
+  render(); measure();
 }
 
 /* Every lens's series, projected. The primary carries the fan and the rails. */
@@ -250,7 +262,7 @@ function runLens(list, hor) {
     }
     out.mods = mods;
     ['pessimistic', 'realistic', 'optimistic'].forEach(sc => {
-      const o = { rows: sr.rows, from, horizon: hor, scenario: sc,
+      const o = { rows: sr.rows, from, horizon: hor, scenario: sc, sparse: !!L.sparse,
                   modifiers: mods, observedCeiling: S.ceiling };
       out[sc] = L.profit ? F.projectPnl(o) : F.project(o);
     });
@@ -326,12 +338,23 @@ function renderKpisLens(p, ctx) {
     const sp = sr[S.scen];
     const ly = priorSameDates(sr.rows, F.addDays(sp.from, 1), F.addDays(sp.from, sp.horizon));
     const yoy = ly.sum ? (sp.total / ly.sum - 1) * 100 : null;
+    /* Each tile carries the error measured on ITS OWN series. It is the fact
+       that decides whether the number above it means anything: Australia lands
+       within 24%, while New Zealand — a third of days with no order at all —
+       measures wider than 100%, at which point a year-on-year arrow is theatre.
+       So past that line the tile drops the arrow and says what it is. */
+    const eb = BT && BT.byName && BT.byName[sr.name] && BT.byName[sr.name][30];
+    const err = eb ? '±' + (eb.mape * 100).toFixed(0) + '%' : null;
+    const shaky = eb && eb.mape > 0.5;
     return { lbl: sr.name + ' · ' + label, val: fmt(sp.total), accent: !!sr.primary,
       sub: 'share <b>' + (tot ? (sp.total / tot * 100).toFixed(0) : '—') + '%</b>' +
            (ly.sum ? ' · last year ' + fmt(ly.sum) : ''),
-      foot: yoy != null
-        ? '<span class="delta ' + (yoy > 0 ? 'up' : 'down') + '">' + (yoy > 0 ? '▲' : '▼') + ' ' +
-          Math.abs(yoy).toFixed(0) + '%</span> vs last year' : 'no prior year' };
+      foot: shaky
+        ? '<span class="delta down">' + err + ' measured error</span> scale, not a forecast'
+        : yoy != null
+          ? '<span class="delta ' + (yoy > 0 ? 'up' : 'down') + '">' + (yoy > 0 ? '▲' : '▼') + ' ' +
+            Math.abs(yoy).toFixed(0) + '%</span> vs last year' + (err ? ' · ' + err : '')
+          : (err ? err + ' measured error' : 'no prior year') };
   });
   tiles.push({ lbl: 'Combined · ' + label, val: fmt(tot),
     sub: ctx.series.length + ' series · ' + esc(L.note),
@@ -398,10 +421,18 @@ function renderScenarios(ctx) {
     : 'no cost side to this measure';
 
   const b30 = BT && BT[30], b90 = BT && BT[90];
+  /* The sub-line names the series the figure belongs to whenever the lens has
+     more than one, because a tight Australia must not be allowed to hide a
+     loose rest-of-world behind a number the reader takes as covering both. */
+  const accSub = (b, h) => {
+    if (!b) return 'measuring';
+    const w = BT && BT['worst' + h];
+    return b.n + (w && !w.only ? ' origins · worst: ' + w.name : ' past origins');
+  };
   document.getElementById('acc30').textContent = b30 ? '±' + (b30.mape * 100).toFixed(0) + '%' : '…';
-  document.getElementById('acc30Sub').textContent = b30 ? b30.n + ' past origins' : 'measuring';
+  document.getElementById('acc30Sub').textContent = accSub(b30, 30);
   document.getElementById('acc90').textContent = b90 ? '±' + (b90.mape * 100).toFixed(0) + '%' : '…';
-  document.getElementById('acc90Sub').textContent = b90 ? b90.n + ' past origins' : 'measuring';
+  document.getElementById('acc90Sub').textContent = accSub(b90, 90);
 }
 
 /* ------------------------------------------------------------------ chart */
@@ -1129,7 +1160,7 @@ function renderNotes(p) {
 function renderNotesPlain(p) {
   const el = document.getElementById('notesBody');
   const pnl = p.pnl, b = p.basis, g = b.growth;
-  const b30 = BT && BT[30], b90 = BT && BT[90];
+  const _btT = btTotal(), b30 = _btT && _btT[30], b90 = _btT && _btT[90];
   const nov = p.months.find(m => m.month.slice(5) === '11');
   const dow = b.dowIdx;
   const dnames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -1220,7 +1251,7 @@ function renderNotesMaths(p) {
   const seaVals = [];
   for (let m = 1; m <= 12; m++) if (b.season.observations[m]) seaVals.push(b.season.index[m]);
   const rng = a => Math.min.apply(null, a).toFixed(2) + '–' + Math.max.apply(null, a).toFixed(2);
-  const b30 = BT && BT[30], b90 = BT && BT[90];
+  const _btT = btTotal(), b30 = _btT && _btT[30], b90 = _btT && _btT[90];
   const lc = levelCorrected(p);
   const nMods = (p.modifiers || []).length;
 
@@ -1445,10 +1476,57 @@ const horizonOf = (from, to) => Math.round((Date.parse(to + 'T00:00:00Z') - Date
 /* The band is measured, not assumed, so it has to be computed — about half a
    second of walk-forward. Deferred past first paint so the board draws
    immediately and the band fills in behind it. */
+/* Keyed by lens — and for countries by whether Shopify has answered yet — so
+   returning to a lens does not re-walk the whole book. */
+const btKey = () => S.lens === 'countries' ? 'countries:' + GEO_STATE : S.lens;
+const btTotal = () => (BTS.total && BTS.total !== 'failed') ? BTS.total : null;
+
+/* One number goes in the cell, so it is the WORST series', named. An average
+   would read as covering every series while describing none of them. */
+function foldBt(per) {
+  const out = { series: per, byName: {} };
+  per.forEach(x => out.byName[x.name] = x.bt);
+  [30, 90].forEach(h => {
+    const got = per.map(x => ({ name: x.name, r: x.bt && x.bt[h] })).filter(x => x.r);
+    if (!got.length) return;
+    const worst = got.reduce((a, b) => b.r.mape > a.r.mape ? b : a);
+    out[h] = worst.r;
+    out['worst' + h] = { name: worst.name, only: got.length === 1 };
+  });
+  return out;
+}
+
+function measureLens(key) {
+  if (BTS[key]) return;
+  let res = 'failed';
+  try {
+    const L = key === 'total' ? LENSES.total : lens();
+    const built = L.build(rows(), GEO);
+    if (built) res = foldBt(built.map(sr => ({
+      name: sr.name,
+      bt: F.backtest(sr.rows, { sparse: !!L.sparse, model: { scenario: 'realistic' } }),
+    })));
+  } catch (e) { res = 'failed'; }
+  BTS[key] = res;
+}
+
 function measure() {
+  const key = btKey();
+  /* Already measured: adopt it and REPAINT. The caller renders before calling
+     here, so returning without a repaint left the previous lens's error figures
+     standing under the new one — Total wearing "worst: New Zealand". */
+  if (BTS[key]) {
+    const was = BT;
+    BT = BTS[key] === 'failed' ? null : BTS[key];
+    if (was !== BT) render();
+    return;
+  }
+  BT = null;
   setTimeout(() => {
-    try { BT = F.backtest(rows(), { model: { scenario: 'realistic' } }); render(); }
-    catch (e) { BT = null; }
+    measureLens('total');                  // the notes always describe revenue
+    if (key !== 'total') measureLens(key);
+    if (btKey() === key) BT = BTS[key] === 'failed' ? null : BTS[key];
+    render();
   }, 60);
 }
 
@@ -1518,7 +1596,7 @@ function wire() {
   document.querySelectorAll('#lensSeg button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#lensSeg button').forEach(x => x.classList.remove('active'));
     b.classList.add('active'); S.lens = b.dataset.lens;
-    render();
+    render(); measure();
     if (lens().needs === 'geo') ensureGeo();
   });
   document.querySelectorAll('#horSeg button').forEach(b => b.onclick = () => {

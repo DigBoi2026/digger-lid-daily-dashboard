@@ -38,14 +38,31 @@ var DLforecast = (function () {
   const mean = a => a.length ? a.reduce((x, y) => x + y, 0) / a.length : null;
   const sum = a => a.reduce((x, y) => x + y, 0);
 
+  /* WHICH ROWS COUNT.
+
+     Everything here defaults to "a day with revenue on it", because a 0 in the
+     P&L means the sheet has not been filled in — a gap, not a zero day. That
+     default is wrong for a sparse series, and wrong in the direction that
+     invents money. New Zealand takes orders on roughly a third of days: drop
+     its empty days and the 28-day level becomes the mean of the days it DID
+     sell on, then gets multiplied back across every day of the horizon. The
+     forecast then over-states New Zealand by the reciprocal of its trading
+     frequency. Measured: 357% MAPE at 30 days, against Australia's 24%.
+
+     So a caller with a genuinely dense-and-zero series says `sparse: true`, and
+     a 0 is read as a measurement of nothing sold rather than as a missing day. */
+  const positive = r => r.revenue > 0;
+  const nonNeg = r => r && r.revenue != null && !isNaN(r.revenue) && r.revenue >= 0;
+  const keeper = sparse => sparse ? nonNeg : positive;
+
   /* ---------------------------------------------------------------- fitting */
 
   /* Day-of-week shape. Fitted across every year available, because the weekly
      rhythm of a trade customer does not change between years and more days make
      it steadier. Mon-Wed run ~1.13-1.16, Saturday ~0.77. */
-  function fitDow(rows) {
-    const b = {};
-    rows.forEach(r => { if (r.revenue > 0) (b[dow(r.date)] = b[dow(r.date)] || []).push(r.revenue); });
+  function fitDow(rows, sparse) {
+    const b = {}, keep = keeper(sparse);
+    rows.forEach(r => { if (keep(r)) (b[dow(r.date)] = b[dow(r.date)] || []).push(r.revenue); });
     const all = mean(Object.values(b).flat());
     const out = {};
     for (let i = 0; i < 7; i++) out[i] = (b[i] && all) ? mean(b[i]) / all : 1;
@@ -78,10 +95,11 @@ var DLforecast = (function () {
      are reported as n=0, never guessed. */
   const daysInMonth = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 
-  function fitSeason(rows) {
+  function fitSeason(rows, sparse) {
     const cell = {};                                   // cell[year][month] = [revenue...]
+    const keep = keeper(sparse);
     rows.forEach(r => {
-      if (!(r.revenue > 0)) return;
+      if (!keep(r)) return;
       const y = r.date.slice(0, 4), m = monthOf(r.date);
       ((cell[y] = cell[y] || {})[m] = cell[y][m] || []).push(r.revenue);
     });
@@ -129,10 +147,11 @@ var DLforecast = (function () {
   /* Year-on-year growth from whole months present in both years, so a partial
      month cannot masquerade as a collapse — comparing 8 days of September to a
      full September once read as -32% when the true like-for-like was +132%. */
-  function fitGrowth(rows) {
+  function fitGrowth(rows, sparse) {
     const m = {};
+    const keep = keeper(sparse);
     rows.forEach(r => {
-      if (!(r.revenue > 0)) return;
+      if (!keep(r)) return;
       const k = r.date.slice(0, 7);
       (m[k] = m[k] || { sum: 0, days: 0 });
       m[k].sum += r.revenue; m[k].days++;
@@ -572,10 +591,11 @@ var DLforecast = (function () {
      Smoothed over +/-3 days so one odd day cannot swing it, and over a full
      week the day-of-week effect cancels, which is what lets the caller apply
      its own day-of-week index without double-counting. */
-  function priorShaper(rows) {
+  function priorShaper(rows, sparse) {
     const byDate = {}, monthDays = {};
+    const keep = keeper(sparse);
     rows.forEach(r => {
-      if (!(r.revenue > 0)) return;
+      if (!keep(r)) return;
       byDate[r.date] = r.revenue;
       (monthDays[r.date.slice(0, 7)] = monthDays[r.date.slice(0, 7)] || []).push(r.revenue);
     });
@@ -615,8 +635,9 @@ var DLforecast = (function () {
      November. So `whole` restricts the window to days inside months the data
      completes, which lags by up to a month and is corrected by drift — a lag
      drift can fix beats a bias nothing can. */
-  function levelOf(rows, dowIdx, seasonIdx, window, mode, endDate, shaper) {
-    let usable = rows.filter(r => r.revenue > 0 && !r.pending);
+  function levelOf(rows, dowIdx, seasonIdx, window, mode, endDate, shaper, sparse) {
+    const keep = keeper(sparse);
+    let usable = rows.filter(r => keep(r) && !r.pending);
     if (mode === 'whole') {
       const end = endDate || (usable.length ? usable[usable.length - 1].date : null);
       if (end) {
@@ -644,7 +665,7 @@ var DLforecast = (function () {
       let f = seasonIdx[monthOf(r.date)] || 1;
       if (mode === 'shape' && shaper) {
         const p = shaper(r.date);
-        if (p && p.monthMean > 0) f = (p.value / p.monthMean) * f;
+        if (p && p.monthMean > 0 && p.value > 0) f = (p.value / p.monthMean) * f;
       }
       return r.revenue / dowIdx[dow(r.date)] / f;
     });
@@ -653,7 +674,8 @@ var DLforecast = (function () {
   }
 
   function project(opts) {
-    const raw = (opts.rows || []).filter(r => r.revenue > 0).sort((a, b) => a.date < b.date ? -1 : 1);
+    const sparse = !!opts.sparse;
+    const raw = (opts.rows || []).filter(keeper(sparse)).sort((a, b) => a.date < b.date ? -1 : 1);
     if (!raw.length) return null;
     const horizon = opts.horizon || 90;
     const scenario = SCENARIOS[opts.scenario] || SCENARIOS.realistic;
@@ -678,15 +700,15 @@ var DLforecast = (function () {
       ? raw.map(r => { const f = modAt(r.date); return f === 1 ? r : Object.assign({}, r, { revenue: r.revenue / f }); })
       : raw;
 
-    const dowIdx = opts.dowIdx || fitDow(rows);
-    const season = opts.season || fitSeason(rows);
-    const growth = opts.growth || fitGrowth(rows);
+    const dowIdx = opts.dowIdx || fitDow(rows, sparse);
+    const season = opts.season || fitSeason(rows, sparse);
+    const growth = opts.growth || fitGrowth(rows, sparse);
 
     const LW = opts.levelWindow || 28;
     const LM = opts.levelMode || 'shape';
-    const shaper = priorShaper(rows);
-    const lvl = levelOf(rows.filter(r => r.date <= from), dowIdx, season.index, LW, LM, from, shaper);
-    const prev = levelOf(rows.filter(r => r.date <= addDays(from, -LW)), dowIdx, season.index, LW, LM, addDays(from, -LW), shaper);
+    const shaper = priorShaper(rows, sparse);
+    const lvl = levelOf(rows.filter(r => r.date <= from), dowIdx, season.index, LW, LM, from, shaper, sparse);
+    const prev = levelOf(rows.filter(r => r.date <= addDays(from, -LW)), dowIdx, season.index, LW, LM, addDays(from, -LW), shaper, sparse);
 
     /* Drift is a growth RATE, so bound it by the growth this business has
        actually achieved — not by an arbitrary band. The first cut clamped a
@@ -884,9 +906,19 @@ var DLforecast = (function () {
      What it cannot do is score October to December: no origin in the data has
      a horizon that reaches them, so the largest claim the model makes — BFCM —
      is unvalidated by construction. The page says so where it says it. */
+  /* sparse: a sparse series -- New Zealand's net sales, where most days are
+     genuinely 0 -- is otherwise unmeasurable here. Dropping zero rows makes
+     every horizon look incomplete (n !== h), so no origin ever scores and the
+     series returns null: the page would then quote a figure measured on
+     Australia alone against three country tiles. A 0 on a day the shop traded
+     is a measurement, not a gap, so the caller can say so. Fitting is
+     handled by the same flag, so the level is a mean over calendar days rather
+     than over selling days. For a dense series such as revenue, where no day is
+     ever 0, every one of these predicates selects exactly the same rows. */
   function backtest(rows, opts) {
     opts = opts || {};
-    const src = (rows || []).filter(r => r.revenue > 0).sort((a, b) => a.date < b.date ? -1 : 1);
+    const sparse = !!(opts.sparse || (opts.model && opts.model.sparse));
+    const src = (rows || []).filter(r => r.date && keeper(sparse)(r)).sort((a, b) => a.date < b.date ? -1 : 1);
     const byDate = {}; src.forEach(r => byDate[r.date] = r.revenue);
     const horizons = opts.horizons || [30, 60, 90];
     const step = opts.step || 7;
@@ -901,7 +933,7 @@ var DLforecast = (function () {
         let act = 0, n = 0;
         for (let k = 1; k <= h; k++) { const d = addDays(from, k); if (byDate[d] != null) { act += byDate[d]; n++; } }
         if (n !== h || !act) return;
-        const p = project(Object.assign({}, opts.model, { rows: hist, from, horizon: h }));
+        const p = project(Object.assign({ sparse }, opts.model, { rows: hist, from, horizon: h }));
         if (!p) return;
         /* Does the horizon HAVE a prior year to lean on? Origins in 2025 do not,
            and they are a different model: from 2025-11-04 the engine missed the

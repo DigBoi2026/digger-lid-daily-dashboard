@@ -666,7 +666,62 @@ if (!REAL || REAL.length < 400) {
   ok('real: uncorrected, it runs above every year-on-year month ever recorded',
      bareRatios.some(r => r > growth.high), bareRatios.map(r => +r.toFixed(2)));
 
+  const bt0 = F.backtest(REAL, { model: { scenario: 'realistic' } });
+
+  /* A SPARSE SERIES. New Zealand sells on about a third of days, and a 0 there
+     is a measurement, not an unfilled cell. Read the empty days as gaps and the
+     28-day level becomes the mean of the selling days only, then gets applied
+     to every day of the horizon — the forecast inflates by the reciprocal of
+     the trading frequency. Both facts below are the reason the country lens
+     declares itself sparse, and the reason its NZ tile shows measured error
+     instead of a year-on-year arrow. */
+  const sparseRows = REAL.map((r, i) => ({
+    date: r.date,
+    revenue: (i % 3 === 0) ? r.revenue * 3 : 0,      // same total, a third of the days
+  }));
+  const dense = F.project({ rows: sparseRows, from: '2026-09-08', horizon: 90, scenario: 'realistic' });
+  const sprs  = F.project({ rows: sparseRows, from: '2026-09-08', horizon: 90, scenario: 'realistic', sparse: true });
+  ok('sparse: reading empty days as gaps inflates the level ~3x',
+     dense.level > sprs.level * 2.2, [dense.level, sprs.level, dense.level / sprs.level]);
+  ok('sparse: and the total with it', dense.total > sprs.total * 2.2,
+     [Math.round(dense.total), Math.round(sprs.total)]);
+  const realTotal = F.project({ rows: REAL, from: '2026-09-08', horizon: 90, scenario: 'realistic' });
+  ok('sparse: declared, it lands near the series it was built from (same money, fewer days)',
+     Math.abs(sprs.total / realTotal.total - 1) < 0.2, [Math.round(sprs.total), Math.round(realTotal.total)]);
+  ok('sparse: a dense series is untouched by the flag',
+     Math.abs(F.project({ rows: REAL, from: '2026-09-08', horizon: 90, scenario: 'realistic', sparse: true }).total
+              / realTotal.total - 1) < 1e-9);
+  const btDense = F.backtest(sparseRows, { model: { scenario: 'realistic' } });
+  const btSparse = F.backtest(sparseRows, { sparse: true, model: { scenario: 'realistic' } });
+  ok('sparse: undeclared, no origin can score at all (every horizon looks incomplete)',
+     btDense[30] === null, btDense[30] && btDense[30].n);
+  ok('sparse: declared, it is measurable', btSparse[30] && btSparse[30].n > 10, btSparse[30] && btSparse[30].n);
+  const btReal = F.backtest(REAL, { sparse: true, model: { scenario: 'realistic' } });
+  ok('sparse: and the flag does not move a dense backtest',
+     Math.abs(btReal[30].mape - bt0[30].mape) < 1e-9, [btReal[30].mape, bt0[30].mape]);
+
+  /* Why the page cannot quote revenue's accuracy under another lens. The
+     returning-customer count is a small difference between two larger numbers,
+     so it is far noisier than revenue; showing revenue's ±13% beside it would
+     understate the error on screen by more than double. Each lens measures its
+     own series, and the cell names the worst one. */
+  const btOrd = F.backtest(F.asMetric(REAL, 'orders'), { model: { scenario: 'realistic' } });
+  const btNew = F.backtest(F.asMetric(REAL, 'newOrders'), { model: { scenario: 'realistic' } });
+  const btRet = F.backtest(
+    F.asMetric(REAL, r => Math.max(0, (r.orders || 0) - (r.newOrders || 0))),
+    { model: { scenario: 'realistic' } });
   const bt = F.backtest(REAL, { model: { scenario: 'realistic' } });
+  ok('real: a derived series is measurable at all', btOrd[30] && btRet[30] && btNew[30],
+     [btOrd[30] && btOrd[30].n, btRet[30] && btRet[30].n]);
+  ok('real: returning customers are materially harder to forecast than revenue',
+     btRet[30].mape > bt[30].mape * 1.5,
+     [bt[30].mape.toFixed(3), btRet[30].mape.toFixed(3)]);
+  ok('real: and the gap widens at 90 days',
+     btRet[90].mape > bt[90].mape * 1.5,
+     [bt[90].mape.toFixed(3), btRet[90].mape.toFixed(3)]);
+  ok('real: so the worst series of the customers lens is the returning one',
+     btRet[30].mape > btNew[30].mape,
+     [btNew[30].mape.toFixed(3), btRet[30].mape.toFixed(3)]);
   ok('real: 30-day error with a prior year stays under 20%', bt[30].mape < 0.2, bt[30].mape);
   ok('real: 90-day error with a prior year stays under 25%', bt[90].mape < 0.25, bt[90].mape);
   ok('real: a prior year roughly halves the error vs having none',
