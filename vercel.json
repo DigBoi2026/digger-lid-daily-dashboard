@@ -4,6 +4,9 @@
     "api/data.js": {
       "maxDuration": 15
     },
+    "api/watchdog.js": {
+      "maxDuration": 30
+    },
     "api/shopify.js": {
       "maxDuration": 60
     },
@@ -23,9 +26,15 @@
       "maxDuration": 10
     }
   },
+  "crons": [
+    {
+      "path": "/api/watchdog",
+      "schedule": "0 22 * * *"
+    }
+  ],
   "headers": [
     {
-      "source": "/api/ai/(.*)",
+      "source": "/api/watchdog",
       "headers": [
         {
           "key": "Cache-Control",
@@ -38,8 +47,33 @@
       ]
     },
     {
+      "source": "/api/ai/(.*)",
+      "crons": [
+    {
+      "path": "/api/watchdog",
+      "schedule": "0 22 * * *"
+    }
+  ],
+  "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        }
+      ]
+    },
+    {
       "source": "/api/(.*)",
-      "headers": [
+      "crons": [
+    {
+      "path": "/api/watchdog",
+      "schedule": "0 22 * * *"
+    }
+  ],
+  "headers": [
         {
           "key": "Cache-Control",
           "value": "s-maxage=600, stale-while-revalidate=1800"
@@ -48,7 +82,13 @@
     },
     {
       "source": "/(.*)",
-      "headers": [
+      "crons": [
+    {
+      "path": "/api/watchdog",
+      "schedule": "0 22 * * *"
+    }
+  ],
+  "headers": [
         {
           "key": "X-Content-Type-Options",
           "value": "nosniff"

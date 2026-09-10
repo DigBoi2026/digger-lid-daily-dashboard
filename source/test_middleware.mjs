@@ -61,6 +61,27 @@ ok('/api/ai/ bypass is anchored to the path start',
    mw(req('/sneaky/api/ai/manifest')).status === 401);
 ok('a lookalike prefix does not bypass', mw(req('/api/aixx')).status === 401);
 
+/* /api/watchdog is exempt for one reason: a scheduler cannot type a password,
+   and a smoke alarm that needs a human to log in first is not a smoke alarm.
+   It is not unprotected — without a bearer token the route returns status only
+   and withholds every figure (source/test_watchdog.js asserts that). But the
+   exemption itself has to hold in BOTH places, because this file exists because
+   the matcher alone did not reliably exempt /api/ai/ on a real deployment. */
+ok('matcher exempts the watchdog', config.matcher.some(m => m.includes('api/watchdog')));
+ok('/api/watchdog bypasses the shared password', mw(req('/api/watchdog')) === undefined);
+ok('the watchdog bypass is anchored to the path start',
+   mw(req('/sneaky/api/watchdog')).status === 401);
+/* The exact-match rule earns its keep here: a prefix test would have exempted
+   /api/watchdog-debug as well, and whoever added such a route would not know
+   they had opened a hole. (config.matcher still excludes it by prefix, which is
+   why middleware.js says not to create one — this function is not consulted for
+   paths the matcher skips.) */
+ok('a trailing slash still bypasses', mw(req('/api/watchdog/')) === undefined);
+ok('a watchdog lookalike is NOT exempted by this function',
+   mw(req('/api/watchdogxx')) !== undefined && mw(req('/api/watchdogxx')).status === 401);
+ok('nor is a deeper path under it',
+   mw(req('/api/watchdog/secrets')) !== undefined && mw(req('/api/watchdog/secrets')).status === 401);
+
 /* ---- the 401 is machine-readable ---- */
 const r401 = mw(req('/'));
 ok('401 sends a Basic challenge so browsers prompt',

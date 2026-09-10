@@ -94,6 +94,55 @@ opacity 0).
 
 ---
 
+## The watchdog — read this second
+
+This board does not break loudly. When the live pull fails, every page falls
+back to its embedded snapshot and keeps drawing, with a small "Snapshot" pill as
+the only tell. That is right for a screen on a wall and it means a broken data
+path is invisible to anyone not already suspicious. It has cost real time twice:
+the board once sat 69 days behind the sheet, and `/api/data` spent a stretch
+returning `{"error":"opts is not defined"}` to every caller — found not by any
+alarm but because somebody curled the endpoint while checking something else.
+
+`/api/health` reported **green** throughout that second one, and this is the part
+worth internalising: it calls `parseDaily` directly and never calls
+`buildData()`, so it exercises a *parallel* code path rather than the one the
+board uses. A check that does not run the real thing is not a check.
+
+**`/api/watchdog` runs the real thing.** It asserts that `buildData()` returns
+without throwing, that it returns rows, that the newest data is *recent* (nothing
+else here asserts that — `latestDataDate` appears seven times and every one of
+them clamps a window to accept stale data gracefully), that the trailing pending
+days are not piling up, and that the forecast layer can still produce a number.
+It answers **200** when healthy and **503** when not, so the cheapest uptime
+monitor in the world works against it unconfigured.
+
+Two schedules, because they do different jobs:
+
+| | Cadence | Reaches you via |
+|---|---|---|
+| `.github/workflows/watchdog.yml` | every 30 min | GitHub emails the repo owner when a scheduled workflow fails — **no setup, no secret** |
+| `vercel.json` → `crons` | daily, 22:00 UTC | the heartbeat, and it carries the forecast log row |
+
+The Action is the fast detector because Vercel Cron on a Hobby plan fires only
+once a day. It needs no credential: `/api/watchdog` is exempt from the
+Basic-Auth gate and returns *status only* — booleans, dates, counts, error
+strings — withholding every figure unless a bearer token is presented.
+
+Set `ALERT_WEBHOOK_URL` for a direct Slack/Discord/Zapier message. If you do
+not, the route says so in every response: the failure mode it exists to fix must
+not be reintroduced by the fix.
+
+**The forecast log.** Nothing recorded what the forecast *said*, so it could only
+ever be checked in simulation, never against what happened. The daily run
+returns one flat row — scenarios, profit, November, the model basis — ready to
+append to a sheet:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+     "https://<host>/api/watchdog?format=csv" >> forecast_log.csv
+```
+
 ## Data provenance — read this before trusting a number
 
 | Data | Source | Freshness | Notes |

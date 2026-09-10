@@ -20,7 +20,7 @@ export const config = {
      consumer authenticates with its own revocable, scoped token and never needs
      the shared human password. Handing an agent SITE_PASSWORD would give it the
      whole board with no scope limit and no way to revoke it alone. */
-  matcher: ['/((?!assets/|favicon|api/health|api/ai/).*)'],
+  matcher: ['/((?!assets/|favicon|api/health|api/watchdog|api/ai/).*)'],
 
   /* Node, not edge. Every deploy logged:
        "middleware.js uses the deprecated 'edge' runtime. Migrate to the Node.js
@@ -44,12 +44,30 @@ export const config = {
    in api/ai/_guard.js before doing anything, and returns 503 while AI_TOKENS is
    unset. That is what lets an AI consumer use its own scoped, revocable token
    instead of the shared human password. */
+/* Two shapes, because they need different matching.
+
+   A PREFIX ending in "/" covers a whole subtree: every /api/ai/* route runs the
+   bearer guard, so exempting the tree is what is meant.
+
+   An EXACT path covers one route and nothing that merely begins with its name.
+   /api/watchdog is exempt for a plain reason — a scheduler cannot type a
+   password, and a smoke alarm that needs a human to log in before it can go off
+   is not a smoke alarm. It is not unprotected: without a bearer token it returns
+   status only and withholds every figure. But a prefix test would have exempted
+   /api/watchdog-debug too, and the next person to add such a route would not
+   know they had opened a hole. So it is matched exactly.
+
+   Note the one thing this file cannot fix: config.matcher above excludes paths
+   by prefix, so a NEW route whose path starts with api/health or api/watchdog
+   would never reach this function at all. Do not create one. */
 const SELF_AUTHENTICATING = ['/api/ai/'];
+const SELF_AUTHENTICATING_EXACT = ['/api/watchdog'];
 
 export default function middleware(req) {
   let path = '';
   try { path = new URL(req.url).pathname; } catch { path = ''; }
   if (path && SELF_AUTHENTICATING.some(prefix => path.startsWith(prefix))) return;
+  if (path && SELF_AUTHENTICATING_EXACT.some(p => path === p || path === p + '/')) return;
 
   // Explicit public mode: set SITE_PUBLIC=true in Vercel to disable the gate entirely.
   // (Deliberate opt-out — the financials become visible to anyone with the URL.
