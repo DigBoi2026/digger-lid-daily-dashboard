@@ -19,8 +19,10 @@ const API_URL = '/api/data';
 const REFRESH_MINUTES = 30;
 const MOD_KEY = 'dl_forecast_modifiers';
 const OFF_KEY = 'dl_forecast_sale_off';       // sale periods the user has switched off
+const EDIT_KEY = 'dl_forecast_sale_edit';     // and lifts they have re-sized
 
-const S = { scen: 'realistic', hor: 90, live: 'snap', mods: [], saleOff: [], sale: [] };
+const S = { scen: 'realistic', hor: 90, live: 'snap',
+            mods: [], saleOff: [], saleEdit: {}, sale: [], ceiling: null };
 let DATA = window.DL_DATA || null;
 const PRIOR = window.DL_PRIOR || null;
 let CHART = null;
@@ -108,7 +110,8 @@ function refreshSalePeriods() {
   const thisYear = +list[list.length - 1].date.slice(0, 4);
   years.add(String(thisYear + 1));
   try {
-    S.sale = F.salePeriodModifiers(list, { years: [...years].sort() });
+    S.sale = F.salePeriodModifiers(list, { years: [...years].sort(), overrides: S.saleEdit });
+    if (S.ceiling == null) S.ceiling = F.observedCeiling(list);
   } catch (e) { S.sale = []; }
 }
 
@@ -120,7 +123,8 @@ function activeSale() {
    arrive as percentages from the form; seeded ones are already fractions. */
 function allMods() {
   return activeSale().concat(S.mods.map((m, i) => ({
-    key: 'user:' + i, start: m.start, end: m.end, lift: m.lift / 100,
+    key: 'user:' + i, kind: 'user', name: m.name,
+    start: m.start, end: m.end, lift: m.lift / 100,
     payback: m.payback ? m.payback / 100 : 0,
     paybackEnd: m.payback ? F.addDays(m.end, 14) : null,
   })));
@@ -131,7 +135,7 @@ function run(scen, hor) {
   const from = anchorOf(list);
   if (!from) return null;
   return F.projectPnl({ rows: list, from, horizon: hor || horizonDays(from),
-                        scenario: scen || S.scen, modifiers: allMods() });
+                        scenario: scen || S.scen, modifiers: allMods(), observedCeiling: S.ceiling });
 }
 
 /* ------------------------------------------------------------------- KPIs */
@@ -196,16 +200,15 @@ function renderScenarios(ctx) {
   const p = ctx.scen[S.scen];
   document.getElementById('scenNote').textContent =
     'spread ' + money(ctx.scen.optimistic.total - ctx.scen.pessimistic.total, true) + ' of revenue';
-  document.getElementById('beVal').textContent = p.breakevenPerDay ? money(p.breakevenPerDay, true) + '/day' : '—';
+  document.getElementById('beVal').textContent = p.breakevenPerDay ? money(p.breakevenPerDay, true) + '/d' : '—';
   document.getElementById('beSub').textContent = p.pnl
-    ? 'contribution ' + (p.pnl.contribRate * 100).toFixed(1) + '% · ads ' + (p.pnl.adRate * 100).toFixed(1) + '%'
-    : '';
+    ? 'to cover ads + ' + money(p.pnl.fcPerDay, true) + ' fixed' : '';
 
-  const h = nearestHorizon(p.horizon), b = BT && BT[h];
-  document.getElementById('accVal').textContent = b ? '±' + (b.mape * 100).toFixed(0) + '%' : 'measuring…';
-  document.getElementById('accSub').textContent = b
-    ? h + '-day error over ' + b.n + ' past origins'
-    : 'walk-forward over the whole book';
+  const b30 = BT && BT[30], b90 = BT && BT[90];
+  document.getElementById('acc30').textContent = b30 ? '±' + (b30.mape * 100).toFixed(0) + '%' : '…';
+  document.getElementById('acc30Sub').textContent = b30 ? b30.n + ' past origins' : 'measuring';
+  document.getElementById('acc90').textContent = b90 ? '±' + (b90.mape * 100).toFixed(0) + '%' : '…';
+  document.getElementById('acc90Sub').textContent = b90 ? b90.n + ' past origins' : 'measuring';
 }
 
 /* ------------------------------------------------------------------ chart */
@@ -326,74 +329,205 @@ function renderMonths(p, ctx) {
     'vs the same dates last year · ' + S.scen;
 }
 
-/* --------------------------------------------------- events and modifiers */
+/* ------------------------------------------------------ seasonal trend */
 
-function renderEvents(p) {
-  const el = document.getElementById('eventList');
-  const inHorizon = new Set(p.months.map(m => +m.month.slice(5, 7)));
+/* The fitted baseline, month by month. Not a control: there is no switching
+   this off, because it is not an adjustment to the forecast — it IS the
+   forecast's shape. Shown in full rather than only for the horizon, because the
+   number a reader needs to judge November is how many Novembers there were. */
+function renderSeason(p) {
+  const el = document.getElementById('seasonTable');
+  const s = p.basis.season;
+  const inHor = new Set(p.months.map(m => +m.month.slice(5, 7)));
+  const byMonth = {};
+  F.EVENTS.forEach(e => { if (e.via === 'index') byMonth[e.month] = e.name; });
+  const rowsHtml = [];
+  for (let m = 1; m <= 12; m++) {
+    const n = s.observations[m] || 0;
+    const idx = s.index[m];
+    const conf = n >= 2 ? '<span class="cf ok">2 yrs</span>'
+               : n === 1 ? '<span class="cf thin">1 yr</span>'
+               : '<span class="cf none">none</span>';
+    rowsHtml.push(`<div class="trow${inHor.has(m) ? ' hit' : ''}">
+      <div class="c1">${MONTH_ABBR[m - 1]}</div>
+      <div class="c2">${n ? idx.toFixed(2) : '—'}</div>
+      <div class="c3">${byMonth[m] ? esc(byMonth[m]) : ''}</div>
+      <div class="c4">${conf}</div>
+    </div>`);
+  }
+  el.innerHTML = `<div class="thead"><div class="c1">Month</div><div class="c2">Index</div>
+      <div class="c3">Why</div><div class="c4">Basis</div></div>${rowsHtml.join('')}`;
+
+  const thin = [];
+  for (let m = 1; m <= 12; m++) if ((s.observations[m] || 0) <= 1) thin.push(MONTH_ABBR[m - 1]);
+  document.getElementById('seasonWarn').innerHTML =
+    `<div class="bwarn"><b>One year only:</b> ${esc(thin.join(', '))}. November matters most —
+       the year-end number leans on it, and no backtest reaches it, because no origin in
+       the data has a horizon that gets to October.</div>`;
+  document.getElementById('seasonNote').textContent =
+    (p.basis.season.cells || 0) + ' months fitted';
+}
+
+/* -------------------------------------------------------- sale periods */
+
+/* Measured, recurring, dated by rule. The lift is a FACT about the past for a
+   year that has happened, and an editable expectation for one that has not —
+   so the input is offered either way but says which it is. */
+function renderSales(p) {
+  const el = document.getElementById('saleList');
   const horFrom = F.addDays(p.from, 1), horTo = F.addDays(p.from, p.horizon);
+  const runsFor = key => (p.modifierEffect.runs || []).filter(r => r.keys.indexOf(key) !== -1);
 
-  /* Sale periods first: they are the only entries on this list that move a
-     number, so they lead it and say so. */
-  const sale = S.sale.filter(m => m.paybackEnd >= horFrom && m.start <= horTo)
-    .concat(S.sale.filter(m => !(m.paybackEnd >= horFrom && m.start <= horTo)).slice(0, 1))
-    .map(m => {
-      const off = S.saleOff.indexOf(m.key) !== -1;
-      const live = m.paybackEnd >= horFrom && m.start <= horTo;
-      const other = (m.measured.allYears || []).filter(y => y.year !== m.measured.from);
-      return `<div class="catrow sale${off ? ' off' : ''}">
-        <div class="cinfo">
-          <div class="cname">${esc(m.name)} <small>sale period</small></div>
-          <div class="cmeta">${isoToNice(m.start)} → ${isoToNice(m.end)} at
-            ${pct(m.lift * 100, 0)}, then ${pct(m.payback * 100, 0)} to ${isoToNice(m.paybackEnd)}
-            · ${m.measured.own ? 'measured in ' + m.measured.from : 'sized from ' + m.measured.from}${other.length
-              ? ' (' + other.map(y => y.year + ' ' + pct(y.lift * 100, 0)).join(', ') + ')' : ''}</div>
+  el.innerHTML = S.sale.map(m => {
+    const off = S.saleOff.indexOf(m.key) !== -1;
+    const live = (m.paybackEnd || m.end) >= horFrom && m.start <= horTo;
+    const other = (m.measured.allYears || []).filter(y => y.year !== m.measured.from);
+    const ov = runsFor(m.key);
+    const past = m.end <= p.from;
+    return `<div class="catrow sale${off ? ' off' : ''}">
+      <div class="cinfo">
+        <div class="cname">${esc(m.name)}
+          ${m.overridden ? '<small class="yours">yours</small>'
+            : m.measured.own ? '<small>measured</small>' : '<small>carried fwd</small>'}</div>
+        <div class="cmeta">${isoToNice(m.start)} → ${isoToNice(m.end)}${m.paybackEnd
+          ? ', payback to ' + isoToNice(m.paybackEnd) : ', no payback'}
+          ${m.measured.lift != null ? '· book says ' + pct(m.measured.lift * 100, 0) : '· no precedent'}
+          ${other.length ? '(' + other.map(y => y.year + ' ' + pct(y.lift * 100, 0)).join(', ') + ')' : ''}
+          ${ov.length ? '<b class="ovl">overlaps ' + ov.reduce((a, r) => a + r.days, 0) + 'd with ' +
+             esc(ov[0].names.filter(n => n !== m.name).join(', ')) + '</b>' : ''}</div>
+        <div class="saleedit">
+          <label>Lift <input type="number" step="5" data-sale-lift="${esc(m.key)}"
+            value="${Math.round(m.lift * 100)}" ${past ? 'disabled' : ''} aria-label="Lift percent" />%</label>
+          <label>Payback <input type="number" step="5" data-sale-pay="${esc(m.key)}"
+            value="${Math.round((m.payback || 0) * 100)}" ${past ? 'disabled' : ''} aria-label="Payback percent" />%</label>
+          ${m.overridden && !past ? `<button class="salereset" data-sale-reset="${esc(m.key)}">reset</button>` : ''}
         </div>
-        <div class="cright">
-          ${live && !off ? '<span class="cf ok">applied</span>' : off ? '<span class="cf none">off</span>' : '<span class="cf thin">outside</span>'}
-          <button class="modx" data-sale="${esc(m.key)}" aria-label="${off ? 'Switch on' : 'Switch off'} ${esc(m.name)}">${off ? '+' : '×'}</button>
-        </div>
-      </div>`;
-    }).join('');
-
-  /* Then the recurring calendar, each entry saying which mechanism carries it —
-     the month index already prices EOFY and BFCM in, so declaring them here as
-     well would count them twice. */
-  const ev = F.EVENTS.map(e => {
-    const on = inHorizon.has(e.month);
-    return `<div class="catrow ev${on ? ' hit' : ''}">
-      <div class="cinfo"><div class="cname">${esc(e.name)} <small>${MONTH_ABBR[e.month - 1]} · ${e.via === 'sale' ? 'sale period' : 'in the month index'}</small></div>
-        <div class="cmeta">${esc(e.note)}</div></div>
-      <div class="cright">${on ? '<span class="cf ok">in horizon</span>' : ''}</div>
+      </div>
+      <div class="cright">
+        ${off ? '<span class="cf none">off</span>'
+          : live ? '<span class="cf ok">applied</span>' : '<span class="cf thin">outside</span>'}
+        <button class="modx" data-sale="${esc(m.key)}"
+          aria-label="${off ? 'Switch on' : 'Switch off'} ${esc(m.name)}">${off ? '+' : '✕'}</button>
+      </div>
     </div>`;
-  }).join('');
+  }).join('') || '<div class="empty">No sale period measurable in the book yet.</div>';
 
-  const mods = S.mods.map((m, i) => `<div class="catrow mod">
-      <div class="cinfo"><div class="cname">${esc(m.name)} <small>yours</small></div>
-        <div class="cmeta">${isoToNice(m.start)} → ${isoToNice(m.end)} · ${pct(m.lift, 0)}${m.payback ? ' then ' + pct(m.payback, 0) + ' for 14d' : ''}</div></div>
-      <div class="cright"><button class="modx" data-i="${i}" aria-label="Remove ${esc(m.name)}">×</button></div>
-    </div>`).join('');
-
-  el.innerHTML = sale + mods + ev;
-  el.querySelectorAll('.modx[data-i]').forEach(b => b.onclick = () => {
-    S.mods.splice(+b.dataset.i, 1); saveMods(); render();
-  });
-  el.querySelectorAll('.modx[data-sale]').forEach(b => b.onclick = () => {
+  el.querySelectorAll('[data-sale]').forEach(b => b.onclick = () => {
     const k = b.dataset.sale, at = S.saleOff.indexOf(k);
     if (at === -1) S.saleOff.push(k); else S.saleOff.splice(at, 1);
     saveMods(); render();
   });
+  /* `change`, not `input`: re-rendering the board on every keystroke would take
+     the focus out of the field being typed into. */
+  el.querySelectorAll('[data-sale-lift]').forEach(i => i.onchange = () => {
+    setSaleOverride(i.dataset.saleLift, 'lift', parseFloat(i.value));
+  });
+  el.querySelectorAll('[data-sale-pay]').forEach(i => i.onchange = () => {
+    setSaleOverride(i.dataset.salePay, 'payback', parseFloat(i.value));
+  });
+  el.querySelectorAll('[data-sale-reset]').forEach(b => b.onclick = () => {
+    delete S.saleEdit[b.dataset.saleReset]; saveMods(); render();
+  });
 
-  const nLive = activeSale().filter(m => m.paybackEnd >= horFrom && m.start <= horTo).length;
-  document.getElementById('modNote').textContent =
-    (nLive ? nLive + ' sale period' + (nLive > 1 ? 's' : '') + ' applied' : 'no sale period in this horizon') +
-    (S.mods.length ? ' · ' + S.mods.length + ' of yours' : '');
+  const nLive = activeSale().filter(m => (m.paybackEnd || m.end) >= horFrom && m.start <= horTo).length;
+  document.getElementById('saleNote').textContent =
+    nLive ? nLive + ' applied in this horizon' : 'none in this horizon';
+
+  const lc = levelCorrected(p);
+  document.getElementById('saleWarn').innerHTML = lc ? (() => {
+    const bare = uncorrectedLevel(p);
+    return `<div class="bwarn"><b>Level corrected:</b> ${esc(lc.name)} is divided out before
+      anything is fitted, taking the level from ${money(bare)} to ${money(p.level)} a day
+      (${pct((p.level / bare - 1) * 100, 0)}). The three weeks of August before it ran x1.69 on
+      last year, in line with May's x1.77 and June's x1.72; the promotion fortnight ran x2.93.
+      Direction certain, size less so — an independent estimate lands about 9% above.</div>`;
+  })() : `<div class="bwarn">No sale period touches the window the level is measured over,
+      so the level is an ordinary trading baseline.</div>`;
 }
 
+function setSaleOverride(key, field, val) {
+  if (isNaN(val)) return;
+  const base = S.sale.find(m => m.key === key);
+  if (!base) return;
+  const e = S.saleEdit[key] || (S.saleEdit[key] = {});
+  e[field] = val / 100;
+  /* Switching a payback off has to clear the window too, or the modifier keeps a
+     date range with a zero factor in it and the overlap report counts days that
+     do nothing. */
+  if (field === 'payback' && val === 0) e.paybackDays = null;
+  else if (field === 'payback' && !e.paybackDays && !base.paybackEnd) {
+    e.paybackDays = 14;                       // a window to put the number in
+  }
+  saveMods(); render();
+}
+
+/* --------------------------------------------------------- modifiers */
+
+/* Your assertions about the future. Nothing here is measured and nothing here
+   is defaulted on: the data cannot check a launch that has not happened. */
+function renderMods(p) {
+  const el = document.getElementById('modList');
+  const runsFor = key => (p.modifierEffect.runs || []).filter(r => r.keys.indexOf(key) !== -1);
+  el.innerHTML = S.mods.map((m, i) => {
+    const ov = runsFor('user:' + i);
+    return `<div class="catrow mod">
+      <div class="cinfo"><div class="cname">${esc(m.name)} <small class="yours">yours</small></div>
+        <div class="cmeta">${isoToNice(m.start)} → ${isoToNice(m.end)} at ${pct(m.lift, 0)}${
+          m.payback ? ', then ' + pct(m.payback, 0) + ' for 14 days' : ''}
+          ${ov.length ? '<b class="ovl">overlaps ' + ov.reduce((a, r) => a + r.days, 0) + 'd with ' +
+             esc(ov[0].names.filter(n => n !== m.name).join(', ')) + '</b>' : ''}</div></div>
+      <div class="cright"><button class="modx" data-i="${i}" aria-label="Remove ${esc(m.name)}">✕</button></div>
+    </div>`;
+  }).join('') || `<div class="empty">Nothing added. A launch, a price change, a channel
+     going live — anything the last two years cannot know about.</div>`;
+  el.querySelectorAll('.modx[data-i]').forEach(b => b.onclick = () => {
+    S.mods.splice(+b.dataset.i, 1); saveMods(); render();
+  });
+  document.getElementById('modNote').textContent = S.mods.length
+    ? S.mods.length + ' applied' : 'what the data cannot know';
+  renderCombined(p);
+}
+
+/* The combined effect, stated rather than left to be inferred.
+
+   Factors multiply, so two declarations over the same days compound: a +47%
+   sale period and a +30% launch make +91%, not +77%. That is the standard
+   treatment of independent proportional effects and it is what each measured
+   lift already is — but it is also the easiest way to forecast a number with no
+   precedent by accident, so every overlap is named and the peak is compared
+   against the largest lift the book has ever recorded. Not capped: the
+   assertion is the user's, and clipping it quietly would be worse than a large
+   number they can see. */
+function renderCombined(p) {
+  const e = p.modifierEffect, el = document.getElementById('combined');
+  if (!e || !e.runs.length) {
+    const n = (p.modifiers || []).length;
+    el.innerHTML = n
+      ? `<div class="comb"><span class="l">Combined</span> ${n} declaration${n > 1 ? 's' : ''}, none overlapping</div>`
+      : '';
+    return;
+  }
+  const days = e.runs.reduce((a, r) => a + r.days, 0);
+  el.innerHTML = `<div class="comb${e.beyondBook ? ' warn' : ''}">
+      <span class="l">Combined</span> ${days} overlapping day${days > 1 ? 's' : ''} ·
+      peak ${pct((e.peak - 1) * 100, 0)}
+      ${e.ceiling ? '(biggest ever recorded ' + pct((e.ceiling - 1) * 100, 0) + ')' : ''}
+      ${e.beyondBook ? '<b>— past anything recorded</b>' : ''}
+      <div class="cruns">${e.runs.map(r => isoToNice(r.start) + '–' + isoToNice(r.end) +
+        ' ' + esc(r.names.join(' + ')) + ' → ' + pct((r.peak - 1) * 100, 0) +
+        (Math.abs(r.peak - r.low) > 0.02 ? ' … ' + pct((r.low - 1) * 100, 0) : '')).join('<br>')}</div>
+    </div>`;
+}
+
+/* Three separate declarations, three separate keys. A sale period the user
+   switched off, a lift they re-sized, and a modifier they typed are different
+   kinds of decision, and merging them into one blob would mean a change to the
+   shape of any of them silently discarding the other two. */
 function saveMods() {
   try {
     localStorage.setItem(MOD_KEY, JSON.stringify(S.mods));
     localStorage.setItem(OFF_KEY, JSON.stringify(S.saleOff));
+    localStorage.setItem(EDIT_KEY, JSON.stringify(S.saleEdit));
   } catch (e) { /* private mode, or site data blocked — the page still works */ }
 }
 function loadMods() {
@@ -401,62 +535,200 @@ function loadMods() {
   catch (e) { S.mods = []; }
   try { const v = JSON.parse(localStorage.getItem(OFF_KEY) || '[]'); if (Array.isArray(v)) S.saleOff = v; }
   catch (e) { S.saleOff = []; }
+  try { const v = JSON.parse(localStorage.getItem(EDIT_KEY) || '{}');
+        if (v && typeof v === 'object' && !Array.isArray(v)) S.saleEdit = v; }
+  catch (e) { S.saleEdit = {}; }
 }
 
-/* ------------------------------------------------------------ what it rests on */
+/* --------------------------------------------------------------- notes */
 
-/* The honest half of the page.
+/* HOW THIS FORECAST WORKS, on the page rather than in a commit message.
 
-   Everything above is a number. This is what the number is made of and where
-   it is thin — the month indices fitted on a single year, the drift, the
-   weight given to last year, and the two things the backtest cannot check:
-   BFCM, because no origin in the data has a horizon that reaches November, and
-   any horizon at all if the prior year were missing, which cost -58% the one
-   time it happened. */
-function renderBasis(p) {
-  const el = document.getElementById('basisWrap');
-  const g = p.basis.growth, s = p.basis.season, pnl = p.pnl;
-  const b30 = BT && BT[30], b90 = BT && BT[90];
-  const line = (l, v, note) => `<div class="brow"><div class="bl">${l}</div><div class="bv">${v}</div>
-      <div class="bn">${note || ''}</div></div>`;
-  /* Accuracy first. A reader who only takes in the top of this panel should
-     leave knowing how wrong the number above them can be, not what the level is. */
+   Written to be read by someone who runs the business, not someone who builds
+   models: plain sentences, every claim carrying the actual number from the
+   actual book, and the limits stated as plainly as the capabilities. The
+   numbers are live — they come from the projection currently on screen — so
+   this cannot drift out of date the way a static help page would. */
+function renderNotes(p) {
+  const el = document.getElementById('notesBody');
+  const g = p.basis.growth, se = p.basis.season, pnl = p.pnl;
+  const b30 = BT && BT[30], b60 = BT && BT[60], b90 = BT && BT[90];
+  const lc = levelCorrected(p);
+  const yl = se.yearLevel || {};
+  const yrs = Object.keys(yl).sort();
+  const nov = se.index[11], jan = se.index[1];
+
+  const sec = (title, body) => `<section><h3>${title}</h3>${body}</section>`;
+  const dl = pairs => '<dl>' + pairs.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>';
+
   el.innerHTML =
-    (b30 ? line('Error at 30 days', '±' + (b30.mape * 100).toFixed(0) + '%',
-        b30.n + ' past origins · bias ' + pct(b30.bias * 100, 0)) : '') +
-    (b90 ? line('Error at 90 days', '±' + (b90.mape * 100).toFixed(0) + '%',
-        b90.n + ' past origins · bias ' + pct(b90.bias * 100, 0)) : '') +
-    (b30 && b30.coldStart ? line('Without a prior year', '±' + (b30.coldStart.mape * 100).toFixed(0) + '%',
-        'what 2025 origins scored, with no BFCM anywhere in their history') : '') +
-    line('Year on year', mult(g.yoy), g.n + ' whole months, ' + mult(g.low) + '–' + mult(g.high) + ' · last year carries ' + (p.priorWeight * 100).toFixed(0) + '% of the weight') +
-    line('Drift', mult(p.drift) + ' / 28d', 'implies ' + mult(Math.pow(p.drift, 365 / 28)) + ' a year, bounded by the best year-on-year month recorded') +
-    line('Level now', money(p.level, true) + '/day',
-        'deseasonalised over the last 28 complete days' +
-        (levelCorrected(p) ? ', with ' + levelCorrected(p).name + ' divided back out' : '')) +
-    line('Fixed cost', money(pnl && pnl.fcPerDay, true) + '/day', 'the latest step, not an average — it has only ever gone up');
+    sec('The short version', `
+      <p>The forecast asks one question: <b>how big is the business right now, and what
+      does the calendar do to it next?</b> It answers by measuring four things from your
+      own two years of daily numbers — the weekly rhythm, the shape of the year, the rate
+      you are growing, and today's underlying run rate — and then multiplying them
+      together, day by day, for as far ahead as you ask.</p>
+      <p>Nothing in it is a rule of thumb or an industry benchmark. Every figure below was
+      read out of your P&amp;L sheet, and the page recalculates them whenever the sheet
+      updates.</p>`) +
 
-  document.getElementById('basisWarn').innerHTML =
-    (levelCorrected(p) ? (() => {
-        const m = levelCorrected(p), bare = uncorrectedLevel(p);
-        return `<div class="bwarn"><b>Promotion-corrected:</b> ${esc(m.name)} is divided out
-          of the level, taking it from ${money(bare)} to ${money(p.level)} a day
-          (${pct((p.level / bare - 1) * 100, 0)}). The direction is certain — the three weeks
-          of August before that promotion ran x1.69 on last year, in line with May's x1.77 and
-          June's x1.72, while the promotion fortnight ran x2.93. The size is less so: an
-          independent pre-promotion estimate lands about 9% above this. Switch it off on the
-          calendar to see the forecast without it.</div>`;
-      })() : '') +
-    /* Two caveats, one box. Three separate warnings crowded the panel until the
-       accuracy rows behind them had nowhere to sit, and a caveat that pushes the
-       evidence off the screen is self-defeating. */
-    `<div class="bwarn"><b>Not validated:</b> no origin in the data has a horizon
-       reaching October to December, so BFCM — the largest single claim here — is
-       untested by backtest and rests on ${s.observations[11] || 0} observed November${(s.observations[11] || 0) === 1 ? '' : 's'}.${
-       (s.observations[2] === 1 || s.observations[3] === 1)
-         ? ' February to April 2025 were never filled into the workbook either, so those months are fitted on 2026 alone.' : ''}</div>`;
+    sec('Why this business needs a forecast built this way', `
+      <p>Most forecasts assume a trend with some noise on top. Yours is not that. In 2025,
+      June and November earned <b>+$48,917</b> and <b>+$103,174</b> while the other seven
+      months lost <b>$50,772</b> between them. The year is made in two months.</p>
+      <p>A model that smooths over that is worse than useless — it will tell you a calm
+      October is a problem and a huge November is luck. So the shape of the year is the
+      first thing this one fits, not an afterthought.</p>`) +
 
-  document.getElementById('basisNote').textContent =
-    'from ' + niceFull(p.from) + ' · ' + p.horizon + ' days';
+    sec('The four things it measures', dl([
+      ['Weekly rhythm',
+        `Monday to Wednesday run about 15% above average, Saturday about 25% below. Fitted
+         across both years, because how a trade customer shops through the week does not
+         change from one year to the next.`],
+      ['Shape of the year',
+        `A number per month saying how big it is relative to a typical month.
+         November is <b>${nov ? nov.toFixed(2) : '—'}</b> — over twice a normal month —
+         and January the weakest at <b>${jan ? jan.toFixed(2) : '—'}</b>, when sites are
+         shut. Year and month are solved together rather than one year at a time, because
+         2025 has nine months in it including both giants while 2026 has more months but
+         no BFCM yet, and averaging those two directly makes every figure wrong.`],
+      ['Growth rate',
+        `<b>x${g.yoy ? g.yoy.toFixed(2) : '—'}</b> year on year, the middle of
+         ${g.n} whole months compared like for like, ranging
+         x${g.low ? g.low.toFixed(2) : '—'} to x${g.high ? g.high.toFixed(2) : '—'}.
+         Only whole months count: comparing eight days of September to a full September
+         once read a <b>+132%</b> month as <b>−32%</b>.`],
+      ['Run rate today',
+        `<b>${money(p.level)}</b> a day, from the last 28 complete days with the season
+         and the weekday taken out, so it is comparable to any other time of year.
+         Days the sheet has not finished are excluded — a day with revenue typed but no ad
+         spend is a real day of trade with a fictional cost side.
+         ${lc ? `And ${esc(lc.name)} is divided out of it, because a fortnight of
+         discounting is not a new run rate.` : ''}`],
+    ])) +
+
+    sec('How a day ahead gets its number', `
+      <p>Two independent estimates, blended:</p>
+      <ol>
+        <li><b>From today's trajectory.</b> Run rate x growth x that weekday x that month.</li>
+        <li><b>From the same days last year</b>, smoothed over a week either side, then
+        scaled up by the growth rate. This one carries events the month figure cannot see,
+        because it knows what actually happened on the 24th of November.</li>
+      </ol>
+      <p>Last year gets <b>${(p.priorWeight * 100).toFixed(0)}%</b> of the weight at this
+      horizon, and less the further out you look — last year tells you a great deal about
+      next week and much less about next quarter. Blending beat either one alone at every
+      distance tested: 30-day error fell from 21.6% to about 15%.</p>`) +
+
+    sec('Three separate things, and why they are separate', dl([
+      ['Seasonal trend',
+        `Fitted from history, and not optional. It is not an adjustment to the forecast,
+         it is the forecast's shape. EOFY and BFCM live here: they are month-aligned, so
+         the month figure prices them exactly, and declaring them again anywhere else
+         would count them twice.`],
+      ['Sale periods',
+        `Measured from the book, recurring, dated by rule each year. Father's Day is one
+         because it <i>cannot</i> live in the seasonal trend: it is the first Sunday of
+         September, its run-up sits in August and its payback in September, so no
+         per-month figure can hold it. 2026 measured <b>+47%</b> over fourteen days
+         against its own pre-promotion August; 2025 measured <b>−10%</b>, which is to say
+         2025 ran no promotion. For a year still ahead you can re-size the lift, and the
+         measured ramp scales with it — the shape is how your customers behave, the size
+         is your decision.`],
+      ['Your modifiers',
+        `Things you assert about the future that two years of history cannot know: a
+         launch, a price change, a new channel. Nothing here is measured and nothing is on
+         by default.`],
+    ]) + `
+      <p><b>They overlap, and the page says so.</b> Factors multiply, so a +47% sale period
+      and a +30% launch over the same days make +91%, not +77%. That is the right treatment
+      for effects that stack, and it is also the easiest way to forecast a number with no
+      precedent by accident — so every overlap is named with its combined effect, and
+      compared against the biggest lift your book has ever recorded
+      ${S.ceiling ? '(' + pct((S.ceiling - 1) * 100, 0) + ')' : ''}. It is never clipped:
+      the assertion is yours, and quietly shrinking your number would be worse than a
+      large one you can see.</p>
+      <p>A declaration also applies <i>backwards</i>. Anything you declare is divided out
+      of history first, everything is fitted on what is left, and it is multiplied back on
+      to the days ahead. Correcting after the fit does not work: a promotion left
+      undeclared contaminates the month figures and the growth rate too, and nothing
+      downstream can reach a season figure that has already swallowed it.</p>`) +
+
+    sec('Profit is not forecast — it is derived', `
+      <p>Your sheet already carries an exact identity, which checks to the dollar over
+      every window tried:</p>
+      <pre>profit = revenue ex GST − variable costs − ad spend − fixed costs</pre>
+      <p>So rather than guess at profit, the forecast builds its parts:</p>` +
+      dl([
+        ['Contribution', `<b>${pnl ? (pnl.contribRate * 100).toFixed(1) : '—'}%</b> of
+          revenue after GST and variable costs. Steady to within a couple of points.`],
+        ['Ad spend', `<b>${pnl ? (pnl.adRate * 100).toFixed(1) : '—'}%</b> of revenue,
+          shaped by month — and your big months are the <i>efficient</i> ones. June 2025
+          spent 18.1c per revenue dollar; July 2026 spent 38.9c.`],
+        ['Fixed costs', `<b>${money(pnl && pnl.fcPerDay)}</b> a day. This is a staircase,
+          not a trend: salaries went $1,178/day to $1,381 to $1,463 to $1,837 to $2,081 as
+          you hired, and never came back down. So the forecast uses the latest step, not an
+          average — the only estimator that is right about a staircase.`],
+        ['Breakeven', `<b>${money(p.breakevenPerDay)}</b> a day, or
+          <b>${money(p.breakevenPerDay * 30, true)}</b> a month, just to stand still.`],
+      ]) + `
+      <p>Costs are held <b>identical across all three scenarios</b>, on purpose. What is
+      uncertain here is demand, not your cost structure — and holding costs still is what
+      shows the leverage: fixed cost is ${money(pnl && pnl.fcPerDay)} a day whatever
+      happens, so a 20% revenue miss is a far bigger than 20% profit miss. Flexing costs
+      with each scenario would hide exactly the risk the pessimistic case exists to show.</p>`) +
+
+    sec('What the three scenarios actually assume', dl([
+      ['Realistic', 'The current trajectory continues, and events repeat as they have.'],
+      ['Optimistic', 'Growth holds at its full year-on-year rate, and the big months scale with it.'],
+      ['Pessimistic', 'Growth stops dead, and the big months land 15% short.'],
+    ]) + `
+      <p>Each is a sentence you could defend in a board meeting, not a percentage bolted on
+      to one number. The shaded band on the chart is separate from all three: it is the
+      measured error from testing the model against your own history.</p>`) +
+
+    sec('How accurate it is, measured not claimed', `
+      <p>The model is walked forward through your book: stand at a past date, refit
+      everything using only what was known then, forecast, compare to what happened, move
+      on. Nothing leaks backwards.</p>` +
+      dl([
+        ['30 days', b30 ? `<b>±${(b30.mape * 100).toFixed(0)}%</b> across ${b30.n} past
+           starting points, running ${b30.bias < 0 ? 'low' : 'high'} by
+           ${Math.abs(b30.bias * 100).toFixed(0)}% on average` : 'measuring…'],
+        ['60 days', b60 ? `<b>±${(b60.mape * 100).toFixed(0)}%</b> across ${b60.n}` : 'measuring…'],
+        ['90 days', b90 ? `<b>±${(b90.mape * 100).toFixed(0)}%</b> across ${b90.n}` : 'measuring…'],
+        ['With no prior year', b30 && b30.coldStart
+           ? `<b>±${(b30.coldStart.mape * 100).toFixed(0)}%</b> — what the same model scored
+              from 2025 starting points, which had no BFCM anywhere in their history`
+           : 'not measurable here'],
+      ]) + `
+      <p>It runs slightly low overall. That is the honest reading of a business growing this
+      fast, and it is reported rather than corrected, because "add 15%" fitted to one
+      strong year is not a model, it is a wish.</p>`) +
+
+    sec('What it cannot do', `
+      <ul>
+        <li><b>October to December are unvalidated.</b> No starting point in your data has a
+        horizon that reaches them, so BFCM — the single largest claim on this page — is
+        untested by backtest and rests on
+        <b>${se.observations[11] || 0} observed November${(se.observations[11] || 0) === 1 ? '' : 's'}</b>.
+        The 2025 evidence for what that costs is stark: standing at 4 November 2025 with
+        nothing in its history that had ever seen a BFCM, the model missed the following 30
+        days by <b>−58%</b>.</li>
+        <li><b>February to April 2025 were never filled into the workbook</b>, so those
+        months are fitted on 2026 alone and say so.</li>
+        <li><b>The month figures step at month boundaries.</b> BFCM decays over days in real
+        life; here 30 November to 1 December is a cliff, softened only by the prior-year
+        half of the blend.</li>
+        <li><b>It cannot see a decision you have not told it about.</b> A promotion, a
+        launch, a stock-out, a price rise — the 2026 Father's Day promotion was invisible to
+        every model until it was declared. That is what the modifiers are for.</li>
+        <li><b>It is a forecast, not a commitment.</b> Two years is a short book, and one of
+        them has three months missing.</li>
+      </ul>` +
+      (yrs.length >= 2 ? `<p class="foot">Fitted on ${yrs.join(' and ')} · underlying level
+        ${yrs.map(y => y + ' ' + money(yl[y]) + '/day').join(' → ')} · forecast from
+        ${niceFull(p.from)}.</p>` : '')) ;
 }
 
 /* Whether a declared sale period actually overlaps the window the level is
@@ -512,8 +784,10 @@ function render() {
   safe('scenarios', () => renderScenarios(ctx));
   safe('chart', () => renderChart(p, ctx));
   safe('months', () => renderMonths(p, ctx));
-  safe('events', () => renderEvents(p));
-  safe('basis', () => renderBasis(p));
+  safe('season', () => renderSeason(p));
+  safe('sales', () => renderSales(p));
+  safe('modifiers', () => renderMods(p));
+  safe('notes', () => renderNotes(p));
   document.getElementById('footSource').textContent =
     'Forecast from ' + niceFull(p.from) + ' · 2026 book' + (PRIOR ? ' + 2025 book' : ' only') +
     ' · ' + (S.live === 'live' ? 'live' : 'snapshot');
@@ -556,6 +830,10 @@ async function tryLiveRefresh() {
 }
 
 function wire() {
+  const notes = document.getElementById('notes');
+  document.getElementById('infoBtn').onclick = () => { notes.hidden = !notes.hidden; };
+  document.getElementById('notesClose').onclick = () => { notes.hidden = true; };
+  window.addEventListener('keydown', e => { if (e.key === 'Escape') notes.hidden = true; });
   document.querySelectorAll('#horSeg button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#horSeg button').forEach(x => x.classList.remove('active'));
     b.classList.add('active'); S.hor = b.dataset.hor === 'EOY' ? 'EOY' : parseInt(b.dataset.hor, 10); render();

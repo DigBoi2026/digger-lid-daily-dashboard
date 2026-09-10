@@ -359,6 +359,95 @@ function withPromo(rows, day, runUp, lift) {
           base.days.filter(d => d.date > m.paybackEnd).reduce((a, d) => a + d.revenue, 0), 1));
 })();
 
+/* ----------------------------------------------- composing declarations */
+
+/* Three kinds of declaration, one arithmetic. These assert the composition
+   rules, because two mechanisms answering the same overlap differently is the
+   worst outcome available. */
+(() => {
+  const a = { key: 'a', name: 'Sale A', start: '2026-03-01', end: '2026-03-10', lift: 0.5,
+              payback: -0.2, paybackEnd: '2026-03-20' };
+  const b = { key: 'b', name: 'Launch B', start: '2026-03-05', end: '2026-03-15', lift: 0.3 };
+  const c = F.composeMods([a, b], { observedCeiling: 2.0 });
+
+  ok('a day only one declaration touches gets that one factor',
+     near(c.at('2026-03-02'), 1.5, 1e-9), c.at('2026-03-02'));
+  ok('overlapping lifts multiply, they do not add',
+     near(c.at('2026-03-06'), 1.5 * 1.3, 1e-9), c.at('2026-03-06'));
+  ok('a payback multiplies against a lift that overlaps it',
+     near(c.at('2026-03-12'), 0.8 * 1.3, 1e-9), c.at('2026-03-12'));
+  ok('a day nothing touches is exactly 1', c.at('2026-02-01') === 1 && c.at('2026-04-01') === 1);
+  ok('the peak is reported', near(c.peak, 1.95, 1e-9), c.peak);
+  ok('a peak inside the book is not flagged', c.beyondBook === false, [c.peak, c.ceiling]);
+  ok('a peak past anything in the book is flagged, and NOT clipped',
+     (() => { const d = F.composeMods([a, b], { observedCeiling: 1.8 });
+              return d.beyondBook === true && near(d.at('2026-03-06'), 1.95, 1e-9); })());
+  ok('with no ceiling given nothing is flagged',
+     F.composeMods([a, b]).beyondBook === false);
+
+  ok('overlapping days are counted', c.overlaps.length === 11, c.overlaps.length);
+  ok('overlaps group by WHICH declarations collide, so one collision is one run',
+     c.runs.length === 1 && c.runs[0].start === '2026-03-05' && c.runs[0].end === '2026-03-15',
+     c.runs.map(r => r.start + '..' + r.end));
+  ok('a run names every declaration in it',
+     c.runs[0].names.indexOf('Sale A') !== -1 && c.runs[0].names.indexOf('Launch B') !== -1,
+     c.runs[0].names);
+  /* A run can span a lift and its neighbour's payback, so the peak alone would
+     hide that part of it cuts. Both ends are reported. */
+  ok('a run reports both ends, not just its peak',
+     near(c.runs[0].peak, 1.95, 1e-9) && near(c.runs[0].low, 0.8 * 1.3, 1e-9),
+     [c.runs[0].peak, c.runs[0].low]);
+  ok('a separate, non-adjacent collision is its own run',
+     F.composeMods([a, b,
+       { key: 'x', name: 'X', start: '2026-06-01', end: '2026-06-05', lift: 0.2 },
+       { key: 'y', name: 'Y', start: '2026-06-03', end: '2026-06-08', lift: 0.2 }]).runs.length === 2);
+  ok('no declarations means no overlap and no peak',
+     F.composeMods([]).runs.length === 0 && F.composeMods([]).peak === 1);
+  ok('a profile beats the flat lift on the days it covers',
+     near(F.composeMods([Object.assign({}, a, {
+       profile: [{ date: '2026-03-02', lift: 0.9 }] })]).at('2026-03-02'), 1.9, 1e-9));
+})();
+
+(() => {
+  const rows = synth(2024, 2);
+  const ceil = F.observedCeiling(rows);
+  ok('observedCeiling finds the biggest recurring swing in a synthetic year',
+     ceil > 1.8 && ceil < 2.6, ceil);
+  ok('observedCeiling returns null with no rows', F.observedCeiling([]) === null);
+})();
+
+/* An override re-sizes a measured sale period without flattening its shape. */
+(() => {
+  const flat = synth(2024, 3);
+  const day26 = F.nthDowOfMonth(2026, 9, 0, 1);
+  const rows = flat.map(r => {
+    // a ramped promotion, so there is a shape to preserve
+    const k = Math.round((Date.parse(day26) - Date.parse(r.date)) / 86400000);
+    if (k < 0 || k > 13) return r;
+    return Object.assign({}, r, { revenue: r.revenue * (1 + 0.6 * (1 - k / 14)) });
+  });
+  const plain = F.salePeriodModifiers(rows, { years: ['2027'] })[0];
+  const bigger = F.salePeriodModifiers(rows, { years: ['2027'],
+    overrides: { 'fathers:2027': { lift: plain.lift * 2 } } })[0];
+  ok('an override changes the size', near(bigger.lift, plain.lift * 2, 1e-9), [plain.lift, bigger.lift]);
+  ok('an override is flagged as the user\'s', bigger.overridden === true && plain.overridden === false);
+  ok('the measured lift is still reported alongside',
+     near(bigger.measured.lift, plain.lift, 1e-9), bigger.measured.lift);
+  const shapeOf = m => m.profile.map(o => o.lift / m.profile[m.profile.length - 1].lift);
+  ok('the measured ramp is scaled, not flattened',
+     shapeOf(plain).every((v, i) => near(v, shapeOf(bigger)[i], 1e-6)),
+     [shapeOf(plain).slice(0, 3), shapeOf(bigger).slice(0, 3)]);
+  ok('a scaled profile really is bigger day by day',
+     bigger.profile.every((o, i) => o.lift > plain.profile[i].lift), null);
+  /* And an override can declare a promotion in a year the book measured none —
+     a sale being planned — which is the one thing that may reach past history. */
+  const declared = F.salePeriodModifiers(synth(2024, 2), { years: ['2026'],
+    overrides: { 'fathers:2026': { lift: 0.35 } } });
+  ok('an override can declare a sale period with no precedent at all',
+     declared.length === 1 && near(declared[0].lift, 0.35, 1e-9) &&
+     declared[0].measured.lift === null && declared[0].profile === null, declared.length);
+})();
+
 /* --------------------------------------------------------------- fitPnl */
 (() => {
   const rows = synth(2024, 2).map(r => Object.assign({}, r, {

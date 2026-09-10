@@ -367,6 +367,12 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .forecast-stage .eq-cell .s{font-size:1cqh;color:var(--muted);margin-top:.15cqh}
 .forecast-stage .eq-cell .v{font-size:1.9cqh}
 
+/* -- four panels along the bottom, each a different kind of claim -- */
+.forecast-stage #bottom{grid-template-columns:1.35fr .85fr 1.15fr 1.15fr}
+/* The narrowest of the four; its title needs to stay on one line. */
+.forecast-stage #bottom .panel:nth-child(2) .p-title{font-size:1.3cqh;letter-spacing:.1em}
+.forecast-stage .eq-foot.three{grid-template-columns:1fr 1fr 1fr}
+
 /* -- month table: its own column shape, so it does not inherit Products' -- */
 #monthTable.ptable .thead,#monthTable.ptable .trow{
   grid-template-columns:4.6cqw 1fr 1fr .1fr 1fr .1fr auto;gap:.5cqw}
@@ -382,46 +388,85 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 #monthTable .trow.tot{border-top:1px solid var(--line);border-bottom:0;background:rgba(245,235,25,.05)}
 #monthTable .trow.tot .c1{color:var(--dl-yellow);text-transform:uppercase;letter-spacing:.1em;font-size:1.2cqh}
 
-/* A sample size, worn openly. November's index is fitted on one year and the
-   whole year-end number leans on it. */
-.cf{font-size:.95cqh;text-transform:uppercase;letter-spacing:.1em;font-weight:700;
-  padding:.15cqh .5cqw;border-radius:.4cqh;white-space:nowrap}
-.cf.ok{background:rgba(57,217,138,.14);color:var(--good)}
-.cf.thin{background:rgba(255,176,32,.16);color:var(--warn)}
-.cf.none{background:rgba(255,90,82,.16);color:var(--bad)}
+/* -- the fitted seasonality: twelve months, with their sample size -- */
+#seasonTable.ptable .thead,#seasonTable.ptable .trow{
+  grid-template-columns:3.2cqw auto 1fr auto;gap:.4cqw}
+#seasonTable .trow{padding:.3cqh .5cqw}
+#seasonTable .c1{font-size:1.25cqh;font-weight:700}
+#seasonTable .c2{font-size:1.3cqh;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+#seasonTable .c3{font-size:1cqh;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#seasonTable .c4{text-align:right}
+#seasonTable .thead div{font-weight:400}
+#seasonTable .thead .c2{text-align:right}
+/* Months the current horizon actually crosses. */
+#seasonTable .trow.hit{background:rgba(245,235,25,.06);border-left:2px solid var(--dl-yellow)}
+#seasonTable .trow.hit .c1{color:var(--dl-yellow)}
 
-/* -- events and modifiers -- */
-/* A sale period is the only row on this list that moves a number, so it reads
-   differently from the calendar entries around it. */
-.catrow.sale{border-left:2px solid var(--dl-yellow)}
-.catrow.sale .cname small,.catrow.mod .cname small{color:var(--dl-yellow);font-weight:700;
-  font-size:.95cqh;text-transform:uppercase;letter-spacing:.1em;margin-left:.4cqw}
-.catrow.sale .cmeta{white-space:normal;line-height:1.25}
-.catrow.sale.off{border-left-color:var(--line);opacity:.55}
-.catrow.sale .cright,.catrow.mod .cright{display:flex;align-items:center;gap:.4cqw}
-.catrow.ev .cname small{color:var(--muted);font-weight:400;font-size:1cqh;margin-left:.3cqw;text-transform:none;letter-spacing:0}
-.catrow.ev .cmeta{white-space:normal;line-height:1.25}
-.catrow.ev.hit .bar,.catrow.ev.hit{border-left:2px solid var(--dl-yellow)}
-.catrow.mod{border-left:2px solid var(--good)}
-.catrow .modx{background:transparent;border:1px solid var(--line);color:var(--muted);
-  border-radius:.4cqh;cursor:pointer;font-size:1.4cqh;line-height:1;padding:.1cqh .5cqw}
-.catrow .modx:hover{color:var(--bad);border-color:var(--bad)}
-.modform{display:grid;grid-template-columns:1.6fr 1fr 1fr .8fr .8fr auto;gap:.4cqw;margin-top:.6cqh;flex:0 0 auto}
-.modform input{min-width:0;background:var(--panel-2);border:1px solid var(--line);color:var(--dl-white);
-  border-radius:.5cqh;padding:.45cqh .5cqw;font-family:inherit;font-size:1.1cqh}
-.modform input::placeholder{color:var(--muted)}
-.modform input:focus{outline:none;border-color:var(--dl-yellow)}
-.modform button{background:var(--dl-yellow);color:var(--dl-black);border:0;border-radius:.5cqh;
-  padding:.45cqh .8cqw;font-family:var(--font-head);font-size:1.1cqh;font-weight:700;
-  text-transform:uppercase;letter-spacing:.1em;cursor:pointer}
+/* -- sale periods: an editable lift, and its provenance -- */
+.catrow.sale .saleedit{display:flex;gap:.5cqw;align-items:center;margin-top:.3cqh;position:relative;z-index:1}
+.catrow.sale .saleedit label{font-size:.95cqh;color:var(--muted);text-transform:uppercase;
+  letter-spacing:.08em;display:flex;align-items:center;gap:.2cqw}
+.catrow.sale .saleedit input{width:3.4cqw;min-width:0;background:var(--panel);border:1px solid var(--line);
+  color:var(--dl-white);border-radius:.4cqh;padding:.15cqh .3cqw;font-family:inherit;
+  font-size:1.05cqh;font-variant-numeric:tabular-nums;text-align:right}
+.catrow.sale .saleedit input:focus{outline:none;border-color:var(--dl-yellow)}
+.catrow.sale .saleedit input:disabled{opacity:.45;cursor:not-allowed}
+.catrow.sale .salereset{background:transparent;border:1px solid var(--line);color:var(--muted);
+  border-radius:.4cqh;font-size:.9cqh;text-transform:uppercase;letter-spacing:.08em;
+  padding:.15cqh .4cqw;cursor:pointer}
+.catrow.sale .salereset:hover{color:var(--dl-yellow);border-color:var(--dl-yellow)}
+.cname small.yours{color:var(--good)}
+.cmeta .ovl{display:block;color:var(--warn);font-weight:700;margin-top:.15cqh}
+.catlist .empty{flex:0 0 auto;font-size:1.1cqh;color:var(--muted);line-height:1.35;
+  padding:.8cqh .6cqw;border:1px dashed var(--line);border-radius:.6cqh}
 
-/* -- what it rests on -- */
-#basisWrap .brow{flex:0 0 auto;display:grid;grid-template-columns:auto 1fr;gap:.15cqh .6cqw;
-  padding:.3cqh .6cqw;border-bottom:1px solid rgba(255,255,255,.04)}
-#basisWrap .bl{font-size:1.15cqh;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;align-self:center}
-#basisWrap .bv{font-size:1.4cqh;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
-#basisWrap .bn{grid-column:1/-1;font-size:1cqh;color:var(--muted);line-height:1.2}
+/* -- the combined effect of everything declared -- */
+.comb{flex:0 0 auto;margin-top:.5cqh;padding:.5cqh .7cqw;border-radius:.5cqh;
+  background:var(--panel-2);border:1px solid var(--line);font-size:1.05cqh;color:var(--muted);line-height:1.3}
+.comb .l{color:var(--dl-yellow);font-weight:700;text-transform:uppercase;letter-spacing:.1em;
+  font-size:.95cqh;margin-right:.3cqw}
+.comb b{color:var(--warn)}
+.comb.warn{background:rgba(255,176,32,.10);border-color:rgba(255,176,32,.32)}
+.comb .cruns{margin-top:.2cqh;font-size:.95cqh;opacity:.85}
 .bwarn{flex:0 0 auto;margin-top:.5cqh;padding:.5cqh .7cqw;border-radius:.5cqh;
   background:rgba(255,176,32,.10);border:1px solid rgba(255,176,32,.32);
   font-size:1.05cqh;color:var(--muted);line-height:1.3}
 .bwarn b{color:var(--warn);text-transform:uppercase;letter-spacing:.08em}
+
+/* -- how it works: an overlay, because the detail deserves room -- */
+.infobtn{background:var(--panel);border:1px solid var(--line);color:var(--muted);
+  border-radius:50%;width:2.4cqh;height:2.4cqh;font-family:var(--font-head);font-weight:700;
+  font-size:1.3cqh;cursor:pointer;line-height:1;flex-shrink:0}
+.infobtn:hover{color:var(--dl-yellow);border-color:var(--dl-yellow)}
+/* `display:flex` in a class rule outranks the browser's [hidden]{display:none},
+   so a hidden overlay stayed laid out and swallowed every click on the header
+   behind it. Say it explicitly. */
+.notes[hidden]{display:none}
+.notes{position:absolute;inset:1.6cqh 1.6cqw;z-index:40;display:flex;flex-direction:column;
+  background:linear-gradient(180deg,#221e1f,#171415);border:1px solid var(--line);
+  border-radius:1cqh;box-shadow:0 30px 80px rgba(0,0,0,.7);padding:1.4cqh 1.6cqw;min-height:0}
+.notes-head{display:flex;justify-content:space-between;align-items:baseline;flex:0 0 auto;
+  padding-bottom:.9cqh;border-bottom:1px solid var(--line)}
+.notes-head .p-title{font-size:2cqh}
+.notes-head button{background:transparent;border:1px solid var(--line);color:var(--muted);
+  border-radius:.5cqh;font-family:var(--font-head);font-size:1.2cqh;text-transform:uppercase;
+  letter-spacing:.1em;padding:.35cqh .8cqw;cursor:pointer}
+.notes-head button:hover{color:var(--dl-yellow);border-color:var(--dl-yellow)}
+/* Two columns so a long read does not become a long scroll. */
+.notes-body{flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable;margin-top:1cqh;
+  columns:2;column-gap:2.4cqw;font-size:1.15cqh;line-height:1.5;color:#ddd6d7}
+.notes-body section{break-inside:avoid-column;margin-bottom:1.1cqh}
+.notes-body h3{font-family:var(--font-head);font-size:1.35cqh;text-transform:uppercase;
+  letter-spacing:.14em;color:var(--dl-yellow);margin:0 0 .4cqh}
+.notes-body p{margin:0 0 .5cqh}
+.notes-body b{color:var(--dl-white)}
+.notes-body i{color:var(--muted);font-style:italic}
+.notes-body ol,.notes-body ul{margin:.2cqh 0 .5cqh;padding-left:1.4cqw}
+.notes-body li{margin-bottom:.35cqh}
+.notes-body dl{margin:.2cqh 0 .5cqh}
+.notes-body dt{font-weight:700;color:var(--dl-white);font-size:1.1cqh;
+  text-transform:uppercase;letter-spacing:.08em;margin-top:.4cqh}
+.notes-body dd{margin:.1cqh 0 0}
+.notes-body pre{background:var(--panel-2);border:1px solid var(--line);border-radius:.5cqh;
+  padding:.5cqh .7cqw;font-size:1.05cqh;color:var(--dl-yellow);overflow-x:auto;margin:.3cqh 0 .5cqh}
+.notes-body .foot{color:var(--muted);font-size:1cqh;border-top:1px solid var(--line);padding-top:.5cqh}

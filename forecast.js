@@ -304,6 +304,7 @@ var DLforecast = (function () {
      so the choice is visible rather than buried. */
   function salePeriodModifiers(rows, opts) {
     opts = opts || {};
+    const overrides = opts.overrides || {};
     const src = (rows || []).filter(r => r.revenue > 0).sort((a, b) => a.date < b.date ? -1 : 1);
     if (!src.length) return [];
     const dowIdx = opts.dowIdx || fitDow(src);
@@ -319,8 +320,12 @@ var DLforecast = (function () {
          modifier was silently dropped — lift and all — whenever the days after
          the event happened to hold up. */
       const useful = fits.filter(f => f.lift > 0.05);
-      if (!useful.length) return;
-      const ref = useful[useful.length - 1];                 // most recent that registered
+      /* An override is allowed to reach past the book — a sale being planned for
+         a September the business has never promoted in. Without one, nothing
+         measurable means nothing declared. */
+      const hasOverride = years.some(y => overrides[sp.key + ':' + y]) || overrides[sp.key];
+      if (!useful.length && !hasOverride) return;
+      const ref = useful.length ? useful[useful.length - 1] : null;
 
       years.forEach(y => {
         const day = sp.when(+y);
@@ -336,25 +341,178 @@ var DLforecast = (function () {
            pushed the forecast UP by 24% — the exact opposite of what declaring
            the promotion is meant to do. */
         const own = byYear[y];
-        const src2 = (own && own.lift > 0.05) ? own : (own ? null : ref);
-        if (!src2) return;                                   // measured, and it was no promotion
+        const key = sp.key + ':' + y;
+        const ov = overrides[key] || overrides[sp.key] || null;
+        const src2 = (own && own.lift > 0.05) ? own : (own ? null : ref);   // ref may be null
+        /* An override can declare a promotion in a year the book measured none —
+           a sale planned for a September that has not happened yet — but nothing
+           else can. Without one, a measured year that shows no lift stays
+           undeclared rather than inheriting somebody else's. */
+        if (!src2 && !ov) return;
+
+        /* A LIFT THE USER SETS SCALES THE MEASURED RAMP, it does not flatten it.
+           Saying "we expect +60% this year" is a statement about the size of the
+           promotion, not about its shape: the ramp — slow open, peak four days
+           in, ease off by the day itself — is a property of how the customers
+           behave, and it is the part the book actually knows. So the profile is
+           multiplied through, and a year with no measured shape at all falls
+           back to a flat block, which is the only honest thing to do with no
+           precedent to scale. */
+        const baseLift = src2 ? src2.lift : null;
+        const lift = ov && ov.lift != null ? ov.lift : baseLift;
+        const k = (baseLift && lift != null && baseLift !== 0) ? lift / baseLift : null;
+        const profile = (src2 && k != null)
+          ? src2.profile.map(o => ({ date: addDays(day, o.offset), lift: o.lift * k }))
+          : null;
+
+        const pbDays = ov && ov.paybackDays != null ? ov.paybackDays
+                     : (src2 ? src2.paybackDays : null);
+        const payback = ov && ov.payback != null ? ov.payback
+                      : (src2 && src2.paybackDays ? src2.payback : 0);
+
         out.push({
-          key: sp.key + ':' + y, name: sp.name + ' ' + y, periodKey: sp.key,
+          key, name: sp.name + ' ' + y, periodKey: sp.key, kind: 'sale',
           start: addDays(day, -(sp.runUp - 1)), end: day,
-          lift: src2.lift,
+          lift,
           /* Day-by-day, anchored on the event itself, so the ramp lands on the
              same offsets whichever year it is applied to. */
-          profile: src2.profile.map(o => ({ date: addDays(day, o.offset), lift: o.lift })),
-          payback: src2.paybackDays ? src2.payback : 0,
-          paybackEnd: src2.paybackDays ? addDays(day, src2.paybackDays) : null,
-          measured: { from: src2.year, own: !!(own && own.lift > 0.05),
-                      lift: src2.lift, payback: src2.payback,
-                      paybackDays: src2.paybackDays, pulled: src2.pulled, allYears: fits },
+          profile,
+          payback: pbDays ? payback : 0,
+          paybackEnd: pbDays ? addDays(day, pbDays) : null,
+          overridden: !!(ov && (ov.lift != null || ov.payback != null)),
+          measured: src2
+            ? { from: src2.year, own: !!(own && own.lift > 0.05),
+                lift: src2.lift, payback: src2.payback,
+                paybackDays: src2.paybackDays, pulled: src2.pulled, allYears: fits }
+            : { from: null, own: false, lift: null, payback: null, paybackDays: null, allYears: fits },
           note: sp.note,
         });
       });
     });
     return out;
+  }
+
+  /* -------------------------------------------------- composing modifiers */
+
+  /* SEPARATE DECLARATIONS, ONE ARITHMETIC.
+
+     Seasonal trends, sale periods and modifiers are three different kinds of
+     claim and belong apart:
+
+       seasonal trend   fitted from history, month-aligned, not optional. It is
+                        the baseline itself, not an adjustment to one.
+       sale period      measured from the book, recurring, dated by rule. Its
+                        size is a FACT about the past that can be overridden for
+                        a year still ahead.
+       modifier         asserted by you about the future — a launch, a price
+                        change, a channel going live. Its size is a judgement,
+                        and the data cannot check it.
+
+     But they must COMPOSE through one path, because they overlap. A launch
+     inside the Father's Day run-up, a sale period whose payback runs into the
+     next promotion's opening days, a modifier landing in November on top of a
+     BFCM index of 2.5 — every one of those is a real thing a user will do, and
+     two separate mechanisms would answer them differently depending on which
+     code path ran, which is the worst outcome available.
+
+     So: factors multiply, which is the standard treatment of independent
+     proportional effects and is what each measured lift already is. What this
+     function adds is that it says so — every overlap is returned, with the
+     composed factor and the names that produced it, so the page can show a
+     combined effect instead of leaving it to be inferred.
+
+     Deliberately NOT capped. A modifier is the user's assertion, and clipping
+     it silently would be worse than a large number they can see and judge.
+     `peak` and `beyondBook` are returned so the page can say plainly when a
+     combination has gone past anything the business has ever recorded. */
+  function composeMods(mods, opts) {
+    mods = mods || [];
+    const profileAt = {};
+    mods.forEach(m => (m.profile || []).forEach(o => { profileAt[m.key + '|' + o.date] = o.lift; }));
+
+    const factorOf = (m, date) => {
+      if (date >= m.start && date <= m.end) {
+        const p = profileAt[m.key + '|' + date];
+        return 1 + (p != null ? p : (m.lift || 0));
+      }
+      if (m.payback && m.paybackEnd && date > m.end && date <= m.paybackEnd) return 1 + (m.payback || 0);
+      return 1;
+    };
+    const at = date => {
+      let f = 1;
+      for (let i = 0; i < mods.length; i++) f *= factorOf(mods[i], date);
+      return f;
+    };
+    const applyingAt = date => mods.filter(m => factorOf(m, date) !== 1);
+
+    /* Walk every day any declaration touches, so an overlap is found by
+       inspection rather than by comparing date ranges — paybacks, profiles and
+       one-day windows all included, with no special cases to get wrong. */
+    const spans = mods.map(m => [m.start, m.paybackEnd || m.end]);
+    let lo = null, hi = null;
+    spans.forEach(([a, b]) => { if (!lo || a < lo) lo = a; if (!hi || b > hi) hi = b; });
+    const overlaps = [], perDay = [];
+    let peak = 1, trough = 1;
+    if (lo) {
+      for (let d = lo; d <= hi; d = addDays(d, 1)) {
+        const f = at(d);
+        if (f === 1) continue;
+        const who = applyingAt(d);
+        perDay.push({ date: d, factor: f, names: who.map(m => m.name) });
+        if (f > peak) peak = f;
+        if (f < trough) trough = f;
+        if (who.length > 1) overlaps.push({ date: d, factor: f, names: who.map(m => m.name),
+                                            keys: who.map(m => m.key) });
+      }
+    }
+    /* Grouped into runs, because "12 days from 24 Aug" reads and a list of
+       twelve dates does not. */
+    const runs = [];
+    overlaps.forEach(o => {
+      const last = runs[runs.length - 1];
+      if (last && addDays(last.end, 1) === o.date && last.keys.join() === o.keys.join()) {
+        last.end = o.date; last.days++;
+        last.peak = Math.max(last.peak, o.factor);
+        last.low = Math.min(last.low, o.factor);
+      } else {
+        /* Grouped by WHICH declarations collide, not by the resulting number, so
+           one collision reads as one run. But a run can span a lift and the
+           payback of its neighbour, and reporting only the peak would hide that
+           half of it is a reduction — so it carries both ends. */
+        runs.push({ start: o.date, end: o.date, days: 1, peak: o.factor, low: o.factor,
+                    names: o.names, keys: o.keys });
+      }
+    });
+    const ceiling = (opts && opts.observedCeiling) || null;
+    return { at, perDay, overlaps, runs, peak, trough,
+             beyondBook: ceiling ? peak > ceiling : false, ceiling };
+  }
+
+  /* The largest lift the book actually records, over any window a declaration
+     could describe. Used only to tell the reader when a combination has left
+     the range of anything observed — never to clip one. */
+  function observedCeiling(rows, opts) {
+    opts = opts || {};
+    const src = (rows || []).filter(r => r.revenue > 0);
+    if (!src.length) return null;
+    const dowIdx = opts.dowIdx || fitDow(src);
+    const season = opts.season || fitSeason(src);
+    let best = 1;
+    /* Sale periods, at their measured peak day. */
+    (opts.periods || SALE_PERIODS).forEach(sp => {
+      fitSale(src, sp, dowIdx, season.yearLevel).forEach(f => {
+        f.profile.forEach(o => { if (1 + o.lift > best) best = 1 + o.lift; });
+      });
+    });
+    /* And the seasonality's own biggest month, against a typical one, since
+       that is the largest recurring swing the business has. */
+    const idx = Object.keys(season.index).map(k => season.index[k]).filter(v => v > 0).sort((a, b) => a - b);
+    if (idx.length) {
+      const median = idx[Math.floor(idx.length / 2)];
+      const ratio = idx[idx.length - 1] / (median || 1);
+      if (ratio > best) best = ratio;
+    }
+    return best;
   }
 
   /* ----------------------------------------------------------- projection */
@@ -482,22 +640,8 @@ var DLforecast = (function () {
        correction downstream can reach a season index that has already absorbed
        it. Corrected here once, every fit below is a baseline fit. */
     const mods = opts.modifiers || [];
-    const profileAt = {};
-    mods.forEach(m => (m.profile || []).forEach(o => {
-      profileAt[m.key + '|' + o.date] = o.lift;
-    }));
-    const modAt = date => {
-      let f = 1;
-      mods.forEach(m => {
-        if (date >= m.start && date <= m.end) {
-          const p = profileAt[m.key + '|' + date];
-          f *= (1 + (p != null ? p : (m.lift || 0)));
-        } else if (m.payback && m.paybackEnd && date > m.end && date <= m.paybackEnd) {
-          f *= (1 + (m.payback || 0));
-        }
-      });
-      return f;
-    };
+    const composed = composeMods(mods, { observedCeiling: opts.observedCeiling });
+    const modAt = composed.at;
     const rows = mods.length
       ? raw.map(r => { const f = modAt(r.date); return f === 1 ? r : Object.assign({}, r, { revenue: r.revenue / f }); })
       : raw;
@@ -590,6 +734,7 @@ var DLforecast = (function () {
     return {
       scenario: opts.scenario || 'realistic',
       from, horizon, level: lvl, drift, priorWeight,
+      modifiers: mods, modifierEffect: composed,
       total: sum(days.map(d => d.revenue)),
       days, months: Object.values(months).sort((a, b) => a.month < b.month ? -1 : 1),
       basis: { dowIdx, season, growth },
@@ -756,7 +901,8 @@ var DLforecast = (function () {
   }
 
   return { addDays, dow, monthOf, daysInMonth, nthDowOfMonth, fitDow, fitSeason, fitGrowth,
-           priorShaper, fitSale, salePeriodModifiers, SALE_PERIODS, fitPnl, projectPnl, backtest,
+           priorShaper, fitSale, salePeriodModifiers, SALE_PERIODS,
+           composeMods, observedCeiling, fitPnl, projectPnl, backtest,
            levelOf, project, EVENTS, SCENARIOS, _mean: mean, _sum: sum };
 })();
 
