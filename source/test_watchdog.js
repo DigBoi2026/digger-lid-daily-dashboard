@@ -153,6 +153,12 @@ const parse = r => { try { return JSON.parse(r.body); } catch (e) { return null;
      v && v.checks.notCoveredHere && /health/.test(v.checks.notCoveredHere.integrationReachability),
      v && v.checks.notCoveredHere);
   ok('the forecast layer is exercised too', v && v.checks.forecast.ran === true, v && v.checks.forecast);
+  /* prior_year.js is read with fs, which Vercel's bundler cannot trace, so its
+     presence in the deployed function is a real thing that can silently break —
+     and without 2025 the forecast keeps running with no seasonality and no
+     year-on-year rate, which is a different model wearing the same name. */
+  ok('it confirms the prior year actually reached the function',
+     v && /rows$/.test(v.checks.forecast.priorYear || ''), v && v.checks.forecast.priorYear);
   ok('thresholds are stated, not hidden', v && v.thresholds.maxAgeDays > 0, v && v.thresholds);
 
   /* ------------------------------------------------------- 1. a broken route */

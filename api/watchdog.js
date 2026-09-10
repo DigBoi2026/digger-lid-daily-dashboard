@@ -62,7 +62,14 @@ const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.pa
 
 /* prior_year.js is a browser file (window.DL_PRIOR = {...}). Read it the same
    way the offline tests do rather than keeping a second copy of 2025 around for
-   the sake of this route. */
+   the sake of this route.
+
+   It is read with fs at runtime, which Vercel's bundler CANNOT trace — only
+   static require() calls get traced — so the file would be absent from the
+   deployed function and 2025 would silently vanish from the forecast check.
+   vercel.json declares it under includeFiles for exactly this reason. If the
+   check ever reports a missing prior year, that declaration is the first place
+   to look. */
 function loadPriorYear() {
   try {
     const src = fs.readFileSync(path.join(__dirname, '..', 'prior_year.js'), 'utf8');
@@ -155,12 +162,16 @@ module.exports = async (req, res) => {
   }
 
   /* ---- 5. the forecast layer -------------------------------------------- */
-  const fc = { ran: false, from: null, horizonDays: null, error: null };
+  const fc = { ran: false, from: null, horizonDays: null, priorYear: null, error: null };
   let row = null;
   if (built && (built.daily || []).length) {
     try {
       const F = require('../forecast.js');
       const prior = loadPriorYear();
+      /* Reported, not assumed. Without 2025 the forecast still runs but loses
+         its seasonality and its year-on-year rate — a materially different model
+         answering to the same name, which is worse than an error. */
+      fc.priorYear = prior && prior.daily ? prior.daily.length + ' rows' : 'MISSING';
       const map = new Map();
       ((prior && prior.daily) || []).forEach(d => { if (d && d.date) map.set(d.date, d); });
       (built.daily || []).forEach(d => { if (d && d.date) map.set(d.date, d); });
@@ -180,6 +191,10 @@ module.exports = async (req, res) => {
       });
       if (!isFinite(out.realistic.total) || out.realistic.total <= 0) throw new Error('forecast produced no total');
       fc.ran = true; fc.from = from; fc.horizonDays = horizon;
+      if (fc.priorYear === 'MISSING') {
+        failures.push('prior_year.js is not in the deployed function, so the forecast ' +
+                      'has no seasonality or year-on-year rate (see includeFiles in vercel.json)');
+      }
       /* THE FORECAST LOG ROW.
 
          Nothing anywhere records what the forecast SAID, so it can only be
