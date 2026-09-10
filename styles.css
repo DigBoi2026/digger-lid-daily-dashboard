@@ -408,6 +408,9 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .hundredwrap .h100{flex:0 0 auto}
 .h100-foot{flex:0 0 auto;font-size:1cqh;color:var(--muted);line-height:1.35;margin-top:.3cqh}
 .h100-foot b{color:var(--dl-white)}
+.hundredwrap .h100-bar{height:2.2cqh}
+.hundredwrap .h100-h{font-size:1.15cqh}
+.hundredwrap .h100-key{font-size:1cqh;margin-top:.3cqh}
 .h100.compact .h100-key{font-size:.95cqh}
 
 /* Four panels along the bottom now. */
@@ -519,39 +522,51 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .notes-body.plain{grid-template-columns:1fr 1fr}
 
 /* -- plain English -- */
-.plainsteps{list-style:none;margin:0;padding:0;counter-reset:st}
-.plainsteps li{counter-increment:st;position:relative;padding:0 0 1.5cqh 3.4cqw;min-height:3cqh}
+.plainsteps{list-style:none;margin:0;padding:0;counter-reset:st;
+  flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-between}
+/* space-between owns the rhythm now, so the rows carry no bottom padding of
+   their own — two sources of spacing fighting each other is how a list ends up
+   looking almost-right at one size and wrong at every other. */
+.plainsteps li{counter-increment:st;position:relative;padding:0 0 0 3.6cqw;flex:0 0 auto}
 .plainsteps li::before{content:counter(st);position:absolute;left:0;top:-.1cqh;
-  width:2.4cqw;height:2.4cqw;max-width:3.4cqh;max-height:3.4cqh;
+  width:2.6cqw;height:2.6cqw;max-width:3.8cqh;max-height:3.8cqh;
   display:flex;align-items:center;justify-content:center;
   background:var(--dl-yellow);color:var(--dl-black);border-radius:50%;
-  font-family:var(--font-head);font-weight:900;font-size:1.5cqh}
-.plainsteps h4{font-family:var(--font-head);font-size:1.7cqh;font-weight:700;
+  font-family:var(--font-head);font-weight:900;font-size:1.7cqh}
+.plainsteps h4{font-family:var(--font-head);font-size:1.9cqh;font-weight:700;
   color:var(--dl-white);margin:0 0 .2cqh;letter-spacing:.02em}
-.plainsteps p{margin:0;color:var(--muted);font-size:1.3cqh;line-height:1.45}
+.plainsteps p{margin:0;color:var(--muted);font-size:1.4cqh;line-height:1.5}
 .plainsteps b{color:var(--dl-white)}
 
 .plainbox{background:var(--panel-2);border:1px solid var(--line);border-radius:.8cqh;
-  padding:.9cqh 1.1cqw;margin-bottom:.9cqh}
+  padding:1.1cqh 1.2cqw;margin:0;flex:0 0 auto;
+  display:flex;flex-direction:column;justify-content:center}
+/* Every card keeps its NATURAL height and the column distributes the slack
+   between them. Letting the $100 card absorb it instead produced the two
+   failure modes in turn: space-between pushed its bars to opposite ends with
+   holes between them, and centring left a band of empty card above the heading
+   and below the total. A card is a unit of content, not a spacer — the space
+   belongs between the cards. */
+.plainbox{gap:.8cqh}
 .plainbox.warn{background:rgba(255,176,32,.08);border-color:rgba(255,176,32,.32)}
-.plainbox h4{font-family:var(--font-head);font-size:1.45cqh;text-transform:uppercase;
+.plainbox h4{font-family:var(--font-head);font-size:1.6cqh;text-transform:uppercase;
   letter-spacing:.14em;color:var(--dl-yellow);margin:0 0 .5cqh}
 .plainbox.warn h4{color:var(--warn)}
-.plainbox p{margin:0 0 .5cqh;color:var(--muted);font-size:1.25cqh;line-height:1.45}
+.plainbox p{margin:0 0 .5cqh;color:var(--muted);font-size:1.35cqh;line-height:1.5}
 .plainbox p:last-child{margin-bottom:0}
 .plainbox b{color:var(--dl-white)}
-.plainbig{font-size:1.5cqh!important;color:#ddd6d7!important;line-height:1.4!important}
-.plainbig b{color:var(--dl-yellow)!important;font-size:1.85cqh}
+.plainbig{font-size:1.6cqh!important;color:#ddd6d7!important;line-height:1.4!important}
+.plainbig b{color:var(--dl-yellow)!important;font-size:2.1cqh}
 .plainnote{border-left:2px solid var(--dl-yellow);padding-left:.7cqw}
 
 /* Where $100 goes. One bar per sales level, so the only thing that visibly
    moves between them is the share fixed cost takes. */
 .h100{margin-bottom:.8cqh}
-.h100-h{font-family:var(--font-head);font-size:1.25cqh;text-transform:uppercase;
+.h100-h{font-family:var(--font-head);font-size:1.35cqh;text-transform:uppercase;
   letter-spacing:.1em;color:var(--dl-white);font-weight:700;margin-bottom:.3cqh}
 .h100-h small{color:var(--muted);font-weight:400;letter-spacing:.04em;
   text-transform:none;margin-left:.4cqw}
-.h100-bar{display:flex;height:2.8cqh;border-radius:.4cqh;overflow:hidden;
+.h100-bar{display:flex;height:4.2cqh;border-radius:.4cqh;overflow:hidden;
   border:1px solid var(--line)}
 .h100-bar i{display:block;height:100%}
 .h100-bar i.gst{background:#5f5859}
@@ -560,19 +575,26 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .h100-bar i.fc{background:#b3231b}
 .h100-bar i.pf{background:var(--good)}
 .h100-bar i.loss{background:repeating-linear-gradient(45deg,#b3231b,#b3231b 3px,#7a1812 3px,#7a1812 6px)}
-.h100-key{display:flex;flex-wrap:wrap;gap:.15cqh .8cqw;margin-top:.35cqh;font-size:1.15cqh;color:var(--muted)}
+.h100-key{display:flex;flex-wrap:wrap;gap:.15cqh .8cqw;margin-top:.4cqh;font-size:1.25cqh;color:var(--muted)}
 .h100-key span{display:flex;align-items:center;gap:.25cqw;white-space:nowrap}
 .h100-key span::before{content:"";width:.9cqh;height:.9cqh;border-radius:.2cqh;flex:0 0 auto}
 .h100-key .gst::before{background:#5f5859} .h100-key .vc::before{background:#6e6768}
 .h100-key .ads::before{background:#8a7f14} .h100-key .fc::before{background:#b3231b}
 .h100-key .pf::before{background:var(--good)} .h100-key .loss::before{background:#b3231b}
 .h100-key b{color:var(--dl-white);font-variant-numeric:tabular-nums}
-.notes-body .ncol{min-width:0}
+/* Each column is a flex column that SPREADS its children over the full height.
+   Without this the explanation sat in the top half of a full-height panel with
+   the bottom half empty — the content was complete and the page still looked
+   unfinished, which reads as a mistake rather than as brevity. */
+.notes-body .ncol{min-width:0;display:flex;flex-direction:column;
+  justify-content:space-between;gap:1cqh}
 .notes-body .ncap{font-size:1.05cqh;color:var(--muted);line-height:1.4;margin:.6cqh 0 0}
 .notes-body .ncap i{color:var(--dl-white);font-style:italic}
 
 /* -- the diagram -- */
-.fcdiag{width:100%;height:auto;display:block}
+/* Scales on width, so it also needs a height ceiling or a tall column stretches
+   it past the panel. */
+.fcdiag{width:100%;height:auto;max-height:100%;display:block;flex:0 1 auto}
 .fcdiag rect{fill:var(--panel-2);stroke:var(--line);stroke-width:1}
 .fcdiag .bt{font-family:var(--font-head);font-size:12px;font-weight:700;fill:var(--dl-white);
   text-anchor:middle;letter-spacing:.06em}
@@ -596,25 +618,25 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 
 /* -- the arithmetic -- */
 .nmath{background:var(--panel-2);border:1px solid var(--line);border-radius:.7cqh;
-  padding:.8cqh 1cqw;margin-bottom:.9cqh}
+  padding:1cqh 1.1cqw;margin:0;flex:0 0 auto}
 .nmath .nm-h{font-family:var(--font-head);font-size:1.05cqh;text-transform:uppercase;
   letter-spacing:.14em;color:var(--muted);margin:.5cqh 0 .25cqh}
 .nmath .nm-h:first-child{margin-top:0}
-.nmath pre{margin:0;font-size:1.25cqh;line-height:1.55;color:var(--dl-yellow);
+.nmath pre{margin:0;font-size:1.4cqh;line-height:1.6;color:var(--dl-yellow);
   font-variant-numeric:tabular-nums;overflow-x:auto}
 .nmath pre sup,.nmath pre sub{font-size:.72em;color:var(--dl-yellow-70)}
 
-.nsym{width:100%;border-collapse:collapse;font-size:1.05cqh}
-.nsym th{width:2.2cqw;text-align:left;font-family:var(--font-head);font-size:1.3cqh;
+.nsym{width:100%;border-collapse:collapse;font-size:1.15cqh;flex:0 0 auto}
+.nsym th{width:2.2cqw;text-align:left;font-family:var(--font-head);font-size:1.45cqh;
   color:var(--dl-yellow);font-weight:700;padding:.22cqh .4cqw .22cqh 0;vertical-align:top}
 .nsym td{padding:.22cqh .5cqw .22cqh 0;vertical-align:top;border-bottom:1px solid rgba(255,255,255,.05)}
 .nsym td:first-of-type{white-space:nowrap;font-weight:700;color:var(--dl-white);
   font-variant-numeric:tabular-nums}
 .nsym td:last-child{color:var(--muted);line-height:1.35}
 
-.nacc{margin-top:.9cqh;padding:.7cqh .9cqw;border-radius:.6cqh;
+.nacc{margin:0;padding:.9cqh 1cqw;border-radius:.6cqh;flex:0 0 auto;
   background:rgba(245,235,25,.06);border:1px solid rgba(245,235,25,.28);
-  font-size:1.05cqh;line-height:1.4;color:var(--muted)}
+  font-size:1.15cqh;line-height:1.45;color:var(--muted)}
 .nacc b{color:var(--dl-white)}
 .nacc span{display:block;margin-top:.35cqh;padding-top:.35cqh;
   border-top:1px solid rgba(255,255,255,.08);color:var(--warn)}
