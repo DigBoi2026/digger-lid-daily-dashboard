@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DiggerLid — Forecast</title>
+<link rel="icon" href="./assets/favicon32.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300;400;500;700&family=League+Spartan:wght@400;700;900&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="./styles.css?v=1788991676" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div id="stageWrap">
+  <div id="stage" class="forecast-stage">
+    <!-- HEADER -->
+    <header id="top">
+      <div class="hleft">
+        <div class="brand"><img src="./assets/dl_wordmark.png" alt="DiggerLid" /></div>
+        <nav class="topnav">
+          <a href="index.html">Daily Ops</a>
+          <a href="daily.html">Pulse</a>
+          <a href="performance.html">Performance Marketing</a>
+          <a href="products.html">Products</a>
+          <a href="region.html">Region</a>
+          <a href="forecast.html" class="active" aria-current="page">Forecast</a>
+        </nav>
+      </div>
+
+      <div class="daynav">
+        <div class="datebox">
+          <div class="d" id="navDate">—</div>
+          <div class="dow" id="navDow">forecast from</div>
+        </div>
+        <div class="seg small" id="horSeg" role="group" aria-label="Select horizon" title="How far ahead to forecast">
+          <button data-hor="30" aria-label="Next 30 days">30D</button>
+          <button data-hor="60" aria-label="Next 60 days">60D</button>
+          <button data-hor="90" class="active" aria-label="Next 90 days">90D</button>
+          <button data-hor="EOY" aria-label="To year end">TO YEAR END</button>
+        </div>
+      </div>
+
+      <div class="status">
+        <div class="freshness">
+          <div class="lbl">Data through</div>
+          <div class="val" id="throughVal">—</div>
+          <div class="pend" id="pendNote" hidden></div>
+        </div>
+        <div class="livepill" id="livePill" title="Data source status">
+          <span class="dot snap" id="liveDot"></span>
+          <span id="liveText">Snapshot</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- KPI STRIP -->
+    <section id="kpis"></section>
+
+    <!-- MAIN -->
+    <section id="main">
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Three <span>Scenarios</span></div>
+          <div class="p-note" id="scenNote">—</div>
+        </div>
+        <div class="scenlist" id="scenList"></div>
+        <div class="eq-foot">
+          <div class="eq-cell"><div class="l">Breakeven revenue</div><div class="v" id="beVal">—</div><div class="s" id="beSub">—</div></div>
+          <div class="eq-cell"><div class="l">Measured error</div><div class="v" id="accVal">—</div><div class="s" id="accSub">—</div></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Revenue <span id="chartSpan">· forecast</span></div>
+          <div class="p-note" id="chartNote">7-day average · shaded band is measured backtest error</div>
+        </div>
+        <div id="chartWrap"><canvas id="fcChart"></canvas></div>
+      </div>
+    </section>
+
+    <!-- BOTTOM -->
+    <section id="bottom">
+      <div class="panel">
+        <div class="p-head"><div class="p-title">Month by <span>Month</span></div>
+          <div class="p-note" id="monthNote">vs the same dates last year</div></div>
+        <div class="ptable" id="monthTable"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head"><div class="p-title">Calendar &amp; <span>Modifiers</span></div>
+          <div class="p-note" id="modNote">events are already in the model · modifiers are not</div></div>
+        <div class="catlist" id="eventList"></div>
+        <form class="modform" id="modForm" autocomplete="off">
+          <input type="text" id="modName" placeholder="Name (e.g. Black Friday teaser)" maxlength="40" required />
+          <input type="date" id="modStart" required aria-label="Modifier start date" />
+          <input type="date" id="modEnd" required aria-label="Modifier end date" />
+          <input type="number" id="modLift" placeholder="Lift %" step="5" aria-label="Lift percent" required />
+          <input type="number" id="modPay" placeholder="Payback %" step="5" aria-label="Payback percent" />
+          <button type="submit">Add</button>
+        </form>
+      </div>
+
+      <div class="panel">
+        <div class="p-head"><div class="p-title">What this <span>Rests On</span></div>
+          <div class="p-note" id="basisNote">—</div></div>
+        <div class="ptable" id="basisWrap"></div>
+        <div id="basisWarn"></div>
+      </div>
+    </section>
+
+    <footer id="foot">
+      <div id="footSource">—</div>
+      <div id="footNote">Read-only · forecast, not a commitment</div>
+    </footer>
+
+    <div class="err" id="errBox">
+      <div><h2>No data loaded</h2><p>Couldn't find <code>data.js</code>.</p></div>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/animejs@4.0.0/lib/anime.iife.min.js"></script>
+<script src="./motion.js?v=1788991676"></script>
+<script src="./core.js?v=1788991676"></script>
+<script src="./forecast.js?v=1788991676"></script>
+<script src="./data.js?v=1788991676"></script>
+<script src="./prior_year.js?v=1788991676"></script>
+<script src="./forecast_page.js?v=1788991676"></script>
+</body>
+</html>

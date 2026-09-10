@@ -27,8 +27,8 @@ body{
   padding:1.6cqh 1.6cqw;overflow:hidden;position:relative;
 }
 /* ============ HEADER ============ */
-header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:1.5cqw}
-.hleft{display:flex;align-items:center;gap:1.4cqw;min-width:0}
+header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:1cqw}
+.hleft{display:flex;align-items:center;gap:1cqw;min-width:0}
 .brand{display:flex;align-items:center;gap:1cqw}
 .brand img{height:4.4cqh;width:auto;display:block}
 .brand .divider{width:1px;height:4.6cqh;background:var(--line)}
@@ -37,9 +37,9 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .brand .titles h1 b{color:var(--dl-yellow)}
 
 /* page switcher */
-.topnav{display:flex;gap:.5cqw;justify-self:center;background:var(--panel);border:1px solid var(--line);border-radius:.8cqh;padding:.35cqh}
+.topnav{display:flex;gap:.25cqw;justify-self:center;background:var(--panel);border:1px solid var(--line);border-radius:.8cqh;padding:.35cqh}
 .topnav a{display:flex;align-items:center;gap:.5cqw;text-decoration:none;color:var(--muted);white-space:nowrap;
-  font-size:1.2cqh;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:.5cqh .9cqw;border-radius:.6cqh}
+  font-size:1.15cqh;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:.5cqh .65cqw;border-radius:.6cqh}
 .topnav a.active{background:var(--dl-yellow);color:var(--dl-black)}
 .topnav a:hover:not(.active){color:var(--dl-white)}
 
@@ -128,7 +128,9 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .mcell .v small{font-size:1.2cqh;color:var(--muted);font-weight:400}
 .prospbar{height:1.1cqh;background:var(--panel);border-radius:2cqh;overflow:hidden;margin-top:.5cqh;border:1px solid var(--line)}
 .prospbar i{display:block;height:100%;background:var(--dl-yellow)}
-.pace{display:flex;flex-direction:column;gap:1.05cqh;flex:1;justify-content:center}
+.pace{display:flex;flex-direction:column;gap:1.05cqh;flex:1;min-height:0;justify-content:center;
+  overflow-y:auto;scrollbar-gutter:stable}
+.pace-row{flex:0 0 auto}
 .pace-row .pr-top{display:flex;justify-content:space-between;align-items:baseline;font-size:1.2cqh}
 .pace-row .pr-top .nm{text-transform:uppercase;letter-spacing:.12em;color:var(--muted)}
 .pace-row .pr-top .vv{font-weight:700;font-size:1.6cqh;font-variant-numeric:tabular-nums}
@@ -146,7 +148,9 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
   font-size:1.25cqh;font-weight:900;line-height:1;color:rgba(0,0,0,.65)}
 .pace-row .pr-sub{font-size:1.05cqh;color:var(--muted);margin-top:.35cqh}
 .pace-row .pr-sub b{font-variant-numeric:tabular-nums;font-weight:700}
-.health{display:flex;flex-direction:column;gap:.6cqh;flex:1;justify-content:center}
+.health{display:flex;flex-direction:column;gap:.6cqh;flex:1;min-height:0;justify-content:center;
+  overflow-y:auto;scrollbar-gutter:stable}
+.hrow{flex:0 0 auto}
 /* dot · label · value · state — fixed value/state tracks so numbers and badges
    line up in clean columns across every row (health check + top movers). */
 .hrow{display:grid;grid-template-columns:auto 1fr 6cqw 6cqw;align-items:center;column-gap:.9cqw;
@@ -330,3 +334,86 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .ptable::-webkit-scrollbar-thumb:hover, .catlist::-webkit-scrollbar-thumb:hover{
   background:var(--muted)}
 .ptable, .catlist{scrollbar-width:thin; scrollbar-color:var(--line) transparent}
+
+/* ============ FORECAST ============ */
+/* The forecast page carries more explanation per pixel than the others — a
+   number without its basis is worse than no number — so it gives the bottom
+   row more height and the KPI strip less. */
+#stage.forecast-stage{grid-template-rows:9cqh 18cqh minmax(0,1fr) 27cqh 2.8cqh}
+.forecast-stage .daynav{justify-self:center;gap:.5cqw}
+.forecast-stage .seg.small button{font-size:1.15cqh;letter-spacing:.06em}
+.forecast-stage .kpi .k-val{font-size:3.1cqh}
+.forecast-stage .kpi .k-val small{font-size:1.4cqh;color:var(--muted);font-weight:400}
+.forecast-stage .kpi .k-foot{font-size:1.15cqh;font-weight:400;color:var(--muted)}
+.forecast-stage #chartWrap{flex:1;min-height:0;position:relative}
+
+/* -- scenario rows: a claim, its reasoning, and its profit, in one row -- */
+.scenlist{display:flex;flex-direction:column;gap:.5cqh;flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable}
+.scenrow{flex:1 1 0;min-height:0;display:flex;flex-direction:column;justify-content:center;
+  width:100%;text-align:left;cursor:pointer;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:.7cqh;
+  padding:.7cqh .9cqw;font-family:inherit;color:inherit}
+.scenrow:hover{border-color:var(--muted)}
+.scenrow.on{background:linear-gradient(180deg,#3a3407,#2a2708);border-color:#6b6209}
+.scenrow .sr-top{display:flex;justify-content:space-between;align-items:baseline;gap:.6cqw}
+.scenrow .sr-name{font-family:var(--font-head);font-size:1.3cqh;text-transform:uppercase;
+  letter-spacing:.14em;color:var(--muted);font-weight:700}
+.scenrow.on .sr-name{color:var(--dl-yellow)}
+.scenrow .sr-rev{font-size:2.2cqh;font-weight:700;font-variant-numeric:tabular-nums}
+.scenrow .sr-bot{display:flex;justify-content:space-between;align-items:flex-end;gap:.6cqw;margin-top:.25cqh}
+.scenrow .sr-why{font-size:1.1cqh;color:var(--muted);line-height:1.25;flex:1;min-width:0}
+.scenrow .sr-pr{font-size:1.4cqh;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.scenrow .sr-pr.pos{color:var(--good)} .scenrow .sr-pr.neg{color:var(--bad)}
+.forecast-stage .eq-cell .s{font-size:1cqh;color:var(--muted);margin-top:.15cqh}
+.forecast-stage .eq-cell .v{font-size:1.9cqh}
+
+/* -- month table: its own column shape, so it does not inherit Products' -- */
+#monthTable.ptable .thead,#monthTable.ptable .trow{
+  grid-template-columns:4.6cqw 1fr 1fr .1fr 1fr .1fr auto;gap:.5cqw}
+#monthTable .c1{font-size:1.35cqh;font-weight:700;white-space:nowrap}
+#monthTable .c1 small{color:var(--muted);font-weight:400;margin-left:.3cqw}
+#monthTable .c2,#monthTable .c3,#monthTable .c5{font-size:1.35cqh;font-weight:700;text-align:right}
+#monthTable .c3{color:var(--muted);font-weight:400;font-size:1.2cqh}
+#monthTable .c4,#monthTable .c6{font-size:1.2cqh;text-align:right;white-space:nowrap}
+#monthTable .c7{text-align:right}
+#monthTable .pos{color:var(--good)} #monthTable .neg{color:var(--bad)}
+#monthTable .thead div{font-weight:400}
+#monthTable .thead .c2,#monthTable .thead .c3,#monthTable .thead .c5{text-align:right}
+#monthTable .trow.tot{border-top:1px solid var(--line);border-bottom:0;background:rgba(245,235,25,.05)}
+#monthTable .trow.tot .c1{color:var(--dl-yellow);text-transform:uppercase;letter-spacing:.1em;font-size:1.2cqh}
+
+/* A sample size, worn openly. November's index is fitted on one year and the
+   whole year-end number leans on it. */
+.cf{font-size:.95cqh;text-transform:uppercase;letter-spacing:.1em;font-weight:700;
+  padding:.15cqh .5cqw;border-radius:.4cqh;white-space:nowrap}
+.cf.ok{background:rgba(57,217,138,.14);color:var(--good)}
+.cf.thin{background:rgba(255,176,32,.16);color:var(--warn)}
+.cf.none{background:rgba(255,90,82,.16);color:var(--bad)}
+
+/* -- events and modifiers -- */
+.catrow.ev .cname small{color:var(--muted);font-weight:400;font-size:1.05cqh;margin-left:.3cqw}
+.catrow.ev .cmeta{white-space:normal;line-height:1.25}
+.catrow.ev.hit .bar,.catrow.ev.hit{border-left:2px solid var(--dl-yellow)}
+.catrow.mod{border-left:2px solid var(--good)}
+.catrow .modx{background:transparent;border:1px solid var(--line);color:var(--muted);
+  border-radius:.4cqh;cursor:pointer;font-size:1.4cqh;line-height:1;padding:.1cqh .5cqw}
+.catrow .modx:hover{color:var(--bad);border-color:var(--bad)}
+.modform{display:grid;grid-template-columns:1.6fr 1fr 1fr .8fr .8fr auto;gap:.4cqw;margin-top:.6cqh;flex:0 0 auto}
+.modform input{min-width:0;background:var(--panel-2);border:1px solid var(--line);color:var(--dl-white);
+  border-radius:.5cqh;padding:.45cqh .5cqw;font-family:inherit;font-size:1.1cqh}
+.modform input::placeholder{color:var(--muted)}
+.modform input:focus{outline:none;border-color:var(--dl-yellow)}
+.modform button{background:var(--dl-yellow);color:var(--dl-black);border:0;border-radius:.5cqh;
+  padding:.45cqh .8cqw;font-family:var(--font-head);font-size:1.1cqh;font-weight:700;
+  text-transform:uppercase;letter-spacing:.1em;cursor:pointer}
+
+/* -- what it rests on -- */
+#basisWrap .brow{flex:0 0 auto;display:grid;grid-template-columns:auto 1fr;gap:.15cqh .6cqw;
+  padding:.3cqh .6cqw;border-bottom:1px solid rgba(255,255,255,.04)}
+#basisWrap .bl{font-size:1.15cqh;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;align-self:center}
+#basisWrap .bv{font-size:1.4cqh;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+#basisWrap .bn{grid-column:1/-1;font-size:1cqh;color:var(--muted);line-height:1.2}
+.bwarn{flex:0 0 auto;margin-top:.5cqh;padding:.5cqh .7cqw;border-radius:.5cqh;
+  background:rgba(255,176,32,.10);border:1px solid rgba(255,176,32,.32);
+  font-size:1.05cqh;color:var(--muted);line-height:1.3}
+.bwarn b{color:var(--warn);text-transform:uppercase;letter-spacing:.08em}

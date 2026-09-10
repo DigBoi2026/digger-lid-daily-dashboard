@@ -58,6 +58,20 @@ script (they destructure from `DLcore` at the top). It owns:
 | `periodSlices(daily, latest, P, off)` | Trailing-period + prior-period slices, **offset-clamped** so stepping past the data edge can never produce a negative/oversized slice |
 | `aggregate(list)` | Sum flows, recompute rates (AOV, CVR, MER, ROAS…) over a window |
 | `breakeven(rec)` | Profit b/e = (RevExGST−Var−Fixed)/Rev; cash b/e = (RevExGST−Var)/Rev; returns zone (Scale/Hold/Pull back) |
+
+**`forecast.js` is the same idea for the forward look** — pure functions over daily rows,
+no DOM and no fetch, so every claim it makes can be checked against history
+(`source/test_forecast.js`, 69 tests). It fits a day-of-week shape, a month index (year and
+month effects solved jointly, because the two books are an unbalanced panel), a
+year-on-year growth rate and a level, blends a trailing-trend predictor with a
+prior-year one, and applies the sheet's own exact profit identity — `revExGst − totalVC
+− totalAds − totalFC` — rather than regressing profit. `backtest()` walks the whole book
+forward, refitting at each origin, and is what draws the band on the page.
+
+Measured: **±13% at 30 days, ±17% at 90**, over origins that had a prior year to lean on.
+Origins without one scored ±27%. October to December are unvalidated at any horizon —
+no origin in the data reaches them — so BFCM rests on a single observed November, and
+the page says so on its face.
 | `fmtRange`, `isoToNice`, `rollingAvg`, `sparkline` | Formatting + the shared canvas sparkline |
 
 Because the math lives in one file, it's unit-tested independently of the browser
@@ -75,6 +89,7 @@ opacity 0).
 | Shopify product/category sales | `shopify_data.js` | **Snapshot** | 62 daily rows + rolling windows (3/7/30/90/12M) + 12-month monthly. 3-day window built by `build_win3.js`. |
 | Category × month net sales (trend chart) | `shopify_data.js` → `catMonthly` | **Snapshot** (Jul '25 – Jun '26) | Per-category monthly net sales. Regenerate with `build_cat_monthly.py`. |
 | Live sheet pull (when deployed) | `api/data.js` (Vercel serverless) | Daily, up to yesterday | Merges into the embedded history so 90D/12M stay intact. |
+| Prior-year P&L (Forecast) | `prior_year.js` — Ecommerce Equation 6.0 workbook | **Static, by design** | 276 daily rows over 9 months of 2025. The year is closed, so there is nothing to refresh. Feb–Apr 2025 were never filled in and are absent rather than zeroed. Regenerate with `build_prior_year.py <2025.xlsx>`. |
 
 **Honest window definitions** (they are *not* identical across pages — a limit of the
 underlying data, not an oversight):
