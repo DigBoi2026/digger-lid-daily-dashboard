@@ -164,9 +164,21 @@ var DLforecast = (function () {
       if (m[k].days < daysIn(k) || m[prev].days < daysIn(prev)) continue;   // whole months only
       ratios.push(m[k].sum / m[prev].sum);
     }
+    /* Two readings of the same ratios. `yoy` is the median — robust, but on a
+       business that is accelerating it lags: by August 2026 the like-for-like
+       months ran x1.15, x1.77, x1.72, x1.51, x2.02 and the median said x1.72
+       while the latest three averaged x1.75 and rising. `recent` is the mean of
+       the last three whole months in date order, which is what the next quarter
+       most resembles. The ablation study picks between them. */
+    const dated = Object.keys(m).filter(k => m[(+k.slice(0, 4) - 1) + k.slice(4)])
+      .filter(k => { const prev = (+k.slice(0, 4) - 1) + k.slice(4);
+                     return m[k].days >= daysIn(k) && m[prev].days >= daysIn(prev); })
+      .sort().map(k => m[k].sum / m[(+k.slice(0, 4) - 1) + k.slice(4)].sum);
+    const lastN = dated.slice(-3);
     ratios.sort((a, b) => a - b);
     return {
       yoy: ratios.length ? ratios[Math.floor(ratios.length / 2)] : null,   // median, not mean
+      recent: lastN.length ? mean(lastN) : null,
       low: ratios.length ? ratios[0] : null,
       high: ratios.length ? ratios[ratios.length - 1] : null,
       n: ratios.length,
@@ -577,10 +589,16 @@ var DLforecast = (function () {
 
      The band drawn around them is separate, and comes from measured backtest
      error rather than from these. */
+  /* Three rungs on one ladder. Growth enters the model in two places — the
+     trend the level follows across the horizon, and the year-on-year factor on
+     last year's same days — and each scenario picks one measured rate for both:
+     the median like-for-like month (realistic), the best one ever recorded
+     (optimistic), or none (pessimistic). Backtested, the three bracket the
+     truth: bias -7% / -1% / -16% at 30 days. */
   const SCENARIOS = {
-    realistic:   { driftFrom: 'recent', eventScale: 1.00 },
-    optimistic:  { driftFrom: 'yoy',    eventScale: 1.10 },
-    pessimistic: { driftFrom: 'flat',   eventScale: 0.85 },
+    realistic:   { driftFrom: 'yoy',  growthMode: 'median', eventScale: 1.00 },
+    optimistic:  { driftFrom: 'yoy',  growthMode: 'high',   eventScale: 1.10 },
+    pessimistic: { driftFrom: 'flat', growthMode: 'median', eventScale: 0.85 },
   };
 
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -708,27 +726,27 @@ var DLforecast = (function () {
     const LM = opts.levelMode || 'shape';
     const shaper = priorShaper(rows, sparse);
     const lvl = levelOf(rows.filter(r => r.date <= from), dowIdx, season.index, LW, LM, from, shaper, sparse);
-    const prev = levelOf(rows.filter(r => r.date <= addDays(from, -LW)), dowIdx, season.index, LW, LM, addDays(from, -LW), shaper, sparse);
 
-    /* Drift is a growth RATE, so bound it by the growth this business has
-       actually achieved — not by an arbitrary band. The first cut clamped a
-       28-over-28 ratio to +/-10%, which sounds conservative and is not: 1.10
-       every 28 days compounds to x3.46 a year, when the measured range across
-       five like-for-like months is x1.15..x2.02. Pinned at that ceiling it
-       inflated the far end of the horizon by pure compounding, forecasting
-       December 2026 at x2.45 on December 2025 while November — the month that
-       actually grows — sat at x2.25. Nothing about December earns a bigger
-       year-on-year lift than BFCM; that gap was the clamp talking, not the data.
+    /* Drift is the measured annual growth rate, applied as a trend across the
+       horizon: g^(k/365) on day k.
 
-       So the ceiling is the best year-on-year month ever recorded, expressed
-       per 28 days, and the floor is its reciprocal. */
-    const yoyCap = Math.max(growth.high || growth.yoy || 1.3, 1.05);
-    const cap = opts.driftCap || Math.pow(yoyCap, 28 / 365);
-    const recentDrift = (lvl && prev) ? clamp(lvl / prev, 1 / cap, cap) : 1;
-    const yoyDrift = growth.yoy ? Math.pow(growth.yoy, 28 / 365) : 1;   // per 28d
-    const drift = scenario.driftFrom === 'flat' ? 1
-                : scenario.driftFrom === 'yoy'  ? Math.max(recentDrift, yoyDrift)
-                : recentDrift;
+       It used to be a 28-over-28 ratio of the level against the level a month
+       earlier, clamped to the best year-on-year month ever recorded. The
+       ablation study (source/ablate_forecast.js) found that ratio earned
+       nothing — the backtest was marginally BETTER with the level held flat
+       (12.4% vs 12.7% at 30 days) — because a month-over-month ratio on a
+       business with two giant months a year is mostly noise about which side of
+       June you are standing on. The annual rate is the same growth read over a
+       window long enough to mean something, and it scores better still
+       (12.2% / 11.3% / 16.2% at 30 / 60 / 90) while deleting the clamp. */
+    const growthMode = opts.growthMode || scenario.growthMode || 'median';
+    const gPick = growthMode === 'recent' ? (growth.recent || growth.yoy)
+                : growthMode === 'high' ? (growth.high || growth.yoy)
+                : growthMode === 'low' ? (growth.low || growth.yoy)
+                : growth.yoy;
+    const yoyDrift = gPick ? Math.pow(gPick, 28 / 365) : 1;   // per 28d, so the page can show it
+    const driftFrom = opts.driftMode || scenario.driftFrom;
+    const drift = driftFrom === 'flat' ? 1 : yoyDrift;
 
     /* Two independent predictors, blended.
 
@@ -751,14 +769,20 @@ var DLforecast = (function () {
     const priorAt = date => {
       const ly = yearBefore(date);
       let s2 = 0, n = 0;
-      for (let k = -3; k <= 3; k++) {
+      for (let k = -priorSmooth; k <= priorSmooth; k++) {
         const d = addDays(ly, k);
         if (byDate[d] != null && d <= lastSeen) { s2 += byDate[d]; n++; }
       }
-      return n >= 4 ? s2 / n : null;                      // need most of the window, or don't use it
+      return n >= Math.max(1, priorSmooth + 1) ? s2 / n : null;   // need most of the window, or don't use it
     };
-    const priorWeight = clamp(0.65 - 0.003 * horizon, 0.3, 0.65);
-    const gYoY = growth.yoy || 1;
+    /* Overridable so the ablation harness can measure what the blend earns;
+       the default is what backtested best. */
+    const priorWeight = (opts.priorWeight != null) ? opts.priorWeight
+                      : clamp(0.65 - 0.003 * horizon, 0.3, 0.65);
+    const eventThreshold = opts.eventThreshold != null ? opts.eventThreshold : 1.2;
+    const priorSmooth = opts.priorSmooth != null ? opts.priorSmooth : 3;
+    const gYoY = gPick || 1;
+    const eventScale = opts.eventScale != null ? opts.eventScale : scenario.eventScale;
 
     const days = [];
     for (let k = 1; k <= horizon; k++) {
@@ -766,13 +790,13 @@ var DLforecast = (function () {
       const m = monthOf(date);
       let si = season.index[m] || 1;
       // "events land smaller/larger" only touches months that ARE events
-      if (si > 1.2) si = 1 + (si - 1) * scenario.eventScale;
+      if (si > eventThreshold) si = 1 + (si - 1) * eventScale;
       const a = lvl * Math.pow(drift, k / LW) * dowIdx[dow(date)] * si;
       /* Last year's same days are already baseline — the whole series was
          corrected above — so a promotion that ran then is not carried into this
          year's ordinary weeks, and this year's is not multiplied on top of it. */
       const lyRaw = priorAt(date);
-      const b = lyRaw != null ? lyRaw * gYoY * scenario.eventScale : null;
+      const b = lyRaw != null ? lyRaw * gYoY * eventScale : null;
       const w = b != null ? priorWeight : 0;
       const v = ((1 - w) * a + w * (b || 0)) * modAt(date);
       days.push({ date, revenue: v, month: date.slice(0, 7), seasonIndex: si,

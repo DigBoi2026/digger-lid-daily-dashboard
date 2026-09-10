@@ -324,6 +324,132 @@ async function buildGeo(today) {
   };
 }
 
+/* ------------------------------ customers ------------------------------- */
+
+/* Daily net sales and orders split new vs returning, for the Forecast page's
+   customer lens.
+
+   Shopify DOES carry a revenue split by customer type — the dimension is
+   `new_or_returning_customer`, with values 'New' and 'Returning'. (It is not
+   `customer_type`; asking for that returns "column not found", which is how the
+   first cut concluded no split existed and fell back to order counts from the
+   sheet.) The sheet's own New Customer Orders column matches Shopify's
+   new_customers count day for day, so the counts tie to the board; the revenue
+   is net_sales on the same basis as the country lens, so it does not.
+
+   Two dense day-grouped queries rather than one grouped by type: a grouped
+   query drops the (type, day) cells with no sale, and Returning has none on a
+   handful of days. Zero on such a day is a measurement. */
+async function buildCustomers(today) {
+  const since = iso(addDays(today, -730));
+  const until = iso(addDays(today, 1));
+  const q = t => shopifyql(
+    `FROM sales SHOW net_sales, orders WHERE new_or_returning_customer = '${t}' GROUP BY day SINCE ${since} UNTIL ${until} ORDER BY day`);
+  const newRows = await q('New');
+  const retRows = await q('Returning');
+
+  const bucket = rows => {
+    const m = {};
+    (rows || []).forEach(r => {
+      const d = String(r.day || '').slice(0, 10);
+      if (d) m[d] = { net: n2(r.net_sales), orders: +r.orders || 0 };
+    });
+    return m;
+  };
+  const N = bucket(newRows), R = bucket(retRows);
+  const days = [...new Set([...Object.keys(N), ...Object.keys(R)])].sort();
+  const daily = days.map(d => {
+    const a = N[d] || { net: 0, orders: 0 }, b = R[d] || { net: 0, orders: 0 };
+    return { date: d,
+      newNet: a.net, newOrders: a.orders,
+      retNet: b.net, retOrders: b.orders,
+      total: n2(a.net + b.net), totalOrders: a.orders + b.orders };
+  });
+  const sum = k => n2(daily.reduce((x, r) => x + (r[k] || 0), 0));
+  return {
+    meta: {
+      source: 'Shopify · ShopifyQL (net sales by new_or_returning_customer)',
+      currency: 'AUD', asOf: iso(today), since, until, days: daily.length,
+      measure: 'net_sales',
+      caveat: 'Net sales by customer type. Order counts tie to the sheet day for day; ' +
+              'the revenue is Shopify net sales (ex GST, net of refunds) and does not ' +
+              'tie to the P&L, and there is no cost data by customer type, so no profit.',
+      ties_to_pnl: false, orders_tie_to_pnl: true,
+    },
+    totals: { newNet: sum('newNet'), retNet: sum('retNet'), newOrders: sum('newOrders'), retOrders: sum('retOrders') },
+    daily,
+  };
+}
+
+/* ------------------------------- products, daily ------------------------ */
+
+/* Daily net sales for the top products, for the Forecast page's product lens.
+
+   The catalogue is concentrated: the top six lines are ~85% of net sales and
+   the tail is thirty items, gifts-with-purchase at $0, and an untitled bucket.
+   So the lens forecasts the top N as their own series and everything else as
+   one residual, which is dense by construction and sweeps up the $0 GWP lines
+   and refunds that would otherwise fall through.
+
+   One query for the ranking, one for the total, then one per product — WHERE
+   product_title = X GROUP BY day is a dense series; GROUP BY product_title, day
+   is the sparse unbounded grid the country lens already learnt to avoid.
+   Sequenced for the rate limit. */
+const PRODUCT_LENS_TOP = 6;
+async function buildProductsDaily(today) {
+  const since = iso(addDays(today, -730));
+  const until = iso(addDays(today, 1));
+  const yrSince = iso(addDays(today, -365));
+
+  const rank = await shopifyql(
+    `FROM sales SHOW net_sales, orders GROUP BY product_title SINCE ${yrSince} UNTIL ${until} ORDER BY net_sales DESC`);
+  const top = rank
+    .filter(r => r.product_title && String(r.product_title).trim() && n2(r.net_sales) > 0)
+    .filter(r => !/GWP$/i.test(r.product_title))
+    .slice(0, PRODUCT_LENS_TOP)
+    .map((r, i) => ({ key: 'p' + i, title: String(r.product_title), net365: n2(r.net_sales), orders365: +r.orders || 0 }));
+
+  const bucket = rows => {
+    const m = {};
+    (rows || []).forEach(r => {
+      const d = String(r.day || '').slice(0, 10);
+      if (d) m[d] = { net: n2(r.net_sales), orders: +r.orders || 0 };
+    });
+    return m;
+  };
+  const T = bucket(await shopifyql(
+    `FROM sales SHOW net_sales, orders GROUP BY day SINCE ${since} UNTIL ${until} ORDER BY day`));
+  const per = {};
+  for (const p of top) {
+    const lit = p.title.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    per[p.key] = bucket(await shopifyql(
+      `FROM sales SHOW net_sales, orders WHERE product_title = '${lit}' GROUP BY day SINCE ${since} UNTIL ${until} ORDER BY day`));
+  }
+
+  const daily = Object.keys(T).sort().map(d => {
+    const row = { date: d, total: T[d].net, totalOrders: T[d].orders };
+    let acc = 0;
+    top.forEach(p => { const v = per[p.key][d] || { net: 0, orders: 0 }; row[p.key] = v.net; row[p.key + 'Orders'] = v.orders; acc += v.net; });
+    row.other = n2(Math.max(0, T[d].net - acc));        // clamped: a refund can push it under
+    return row;
+  });
+  const sum = k => n2(daily.reduce((x, r) => x + (r[k] || 0), 0));
+  const totals = { total: sum('total'), other: sum('other') };
+  top.forEach(p => totals[p.key] = sum(p.key));
+  return {
+    meta: {
+      source: 'Shopify · ShopifyQL (net sales by product_title)',
+      currency: 'AUD', asOf: iso(today), since, until, days: daily.length,
+      measure: 'net_sales', top: PRODUCT_LENS_TOP,
+      caveat: 'Net sales by product, ex GST and net of refunds — not the P&L revenue, ' +
+              'so it does not tie to the board. "Everything else" is the residual: the ' +
+              'long tail, gifts with purchase at $0, and any refund that outran its sale.',
+      ties_to_pnl: false,
+    },
+    products: top, totals, daily,
+  };
+}
+
 /* -------------------------------- region -------------------------------- */
 async function buildRegion(today) {
   const M = twelveMonths(today);
@@ -375,6 +501,8 @@ module.exports = async (req, res) => {
     const today = new Date(); today.setUTCHours(0, 0, 0, 0);
     const payload = dataset === 'region' ? await buildRegion(today)
                   : dataset === 'geo' ? await buildGeo(today)
+                  : dataset === 'customers' ? await buildCustomers(today)
+                  : dataset === 'productsDaily' ? await buildProductsDaily(today)
                   : await buildProducts(today);
     res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1800');
     res.setHeader('Content-Type', 'application/json');
@@ -401,6 +529,8 @@ module.exports = async (req, res) => {
 module.exports.buildProducts = buildProducts;     // shared with the AI read subsystem
 module.exports.buildRegion = buildRegion;         // shared with the AI read subsystem
 module.exports.buildGeo = buildGeo;               // the Forecast page's country lens
+module.exports.buildCustomers = buildCustomers;   // the Forecast page's customer lens
+module.exports.buildProductsDaily = buildProductsDaily;   // the Forecast page's product lens
 module.exports.categorize = categorize;   // for offline unit testing
 module.exports.accessToken = accessToken;         // for offline unit testing
 module.exports.storeDomain = storeDomain;         // for offline unit testing

@@ -1137,7 +1137,7 @@ function loadMods() {
    drift out of date the way a written page would. */
 
 const SYM = {
-  L: 'run rate', g: 'drift', D: 'weekday', S: 'month',
+  L: 'run rate', g: 'growth trend', D: 'weekday', S: 'month',
   Y: 'year on year', M: 'modifiers', w: 'blend',
   c: 'contribution', a: 'ad rate', F: 'fixed cost',
 };
@@ -1303,8 +1303,8 @@ function renderNotesMaths(p) {
     }).join('')}
 
     <!-- D, S and L feed A; Y feeds B. That is exactly what the formula says, and
-         a fifth arrow from Y into A (the drift cap) would be true but would cost
-         more legibility than it buys — the symbol table carries it instead. -->
+         a fifth arrow from Y into A (g is the same rate as Y) would be true but
+         would cost more legibility than it buys — the symbol table carries it. -->
     ${[0, 1, 3].map(i => elbow(GUT + i * STEP + BW / 2, 220, 225, 262)).join('')}
     ${elbow(GUT + 2 * STEP + BW / 2, 220, 555, 262)}
 
@@ -1335,7 +1335,7 @@ function renderNotesMaths(p) {
     ['L', money(p.level), 'run rate a day, season and weekday out, ' +
        (lc ? esc(lc.name) + ' out' : 'no sale period in the window')],
     ['g', 'x' + p.drift.toFixed(3), 'per 28 days · x' + Math.pow(p.drift, 365 / 28).toFixed(2) +
-       ' a year, capped at your best YoY month'],
+       ' a year — your measured year-on-year rate, applied as a trend'],
     ['k', '1…' + p.horizon, 'days ahead'],
     ['D', rng(dowVals), 'weekday · Mon–Wed high, Sat low'],
     ['S', rng(seaVals), 'month · Jan ' + b.season.index[1].toFixed(2) +
