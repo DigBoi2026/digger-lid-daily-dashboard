@@ -339,7 +339,80 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 /* The forecast page carries more explanation per pixel than the others — a
    number without its basis is worse than no number — so it gives the bottom
    row more height and the KPI strip less. */
-#stage.forecast-stage{grid-template-rows:9cqh 18cqh minmax(0,1fr) 27cqh 2.8cqh}
+/* The chart is the page, so the middle row takes what the others do not need:
+   a shorter KPI strip and a shorter bottom row than the other boards use. */
+#stage.forecast-stage{grid-template-rows:9cqh 14.5cqh minmax(0,1fr) 21cqh 2.8cqh}
+/* The explanation replaces all three content rows rather than floating over
+   them — it is a view of this page, not an interruption to it. */
+#stage.forecast-stage.view-explain{grid-template-rows:9cqh minmax(0,1fr) 2.8cqh}
+.view-explain #kpis,.view-explain #main,.view-explain #bottom{display:none}
+#explain{grid-row:2;display:flex;flex-direction:column;min-height:0;
+  background:linear-gradient(180deg,var(--panel),#1c191a);border:1px solid var(--line);
+  border-radius:1cqh;padding:1.2cqh 1.4cqw}
+#explain[hidden]{display:none}
+
+/* Rails either side of the chart. */
+.forecast-stage #main{grid-template-columns:20% 1fr 20.5%;gap:.9cqw}
+.rail{display:flex;flex-direction:column;gap:.9cqh;min-height:0}
+.rail .panel{padding:.9cqh 1cqw}
+.rail .scenpanel{flex:1 1 auto;min-height:0}
+.rail .minipanel{flex:1 1 auto;min-height:0}
+/* The left rail is one tall panel plus a three-cell strip, so the strip takes
+   only what it needs and the scenarios get the rest. The right rail's three
+   panels do share equally. */
+#railL .minipanel{flex:0 0 auto}
+.rail .minipanel .p-title{font-size:1.25cqh;letter-spacing:.1em}
+.chartpanel{min-width:0}
+.forecast-stage #chartWrap{flex:1;min-height:0;position:relative}
+
+/* A key, because five things are drawn and two of them are different KINDS of
+   uncertainty — a scenario range and a measured error. */
+.chartkey{display:flex;flex-wrap:wrap;gap:.2cqh .8cqw;font-size:1.05cqh;color:var(--muted)}
+.chartkey .k{display:flex;align-items:center;gap:.3cqw;white-space:nowrap}
+.chartkey .k::before{content:"";width:1.4cqw;height:0;border-top-width:2px;border-top-style:solid;
+  border-color:var(--dl-yellow);flex:0 0 auto}
+.chartkey .real::before{border-top-style:dashed}
+.chartkey .fan::before{height:.9cqh;border:0;background:rgba(245,235,25,.16);
+  outline:1px solid rgba(245,235,25,.4)}
+.chartkey .env::before{border-top-style:dotted;border-color:var(--muted)}
+.chartkey .sale::before{height:.9cqh;border:0;background:rgba(245,235,25,.10);
+  outline:1px solid rgba(245,235,25,.25)}
+
+/* Mini bar charts in the rail: twelve values do not need a charting library. */
+/* Twelve rows in a short panel, so nothing may be taller than its own track.
+   A label at 1cqh with default line-height is about 1.2cqh, which is taller
+   than the 1.05cqh bar beside it — invisible at 1920 and 3px of clipping per
+   row at 1440, which is 36px across the panel. line-height:1 pins each row to
+   its bar, and the scroll is there as a valve rather than as the plan. */
+.minibars{display:flex;flex-direction:column;justify-content:space-between;flex:1;min-height:0;
+  gap:.1cqh;overflow-y:auto;scrollbar-gutter:stable}
+.mb{flex:0 0 auto;display:grid;grid-template-columns:2.6cqw 1fr 2.6cqw;align-items:center;gap:.4cqw}
+.mb-l{font-size:1cqh;line-height:1;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.mb-v{font-size:1cqh;line-height:1;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.mb-t{position:relative;height:1.05cqh;background:var(--panel-2);border-radius:.3cqh;overflow:visible}
+.mb-t i{position:absolute;left:0;top:0;bottom:0;border-radius:.3cqh;background:rgba(245,235,25,.45)}
+/* A month fitted on a single year is drawn hollow: the sample size travels with
+   the figure instead of sitting in a footnote. */
+.mb.thin .mb-t i{background:repeating-linear-gradient(45deg,rgba(245,235,25,.42),
+  rgba(245,235,25,.42) 2px,transparent 2px,transparent 4px)}
+.mb.hi .mb-t i{background:var(--dl-yellow)}
+.mb.hi.thin .mb-t i{background:repeating-linear-gradient(45deg,var(--dl-yellow),
+  var(--dl-yellow) 2px,rgba(245,235,25,.25) 2px,rgba(245,235,25,.25) 4px)}
+.mb.hi .mb-l,.mb.hi .mb-v{color:var(--dl-white)}
+.mb.none .mb-t{background:repeating-linear-gradient(45deg,#2b2627,#2b2627 3px,#211d1e 3px,#211d1e 6px)}
+.mb-t u{position:absolute;top:-.2cqh;bottom:-.2cqh;width:1px;background:rgba(255,255,255,.45)}
+
+/* Where $100 goes, on the map. */
+.hundredwrap{flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable;
+  display:flex;flex-direction:column;justify-content:flex-start}
+.hundredwrap .h100{flex:0 0 auto}
+.h100-foot{flex:0 0 auto;font-size:1cqh;color:var(--muted);line-height:1.35;margin-top:.3cqh}
+.h100-foot b{color:var(--dl-white)}
+.h100.compact .h100-key{font-size:.95cqh}
+
+/* Four panels along the bottom now. */
+.forecast-stage #bottom{grid-template-columns:1.25fr .95fr 1.05fr 1.05fr}
+.forecast-stage #bottom .panel:nth-child(2) .p-title{font-size:1.3cqh;letter-spacing:.1em}
 .forecast-stage .daynav{justify-self:center;gap:.5cqw}
 .forecast-stage .seg.small button{font-size:1.15cqh;letter-spacing:.06em}
 .forecast-stage .kpi .k-val{font-size:3.1cqh}
@@ -434,26 +507,10 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .bwarn b{color:var(--warn);text-transform:uppercase;letter-spacing:.08em}
 
 /* -- how it works: an overlay, because the detail deserves room -- */
-.infobtn{background:var(--panel);border:1px solid var(--line);color:var(--muted);
-  border-radius:50%;width:2.4cqh;height:2.4cqh;font-family:var(--font-head);font-weight:700;
-  font-size:1.3cqh;cursor:pointer;line-height:1;flex-shrink:0}
-.infobtn:hover{color:var(--dl-yellow);border-color:var(--dl-yellow)}
-/* `display:flex` in a class rule outranks the browser's [hidden]{display:none},
-   so a hidden overlay stayed laid out and swallowed every click on the header
-   behind it. Say it explicitly. */
-.notes[hidden]{display:none}
-.notes{position:absolute;left:1.6cqw;right:1.6cqw;top:50%;transform:translateY(-50%);
-  height:auto;max-height:calc(100% - 3.2cqh);z-index:40;display:flex;flex-direction:column;
-  background:linear-gradient(180deg,#221e1f,#171415);border:1px solid var(--line);
-  border-radius:1cqh;box-shadow:0 30px 80px rgba(0,0,0,.7);padding:1.4cqh 1.6cqw;min-height:0}
-.notes-head{display:flex;justify-content:space-between;align-items:baseline;flex:0 0 auto;
+.notes-head{display:flex;justify-content:flex-start;align-items:baseline;flex:0 0 auto;gap:1.5cqw;
   padding-bottom:.9cqh;border-bottom:1px solid var(--line)}
 .notes-head .p-title{font-size:2cqh}
-.notes-head button{background:transparent;border:1px solid var(--line);color:var(--muted);
-  border-radius:.5cqh;font-family:var(--font-head);font-size:1.2cqh;text-transform:uppercase;
-  letter-spacing:.1em;padding:.35cqh .8cqw;cursor:pointer}
-.notes-head button:hover{color:var(--dl-yellow);border-color:var(--dl-yellow)}
-.notes-head .seg{margin:0 auto 0 1.5cqw}
+.notes-head .seg{margin:0}
 /* Two columns in both modes: steps beside the money picture, or the diagram
    beside the arithmetic. */
 .notes-body{flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable;margin-top:1cqh;

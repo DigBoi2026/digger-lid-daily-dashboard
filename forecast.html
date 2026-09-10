@@ -30,9 +30,11 @@
       </div>
 
       <div class="daynav">
-        <div class="datebox">
-          <div class="d" id="navDate">—</div>
-          <div class="dow" id="navDow">forecast from</div>
+        <!-- Two views of one page. The map is where you land; the explanation is
+             a click away rather than buried behind an icon. -->
+        <div class="seg small" id="viewSeg" role="group" aria-label="Select view">
+          <button data-view="map" class="active">THE MAP</button>
+          <button data-view="explain">HOW IT WORKS</button>
         </div>
         <div class="seg small" id="horSeg" role="group" aria-label="Select horizon" title="How far ahead to forecast">
           <button data-hor="30" aria-label="Next 30 days">30D</button>
@@ -44,11 +46,10 @@
 
       <div class="status">
         <div class="freshness">
-          <div class="lbl">Data through</div>
-          <div class="val" id="throughVal">—</div>
+          <div class="lbl">Forecast from</div>
+          <div class="val" id="navDate">—</div>
           <div class="pend" id="pendNote" hidden></div>
         </div>
-        <button class="infobtn" id="infoBtn" title="How this forecast works" aria-label="How this forecast works">?</button>
         <div class="livepill" id="livePill" title="Data source status">
           <span class="dot snap" id="liveDot"></span>
           <span id="liveText">Snapshot</span>
@@ -56,39 +57,56 @@
       </div>
     </header>
 
-    <!-- KPI STRIP -->
+    <!-- ============ VIEW 1 — THE MAP ============ -->
     <section id="kpis"></section>
 
-    <!-- MAIN -->
+    <!-- The chart is the point of this page, so it gets the whole middle and
+         everything else is a rail beside it. -->
     <section id="main">
-      <div class="panel">
-        <div class="p-head">
-          <div class="p-title">Three <span>Scenarios</span></div>
-          <div class="p-note" id="scenNote">—</div>
+      <div class="rail" id="railL">
+        <div class="panel scenpanel">
+          <div class="p-head">
+            <div class="p-title">Three <span>Scenarios</span></div>
+            <div class="p-note" id="scenNote">—</div>
+          </div>
+          <div class="scenlist" id="scenList"></div>
         </div>
-        <div class="scenlist" id="scenList"></div>
-        <div class="eq-foot three">
-          <div class="eq-cell"><div class="l">Breakeven</div><div class="v" id="beVal">—</div><div class="s" id="beSub">—</div></div>
-          <div class="eq-cell"><div class="l">Error · 30d</div><div class="v" id="acc30">—</div><div class="s" id="acc30Sub">—</div></div>
-          <div class="eq-cell"><div class="l">Error · 90d</div><div class="v" id="acc90">—</div><div class="s" id="acc90Sub">—</div></div>
+        <div class="panel minipanel">
+          <div class="eq-foot three">
+            <div class="eq-cell"><div class="l">Breakeven</div><div class="v" id="beVal">—</div><div class="s" id="beSub">—</div></div>
+            <div class="eq-cell"><div class="l">Error · 30d</div><div class="v" id="acc30">—</div><div class="s" id="acc30Sub">—</div></div>
+            <div class="eq-cell"><div class="l">Error · 90d</div><div class="v" id="acc90">—</div><div class="s" id="acc90Sub">—</div></div>
+          </div>
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel chartpanel">
         <div class="p-head">
-          <div class="p-title">Revenue <span id="chartSpan">· forecast</span></div>
-          <div class="p-note" id="chartNote">7-day average · shaded band is measured backtest error</div>
+          <div class="p-title">Forecast <span id="chartSpan">Map</span></div>
+          <div class="chartkey" id="chartKey"></div>
         </div>
         <div id="chartWrap"><canvas id="fcChart"></canvas></div>
       </div>
+
+      <div class="rail" id="railR">
+        <div class="panel minipanel">
+          <div class="p-head"><div class="p-title">Shape of the <span>Year</span></div>
+            <div class="p-note" id="seasonNote">—</div></div>
+          <div class="minibars" id="seasonBars"></div>
+        </div>
+        <div class="panel minipanel">
+          <div class="p-head"><div class="p-title">Growth <span>vs Last Year</span></div>
+            <div class="p-note" id="growthNote">—</div></div>
+          <div class="minibars" id="growthBars"></div>
+        </div>
+        <div class="panel minipanel">
+          <div class="p-head"><div class="p-title">The <span>Week</span></div>
+            <div class="p-note" id="dowNote">—</div></div>
+          <div class="minibars" id="dowBars"></div>
+        </div>
+      </div>
     </section>
 
-    <!-- BOTTOM -->
-    <!-- Four panels, because these are four different kinds of claim. The
-         seasonality is fitted and not optional; a sale period is measured from
-         the book and can be re-sized for a year still ahead; a modifier is the
-         user's own assertion about the future. Each caveat sits in the panel it
-         qualifies rather than in a shared dumping ground. -->
     <section id="bottom">
       <div class="panel">
         <div class="p-head"><div class="p-title">Month by <span>Month</span></div>
@@ -97,10 +115,9 @@
       </div>
 
       <div class="panel">
-        <div class="p-head"><div class="p-title">Seasonal <span>Trend</span></div>
-          <div class="p-note" id="seasonNote">fitted · not optional</div></div>
-        <div class="ptable" id="seasonTable"></div>
-        <div id="seasonWarn"></div>
+        <div class="p-head"><div class="p-title">Every $100 of <span>Sales</span></div>
+          <div class="p-note" id="hundredNote">last 30 complete days</div></div>
+        <div class="hundredwrap" id="hundredWrap"></div>
       </div>
 
       <div class="panel">
@@ -126,25 +143,22 @@
       </div>
     </section>
 
-    <footer id="foot">
-      <div id="footSource">—</div>
-      <div id="footNote">Read-only · forecast, not a commitment</div>
-    </footer>
-
-    <!-- How it works. Detail this long does not fit a panel on a fixed stage,
-         and it should not have to compete with the numbers for room — so it
-         lives behind the ? in the header and fills the board when opened. -->
-    <div class="notes" id="notes" hidden>
+    <!-- ============ VIEW 2 — HOW IT WORKS ============ -->
+    <section id="explain" hidden>
       <div class="notes-head">
         <div class="p-title">How this <span>Forecast</span> Works</div>
         <div class="seg small" id="notesSeg" role="group" aria-label="Level of detail">
           <button data-mode="simple" class="active">PLAIN ENGLISH</button>
           <button data-mode="detail">THE MATHS</button>
         </div>
-        <button id="notesClose" aria-label="Close">Close ✕</button>
       </div>
-      <div class="notes-body" id="notesBody"></div>
-    </div>
+      <div class="notes-body plain" id="notesBody"></div>
+    </section>
+
+    <footer id="foot">
+      <div id="footSource">—</div>
+      <div id="footNote">Read-only · forecast, not a commitment</div>
+    </footer>
 
     <div class="err" id="errBox">
       <div><h2>No data loaded</h2><p>Couldn't find <code>data.js</code>.</p></div>

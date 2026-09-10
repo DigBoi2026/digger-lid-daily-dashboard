@@ -23,7 +23,7 @@ const EDIT_KEY = 'dl_forecast_sale_edit';     // and lifts they have re-sized
 
 const S = { scen: 'realistic', hor: 90, live: 'snap',
             mods: [], saleOff: [], saleEdit: {}, sale: [], ceiling: null,
-            notesMode: 'simple' };
+            notesMode: 'simple', view: 'map' };
 let DATA = window.DL_DATA || null;
 const PRIOR = window.DL_PRIOR || null;
 let CHART = null;
@@ -200,7 +200,7 @@ function renderScenarios(ctx) {
 
   const p = ctx.scen[S.scen];
   document.getElementById('scenNote').textContent =
-    'spread ' + money(ctx.scen.optimistic.total - ctx.scen.pessimistic.total, true) + ' of revenue';
+    'spread ' + money(ctx.scen.optimistic.total - ctx.scen.pessimistic.total, true);
   document.getElementById('beVal').textContent = p.breakevenPerDay ? money(p.breakevenPerDay, true) + '/d' : '—';
   document.getElementById('beSub').textContent = p.pnl
     ? 'to cover ads + ' + money(p.pnl.fcPerDay, true) + ' fixed' : '';
@@ -221,51 +221,126 @@ function smooth(vals, n) {
   });
 }
 
+/* THE MAP.
+
+   All three scenarios at once, because the honest answer to "what will November
+   be" is a range and drawing one line invites it to be read as a number. The
+   filled fan between pessimistic and optimistic is the scenario spread — three
+   assumptions about growth. The dotted envelope outside it is something
+   different and worth keeping separate: the error this model actually made when
+   walked forward through the same book. They are not the same claim, and on this
+   business the measured error is the wider of the two, which is itself worth
+   seeing.
+
+   Sale-period windows are shaded and today is marked, so the shape reads as a
+   map of the year ahead rather than a line that happens to bend. */
 function renderChart(p, ctx) {
   const wrap = document.getElementById('chartWrap');
   const cv = document.getElementById('fcChart');
   if (!cv || !wrap.clientHeight) return;
   if (typeof Chart === 'undefined') {
-    document.getElementById('chartNote').textContent = 'chart library unavailable — the numbers below are unaffected';
+    document.getElementById('chartKey').textContent = 'chart library unavailable — the numbers around it are unaffected';
     return;
   }
-  const HIST = 56;
+  const HIST = 70, SM = 7;
   const hist = ctx.list.filter(r => r.date <= p.from).slice(-HIST);
   const labels = hist.map(r => r.date).concat(p.days.map(d => d.date));
-  const actual = smooth(hist.map(r => r.revenue), 7);
+  const actual = smooth(hist.map(r => r.revenue), SM);
+  const join = actual[actual.length - 1];
   const pad = new Array(hist.length - 1).fill(null);
 
-  const fc = smooth(hist.slice(-6).map(r => r.revenue).concat(p.days.map(d => d.revenue)), 7).slice(6);
-  const fcSeries = pad.concat([actual[actual.length - 1]], fc);
+  /* Each forecast line is smoothed with the last six ACTUAL days in front of
+     it, then those are dropped — otherwise the first week of the forecast is
+     averaged over a short window and starts with a step. */
+  const tail = hist.slice(-(SM - 1)).map(r => r.revenue);
+  const line = days => smooth(tail.concat(days.map(d => d.revenue)), SM).slice(SM - 1);
+  const real = line(p.days);
+  const opt = line(ctx.scen.optimistic.days);
+  const pess = line(ctx.scen.pessimistic.days);
 
   const b = BT && BT[nearestHorizon(p.horizon)];
-  const lo = b ? fc.map(v => v * (1 + b.p10)) : null;
-  const hi = b ? fc.map(v => v * (1 + b.p90)) : null;
+  const lo = b ? real.map(v => v * (1 + b.p10)) : null;
+  const hi = b ? real.map(v => v * (1 + b.p90)) : null;
+  const fwd = a => pad.concat([join], a);
 
+  const Y = 'rgba(245,235,25,';
   const ds = [];
+  // the scenario fan, drawn first so every line sits on top of it
+  ds.push({ label: 'Pessimistic', data: fwd(pess), borderColor: Y + '0.45)',
+            borderWidth: 1.4, pointRadius: 0, tension: .3, fill: '+1',
+            backgroundColor: Y + '0.13)' });
+  ds.push({ label: 'Optimistic', data: fwd(opt), borderColor: Y + '0.45)',
+            borderWidth: 1.4, pointRadius: 0, tension: .3, fill: false });
   if (lo) {
-    ds.push({ label: 'low', data: pad.concat([actual[actual.length - 1]], lo), borderWidth: 0,
-      pointRadius: 0, backgroundColor: 'rgba(245,235,25,0.10)', fill: '+1' });
-    ds.push({ label: 'high', data: pad.concat([actual[actual.length - 1]], hi), borderWidth: 0,
-      pointRadius: 0, fill: false });
+    ds.push({ label: 'Measured low', data: fwd(lo), borderColor: 'rgba(179,171,172,0.42)',
+              borderWidth: 1, borderDash: [2, 3], pointRadius: 0, tension: .3, fill: false });
+    ds.push({ label: 'Measured high', data: fwd(hi), borderColor: 'rgba(179,171,172,0.42)',
+              borderWidth: 1, borderDash: [2, 3], pointRadius: 0, tension: .3, fill: false });
   }
   ds.push({ label: 'Actual', data: actual.concat(new Array(p.days.length).fill(null)),
-    borderColor: 'rgba(245,235,25,0.95)', borderWidth: 2.4, pointRadius: 0, tension: .3, fill: false });
-  ds.push({ label: 'Forecast', data: fcSeries, borderColor: 'rgba(245,235,25,0.95)',
-    borderDash: [5, 4], borderWidth: 2.4, pointRadius: 0, tension: .3, fill: false });
+            borderColor: Y + '0.95)', borderWidth: 2.6, pointRadius: 0, tension: .3, fill: false });
+  ds.push({ label: 'Realistic', data: fwd(real), borderColor: Y + '0.95)',
+            borderDash: [6, 4], borderWidth: 2.6, pointRadius: 0, tension: .3, fill: false });
+
+  /* Shading and markers, drawn straight onto the canvas rather than pulled in
+     as an annotation plugin — three shapes do not justify another dependency. */
+  const bands = activeSale()
+    .filter(m => m.start <= labels[labels.length - 1] && (m.paybackEnd || m.end) >= labels[0])
+    .map(m => ({ name: m.name, start: m.start, end: m.end, pbEnd: m.paybackEnd }));
+  const marker = {
+    id: 'dlmarks',
+    beforeDatasetsDraw(ch) {
+      const { ctx: c, chartArea: ar, scales } = ch;
+      const at = d => { const i = labels.indexOf(d); return i < 0 ? null : scales.x.getPixelForValue(i); };
+      c.save();
+      bands.forEach(bd => {
+        const x1 = at(bd.start), x2 = at(bd.end);
+        if (x1 != null && x2 != null) {
+          c.fillStyle = 'rgba(245,235,25,0.07)';
+          c.fillRect(x1, ar.top, x2 - x1, ar.bottom - ar.top);
+          c.fillStyle = 'rgba(245,235,25,0.55)';
+          c.font = '600 9px system-ui, sans-serif';
+          c.fillText(bd.name.replace(/ \d{4}$/, ''), x1 + 3, ar.top + 10);
+        }
+        const x3 = at(bd.pbEnd);
+        if (x2 != null && x3 != null) {
+          /* Lighter than the run-up, and labelled: an unlabelled red wash over
+             three weeks of the chart reads as an error region rather than as
+             the demand that was pulled forward out of it. */
+          c.fillStyle = 'rgba(255,90,82,0.045)';
+          c.fillRect(x2, ar.top, x3 - x2, ar.bottom - ar.top);
+          c.fillStyle = 'rgba(255,90,82,0.5)';
+          c.font = '600 9px system-ui, sans-serif';
+          c.fillText('payback', x2 + 3, ar.top + 10);
+        }
+      });
+      const xt = at(p.from);
+      if (xt != null) {
+        c.strokeStyle = 'rgba(255,255,255,0.35)'; c.lineWidth = 1; c.setLineDash([4, 3]);
+        c.beginPath(); c.moveTo(xt, ar.top); c.lineTo(xt, ar.bottom); c.stroke();
+        c.setLineDash([]);
+        c.fillStyle = 'rgba(255,255,255,0.55)';
+        c.font = '600 9px system-ui, sans-serif';
+        c.fillText('today', xt + 4, ar.bottom - 4);
+      }
+      c.restore();
+    },
+  };
 
   if (CHART) CHART.destroy();
   const grid = 'rgba(255,255,255,0.06)', tick = 'rgba(179,171,172,0.8)';
   CHART = new Chart(cv.getContext('2d'), {
     type: 'line',
     data: { labels, datasets: ds },
+    plugins: [marker],
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
         tooltip: {
-          filter: i => i.dataset.label === 'Actual' || i.dataset.label === 'Forecast',
+          filter: i => i.dataset.label !== 'Measured low' && i.dataset.label !== 'Measured high',
+          itemSort: (a, z) => z.parsed.y - a.parsed.y,
           callbacks: {
             title: it => niceFull(it[0].label),
             label: i => i.dataset.label + ': ' + money(i.parsed.y, true) + '/day',
@@ -273,17 +348,106 @@ function renderChart(p, ctx) {
         },
       },
       scales: {
-        x: { grid: { color: grid }, ticks: { color: tick, maxTicksLimit: 8,
+        x: { grid: { color: grid }, ticks: { color: tick, maxTicksLimit: 10,
              callback(v) { const d = this.getLabelForValue(v); return d ? isoToNice(d) : ''; } } },
         y: { grid: { color: grid }, ticks: { color: tick, callback: v => money(v, true) }, beginAtZero: true },
       },
     },
   });
+
   document.getElementById('chartSpan').textContent =
-    '· ' + isoToNice(hist[0].date) + ' → ' + isoToNice(p.days[p.days.length - 1].date);
-  document.getElementById('chartNote').textContent = b
-    ? '7-day average · band is the measured p10–p90 backtest error at ' + nearestHorizon(p.horizon) + ' days'
-    : '7-day average · measuring the error band…';
+    'Map · ' + isoToNice(hist[0].date) + ' → ' + isoToNice(p.days[p.days.length - 1].date);
+  document.getElementById('chartKey').innerHTML =
+    `<span class="k act">Actual</span><span class="k real">Realistic</span>
+     <span class="k fan">Scenario range</span>
+     ${b ? '<span class="k env">Measured error at ' + nearestHorizon(p.horizon) + 'd</span>' : ''}
+     ${bands.length ? '<span class="k sale">Sale period</span>' : ''}`;
+}
+
+/* ------------------------------------------------------ trends, in the rail */
+
+/* Three small bar charts rather than three tables. They answer "when is the
+   business big", "is it still growing" and "which days matter" at a glance, and
+   at a glance is what a rail is for. Plain divs: a bar chart of twelve values
+   does not need a charting library. */
+function miniBars(el, rows, opts) {
+  opts = opts || {};
+  const vals = rows.map(r => r.value).filter(v => v != null);
+  if (!vals.length) { el.innerHTML = ''; return; }
+  const max = Math.max.apply(null, vals.concat(opts.floor != null ? [opts.floor] : []));
+  const base = opts.base != null ? opts.base : 0;
+  el.innerHTML = rows.map(r => {
+    if (r.value == null) {
+      return `<div class="mb none" title="${esc(r.label)}: no history">
+        <div class="mb-l">${esc(r.label)}</div><div class="mb-t"><i style="width:0"></i></div>
+        <div class="mb-v">—</div></div>`;
+    }
+    const w = Math.max(1.5, (r.value - base) / (max - base) * 100);
+    return `<div class="mb${r.hi ? ' hi' : ''}${r.thin ? ' thin' : ''}" title="${esc(r.title || r.label)}">
+      <div class="mb-l">${esc(r.label)}</div>
+      <div class="mb-t"><i style="width:${w.toFixed(1)}%"></i>${
+        opts.mark != null ? `<u style="left:${((opts.mark - base) / (max - base) * 100).toFixed(1)}%"></u>` : ''}</div>
+      <div class="mb-v">${esc(r.text)}</div></div>`;
+  }).join('');
+}
+
+function renderTrends(p, ctx) {
+  const b = p.basis;
+  const inHor = new Set(p.months.map(m => +m.month.slice(5, 7)));
+
+  /* Shape of the year. Thin bars are the months fitted on a single year — the
+     sample size travels with the figure rather than in a footnote. */
+  const srows = [];
+  let thin = 0;
+  for (let m = 1; m <= 12; m++) {
+    const n = b.season.observations[m] || 0;
+    if (n <= 1) thin++;
+    srows.push({ label: MONTH_ABBR[m - 1], value: n ? b.season.index[m] : null,
+                 text: n ? b.season.index[m].toFixed(2) : '—', hi: inHor.has(m), thin: n <= 1,
+                 title: MONTH_ABBR[m - 1] + ': ' + (n ? b.season.index[m].toFixed(2) + 'x an average month' : 'no history') +
+                        ' · ' + n + ' year' + (n === 1 ? '' : 's') + ' observed' });
+  }
+  miniBars(document.getElementById('seasonBars'), srows, { mark: 1 });
+  document.getElementById('seasonNote').textContent =
+    thin + ' of 12 on one year' + (inHor.size ? ' · ' + inHor.size + ' in horizon' : '');
+
+  /* Growth. Whole months only, like for like.
+
+     These are the REPORTED figures — what the sheet says each month did — and a
+     month a sale period ran in will read higher than the growth the forecast
+     uses, because the forecast measures growth on the promotion-corrected
+     series. August 2026 reports x2.02 and the model's range tops out at x1.77
+     for exactly that reason. Rather than quietly show one number and use the
+     other, the affected months are marked and the note names them. */
+  const g = b.growth;
+  const lifted = {};
+  activeSale().forEach(m => {
+    for (let d = m.start; d <= (m.paybackEnd || m.end); d = F.addDays(d, 1)) lifted[d.slice(0, 7)] = m.name;
+  });
+  const liftedMonths = [];
+  const grows = ctx.yoy.filter(r => r.yoy != null).slice(-8).map(r => {
+    const sale = lifted[r.month];
+    if (sale) liftedMonths.push(MONTH_ABBR[+r.month.slice(5, 7) - 1]);
+    return { label: monthLabel(r.month), value: r.yoy, text: 'x' + r.yoy.toFixed(2),
+             thin: !!sale,
+             title: monthLabel(r.month) + ': ' + money(r.revenue, true) + ' vs ' +
+                    money(r.priorYear, true) + ' last year' +
+                    (sale ? ' · lifted by ' + sale + ', so the model reads it lower' : '') };
+  });
+  miniBars(document.getElementById('growthBars'), grows, { base: 1, mark: g.yoy || 1 });
+  document.getElementById('growthNote').textContent = g.yoy
+    ? 'model uses x' + g.yoy.toFixed(2) +
+      (liftedMonths.length ? ' · ' + liftedMonths.join(', ') + ' sale-lifted' : ' · ' + g.n + ' months')
+    : 'not enough history';
+
+  const dn = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const drows = [1, 2, 3, 4, 5, 6, 0].map(i => ({
+    label: dn[i], value: b.dowIdx[i], text: b.dowIdx[i].toFixed(2),
+    title: dn[i] + ': ' + b.dowIdx[i].toFixed(2) + 'x an average day' }));
+  miniBars(document.getElementById('dowBars'), drows, { mark: 1 });
+  const vals = Object.keys(b.dowIdx).map(k => b.dowIdx[k]);
+  document.getElementById('dowNote').textContent =
+    'spread ' + Math.min.apply(null, vals).toFixed(2) + '–' + Math.max.apply(null, vals).toFixed(2);
 }
 
 /* ------------------------------------------------------------ month table */
@@ -330,43 +494,87 @@ function renderMonths(p, ctx) {
     'vs the same dates last year · ' + S.scen;
 }
 
-/* ------------------------------------------------------ seasonal trend */
+/* ------------------------------------------------- where every $100 goes */
 
-/* The fitted baseline, month by month. Not a control: there is no switching
-   this off, because it is not an adjustment to the forecast — it IS the
-   forecast's shape. Shown in full rather than only for the horizon, because the
-   number a reader needs to judge November is how many Novembers there were. */
-function renderSeason(p) {
-  const el = document.getElementById('seasonTable');
-  const s = p.basis.season;
-  const inHor = new Set(p.months.map(m => +m.month.slice(5, 7)));
-  const byMonth = {};
-  F.EVENTS.forEach(e => { if (e.via === 'index') byMonth[e.month] = e.name; });
-  const rowsHtml = [];
-  for (let m = 1; m <= 12; m++) {
-    const n = s.observations[m] || 0;
-    const idx = s.index[m];
-    const conf = n >= 2 ? '<span class="cf ok">2 yrs</span>'
-               : n === 1 ? '<span class="cf thin">1 yr</span>'
-               : '<span class="cf none">none</span>';
-    rowsHtml.push(`<div class="trow${inHor.has(m) ? ' hit' : ''}">
-      <div class="c1">${MONTH_ABBR[m - 1]}</div>
-      <div class="c2">${n ? idx.toFixed(2) : '—'}</div>
-      <div class="c3">${byMonth[m] ? esc(byMonth[m]) : ''}</div>
-      <div class="c4">${conf}</div>
-    </div>`);
-  }
-  el.innerHTML = `<div class="thead"><div class="c1">Month</div><div class="c2">Index</div>
-      <div class="c3">Why</div><div class="c4">Basis</div></div>${rowsHtml.join('')}`;
+/* The single most useful picture on this page, and the only one that needs no
+   model at all: five costs as shares of a hundred dollars of sales.
 
-  const thin = [];
-  for (let m = 1; m <= 12; m++) if ((s.observations[m] || 0) <= 1) thin.push(MONTH_ABBR[m - 1]);
-  document.getElementById('seasonWarn').innerHTML =
-    `<div class="bwarn"><b>One year only:</b> ${esc(thin.join(', '))}. November matters most —
-       the year-end number leans on it, and no backtest reaches it, because no origin in
-       the data has a horizon that gets to October.</div>`;
-  document.getElementById('seasonNote').textContent =
-    (p.basis.season.cells || 0) + ' months fitted';
+   Computed from ACTUAL rows, not the forecast. Pending days are excluded — a
+   day with revenue typed but ad spend not yet would show ads at zero and
+   flatter the whole bar, which is the same trap that once produced an 18%
+   margin on a day whose real margin was about -25%.
+
+   Fixed cost is the one segment that does not scale, so its share is the whole
+   story: it takes 16c of a dollar on a quiet day and 6c in November, and that
+   is why this business makes its year in two months. */
+function hundredOf(rows) {
+  const usable = rows.filter(r => r.revenue > 0 && !r.pending && r.totalFC != null);
+  if (!usable.length) return null;
+  const S = k => usable.reduce((a, r) => a + (+r[k] || 0), 0);
+  const rev = S('revenue');
+  if (!rev) return null;
+  const gst = (rev - S('revExGst')) / rev * 100;
+  const variable = S('totalVC') / rev * 100;
+  const ads = S('totalAds') / rev * 100;
+  const fixed = S('totalFC') / rev * 100;
+  return { gst, variable, ads, fixed, profit: 100 - gst - variable - ads - fixed,
+           days: usable.length, revenue: rev, perDay: rev / usable.length,
+           from: usable[0].date, to: usable[usable.length - 1].date };
+}
+
+/* And the same shape from a forecast month, so the explanation can put a
+   November beside a quiet week. */
+function hundredOfMonth(mo, pnl) {
+  if (!mo || !mo.revenue) return null;
+  const gst = (1 - pnl.exGstRate) * 100;
+  const variable = pnl.vcRate * 100;
+  const ads = mo.adSpend / mo.revenue * 100;
+  const fixed = mo.fixed / mo.revenue * 100;
+  return { gst, variable, ads, fixed, profit: 100 - gst - variable - ads - fixed,
+           days: mo.days, revenue: mo.revenue, perDay: mo.revenue / mo.days };
+}
+
+const H100_SEG = [
+  ['gst', 'GST'], ['vc', 'Product, shipping, fees'], ['ads', 'Ads'],
+  ['fc', 'Wages and overheads'], ['pf', 'Profit'],
+];
+function hundredBar(h, label, sub, compact) {
+  if (!h) return '';
+  const seg = [h.gst, h.variable, h.ads, h.fixed, Math.max(0, h.profit)];
+  const total = seg.reduce((a, x) => a + x, 0) || 100;
+  const cls = i => (i === 4 && h.profit < 0) ? 'loss' : H100_SEG[i][0];
+  return `<div class="h100${compact ? ' compact' : ''}">
+    <div class="h100-h">${esc(label)} <small>${esc(sub)}</small></div>
+    <div class="h100-bar">${seg.map((v, i) =>
+      `<i class="${cls(i)}" style="width:${(v / total * 100).toFixed(2)}%"
+          title="${H100_SEG[i][1]}: $${v.toFixed(2)} of every $100"></i>`).join('')}</div>
+    <div class="h100-key">${seg.map((v, i) =>
+      `<span class="${cls(i)}"><b>$${(i === 4 && h.profit < 0 ? h.profit : v).toFixed(0)}</b> ${H100_SEG[i][1]}</span>`).join('')}</div>
+  </div>`;
+}
+
+function renderHundred(p, ctx) {
+  const el = document.getElementById('hundredWrap');
+  const complete = ctx.list.filter(r => r.revenue > 0 && !r.pending && r.totalFC != null);
+  const last30 = complete.slice(-30);
+  const now = hundredOf(last30);
+  if (!now) { el.innerHTML = '<div class="empty">Not enough complete days.</div>'; return; }
+  /* The same 30 calendar dates a year earlier, so the comparison is like for
+     like rather than "the last 30 days versus a whole month". */
+  const yb = d => { const t = new Date(d + 'T00:00:00Z'); t.setUTCFullYear(t.getUTCFullYear() - 1); return t.toISOString().slice(0, 10); };
+  const a = yb(last30[0].date), z = yb(last30[last30.length - 1].date);
+  const prior = hundredOf(ctx.list.filter(r => r.date >= a && r.date <= z));
+
+  el.innerHTML =
+    hundredBar(now, 'Last ' + now.days + ' days', money(now.perDay, true) + '/day') +
+    (prior ? hundredBar(prior, 'Same dates last year', money(prior.perDay, true) + '/day') : '') +
+    `<div class="h100-foot">Wages and overheads take
+       <b>${now.fixed.toFixed(0)}c</b> of every dollar${prior ?
+       ', against <b>' + prior.fixed.toFixed(0) + 'c</b> a year ago' : ''}. It is a fixed
+       ${money(p.pnl.fcPerDay)} a day whatever you sell, so the only way that share falls is
+       to sell more.</div>`;
+  document.getElementById('hundredNote').textContent =
+    isoToNice(now.from) + ' → ' + isoToNice(now.to) + ' · actual, not forecast';
 }
 
 /* -------------------------------------------------------- sale periods */
@@ -590,35 +798,12 @@ function renderNotesPlain(p) {
     if (b.season.observations[m] && b.season.index[m] < b.season.index[smallM]) smallM = m;
   }
 
-  /* Where $100 goes, at two different daily sales levels. Fixed cost is a fixed
-     DOLLAR amount, so its share is the only thing that moves — which is exactly
-     the point being made. */
-  function hundred(perDay, adRate) {
-    const gst = (1 - pnl.exGstRate) * 100;
-    const variable = pnl.vcRate * 100;
-    const ads = adRate * 100;
-    const fixed = perDay > 0 ? (pnl.fcPerDay / perDay) * 100 : 0;
-    return { gst, variable, ads, fixed, profit: 100 - gst - variable - ads - fixed };
-  }
-  const novPerDay = nov ? nov.revenue / nov.days : null;
-  const novAdRate = pnl.adRate * (pnl.adRateIndex[11] || 1);
-  const now = hundred(p.level, pnl.adRate);
-  const big = novPerDay ? hundred(novPerDay, novAdRate) : null;
-
-  const bar = (h, label, sub) => {
-    const seg = [['GST', h.gst, 'gst'], ['Product, shipping, fees', h.variable, 'vc'],
-                 ['Ads', h.ads, 'ads'], ['Wages and overheads', h.fixed, 'fc'],
-                 ['Profit', Math.max(0, h.profit), h.profit >= 0 ? 'pf' : 'loss']];
-    const total = seg.reduce((a, x) => a + x[1], 0) || 100;
-    return `<div class="h100">
-      <div class="h100-h">${label} <small>${sub}</small></div>
-      <div class="h100-bar">${seg.map(x =>
-        `<i class="${x[2]}" style="width:${(x[1] / total * 100).toFixed(2)}%"
-            title="${x[0]}: $${x[1].toFixed(2)}"></i>`).join('')}</div>
-      <div class="h100-key">${seg.map(x =>
-        `<span class="${x[2]}"><b>$${x[1].toFixed(0)}</b> ${x[0]}</span>`).join('')}</div>
-    </div>`;
-  };
+  /* Where $100 goes: the last 30 complete days of ACTUAL trade, beside a
+     forecast November. Fixed cost is the same dollar amount in both, so the
+     only segment that visibly moves is the one that explains the business. */
+  const complete = (rows() || []).filter(r => r.revenue > 0 && !r.pending && r.totalFC != null);
+  const now = hundredOf(complete.slice(-30));
+  const big = nov ? hundredOfMonth(nov, pnl) : null;
 
   const steps = [
     ['We look at what you actually sold',
@@ -653,12 +838,12 @@ function renderNotesPlain(p) {
     <div class="ncol">
       <div class="plainbox">
         <h4>Where every $100 of sales goes</h4>
-        ${bar(now, 'An ordinary day right now', money(p.level) + ' of sales')}
-        ${big ? bar(big, 'A day in November', money(novPerDay) + ' of sales') : ''}
+        ${hundredBar(now, 'The last ' + (now ? now.days : 0) + ' days', money(now ? now.perDay : 0) + '/day, actual')}
+        ${big ? hundredBar(big, 'A day in November', money(big.perDay) + '/day, forecast') : ''}
         <p class="plainnote">The wages and overheads bar is the same
           <b>${money(pnl.fcPerDay)} a day</b> in both — it does not care how much you sell. That
-          is the whole business in one line: it eats <b>${now.fixed.toFixed(0)}c</b> of every
-          dollar on a quiet day and only <b>${big ? big.fixed.toFixed(0) : '—'}c</b> in
+          is the whole business in one line: it eats <b>${now ? now.fixed.toFixed(0) : '—'}c</b> of
+          every dollar right now and only <b>${big ? big.fixed.toFixed(0) : '—'}c</b> in
           November, which is why the year is made in two months.</p>
         <p class="plainbig">You need about <b>${money(p.breakevenPerDay)} a day</b>
           — ${money(p.breakevenPerDay * 30, true)} a month — before you make a cent.</p>
@@ -864,24 +1049,42 @@ function render() {
                   .reduce((a, r) => ({ revenue: a.revenue + r.revenue, profit: a.profit + (+r.profit || 0) }), { revenue: 0, profit: 0 });
   const eoy = eoyP ? { revenue: ytd.revenue + eoyP.total, profit: ytd.profit + eoyP.profit, actual: ytd.revenue } : null;
 
-  const ctx = { list, scen, eoy };
+  /* Like-for-like year on year, whole months only, for the growth rail. */
+  const byM = {};
+  list.forEach(r => { const k = r.date.slice(0, 7); (byM[k] = byM[k] || { s: 0, n: 0 }); byM[k].s += r.revenue; byM[k].n++; });
+  const dim = k => new Date(Date.UTC(+k.slice(0, 4), +k.slice(5, 7), 0)).getUTCDate();
+  const yoy = Object.keys(byM).sort().map(k => {
+    const pv = (+k.slice(0, 4) - 1) + k.slice(4);
+    const whole = byM[k].n >= dim(k) && byM[pv] && byM[pv].n >= dim(pv);
+    return { month: k, revenue: byM[k].s, priorYear: byM[pv] ? byM[pv].s : null,
+             yoy: whole ? byM[k].s / byM[pv].s : null };
+  });
+
+  const ctx = { list, scen, eoy, yoy };
+  /* The header shows the forecast ORIGIN, which is the last complete day — not
+     the newest row. The newest row can be a day the sheet has not finished, and
+     the forecast does not start from one. */
   document.getElementById('navDate').textContent = niceFull(from);
-  document.getElementById('throughVal').textContent = niceFull(list[list.length - 1].date);
   const pend = pendingOf(list.slice(-3));
   const note = document.getElementById('pendNote');
   if (pend && pend.groups && pend.groups.length) {
     note.hidden = false; note.textContent = pendingLabel(list[list.length - 1]) || 'partly pending';
   } else note.hidden = true;
 
+  /* One section failing must not take the rest of the page with it. */
   const safe = (name, fn) => { try { fn(); } catch (e) { console.error('forecast: ' + name + ' failed', e); } };
-  safe('kpis', () => renderKpis(p, ctx));
-  safe('scenarios', () => renderScenarios(ctx));
-  safe('chart', () => renderChart(p, ctx));
-  safe('months', () => renderMonths(p, ctx));
-  safe('season', () => renderSeason(p));
-  safe('sales', () => renderSales(p));
-  safe('modifiers', () => renderMods(p));
-  safe('notes', () => renderNotes(p));
+  if (S.view === 'map') {
+    safe('kpis', () => renderKpis(p, ctx));
+    safe('scenarios', () => renderScenarios(ctx));
+    safe('chart', () => renderChart(p, ctx));
+    safe('months', () => renderMonths(p, ctx));
+    safe('trends', () => renderTrends(p, ctx));
+    safe('hundred', () => renderHundred(p, ctx));
+    safe('sales', () => renderSales(p));
+    safe('modifiers', () => renderMods(p));
+  } else {
+    safe('notes', () => renderNotes(p));
+  }
   document.getElementById('footSource').textContent =
     'Forecast from ' + niceFull(p.from) + ' · 2026 book' + (PRIOR ? ' + 2025 book' : ' only') +
     ' · ' + (S.live === 'live' ? 'live' : 'snapshot');
@@ -923,15 +1126,28 @@ async function tryLiveRefresh() {
   } catch (e) { setLive('snap'); }
 }
 
+/* Two views of one page, not a page and an overlay. Switching hides the map's
+   three rows and gives the explanation the whole middle. */
+function setView(v) {
+  S.view = v;
+  document.getElementById('stage').classList.toggle('view-explain', v === 'explain');
+  document.getElementById('explain').hidden = v !== 'explain';
+  document.querySelectorAll('#viewSeg button').forEach(x =>
+    x.classList.toggle('active', x.dataset.view === v));
+}
+
 function wire() {
-  const notes = document.getElementById('notes');
-  document.getElementById('infoBtn').onclick = () => { notes.hidden = !notes.hidden; };
+  document.querySelectorAll('#viewSeg button').forEach(bt => bt.onclick = () => {
+    setView(bt.dataset.view); render();
+  });
   document.querySelectorAll('#notesSeg button').forEach(bt => bt.onclick = () => {
     document.querySelectorAll('#notesSeg button').forEach(x => x.classList.remove('active'));
     bt.classList.add('active'); S.notesMode = bt.dataset.mode; render();
   });
-  document.getElementById('notesClose').onclick = () => { notes.hidden = true; };
-  window.addEventListener('keydown', e => { if (e.key === 'Escape') notes.hidden = true; });
+  /* Escape returns to the map, since that is where the page starts. */
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && S.view !== 'map') { setView('map'); render(); }
+  });
   document.querySelectorAll('#horSeg button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#horSeg button').forEach(x => x.classList.remove('active'));
     b.classList.add('active'); S.hor = b.dataset.hor === 'EOY' ? 'EOY' : parseInt(b.dataset.hor, 10); render();
@@ -949,6 +1165,8 @@ function wire() {
     saveMods(); e.target.reset(); render();
   });
   window.addEventListener('resize', () => { clearTimeout(window._rz); window._rz = setTimeout(render, 200); });
+  /* Coming back to the map means the canvas has just regained its height, so
+     the chart has to be rebuilt against real dimensions. */
 }
 
 (function init() {
