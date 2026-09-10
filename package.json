@@ -7,7 +7,8 @@
     "dev": "vercel dev",
     "deploy": "vercel --prod",
     "test": "node source/test_core.js && node source/test_data_filter.js && node source/test_api_data.js && node source/test_pending.js && node source/test_pace.js && node source/test_middleware.mjs && node source/test_ai_access.js && node source/test_ai_routes.js && node source/test_shopify_token.js && node source/test_forecast.js",
-    "snapshot": "python3 source/build_data.py"
+    "snapshot": "python3 source/build_data.py",
+    "export": "node source/export_forecast.js --out source/forecast_bundle.json && python3 source/export_forecast.py source/forecast_bundle.json DiggerLid_Forecast.xlsx"
   },
   "dependencies": {
     "googleapis": "^144.0.0"

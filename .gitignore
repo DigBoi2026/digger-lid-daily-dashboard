@@ -14,3 +14,5 @@ pulse_data.js
 source/*.csv
 source/catrows.json
 source/__pycache__/
+source/forecast_bundle.json
+*.xlsx

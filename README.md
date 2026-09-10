@@ -124,6 +124,25 @@ categorisation is applied **in the dashboard only** — Shopify's own catalog is
 
 ## Refreshing the data
 
+**Forecast → a workbook (`npm run export`):**
+
+```bash
+# current, from the committed snapshot
+npm run export                                    # → DiggerLid_Forecast.xlsx
+
+# or as current as the sheet, by feeding it a live pull
+curl -s -u "$SITE_USER:$SITE_PASSWORD" https://<host>/api/data -o live.json
+node source/export_forecast.js --live live.json --out /tmp/b.json
+python3 source/export_forecast.py /tmp/b.json DiggerLid_Forecast.xlsx
+```
+
+Seven sheets: Summary (scenarios, what it rests on, measured accuracy, what it cannot do),
+Forecast by month, Forecast daily, Actuals daily (both books merged, pending days flagged),
+Seasonality, Year on year, Sale periods (measured per year, plus the run-up profile day by
+day). Split across two files on purpose — the JavaScript half runs the SAME `forecast.js` the
+board runs, so there is one implementation of the model and the Python half only formats what
+it is handed. Needs `openpyxl`.
+
 **Sheet P&L → `data.js`:**
 
 ```bash
