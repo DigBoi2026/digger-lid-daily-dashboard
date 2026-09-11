@@ -26,7 +26,7 @@ const ok = (n, c, g) => { if (c) pass++; else { fail++; console.log(`  ✗ ${n}`
   ok('configured: account carries the act_ prefix', /act_123456\/insights/.test(URLS[0]), URLS[0]);
   ok('configured: level=adset, daily, with names, spend, actions and values', /level=adset/.test(URLS[0]) && /time_increment=1/.test(URLS[0]) && /campaign_name,adset_name,spend,impressions,actions,action_values/.test(URLS[0]));
   const ranges = URLS.filter(u => !/after=/.test(u)).map(u => JSON.parse(decodeURIComponent(u.match(/time_range=([^&]+)/)[1])));
-  ok('configured: window is ~100 days through yesterday, in 20-day slices', ranges[0].since === '2026-06-03' && ranges[ranges.length - 1].until === '2026-09-10' && ranges.length === 5, ranges);
+  ok('configured: window is 190 days through yesterday, in ten 20-day slices', ranges[0].since === '2026-03-05' && ranges[ranges.length - 1].until === '2026-09-10' && ranges.length === 10, ranges);
   ok('configured: slices are contiguous', ranges.every((r, i) => i === 0 || r.since > ranges[i - 1].until), ranges);
   ok('configured: asks only for the action types the page reads', /action_type/.test(decodeURIComponent(URLS[0])) && /omni_purchase/.test(decodeURIComponent(URLS[0])) && /landing_page_view/.test(decodeURIComponent(URLS[0])));
   ok('configured: follows paging within a slice', URLS.filter(u => /after=abc/.test(u)).length === 1 && on.rows.length === 3, [URLS.length, on.rows.length]);

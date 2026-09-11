@@ -15,7 +15,9 @@
 const M = require('../lib/meta_bench.js');
 
 const VERSION = process.env.META_API_VERSION || 'v21.0';
-const DAYS = 100;
+/* 190 days: the page's longest window is 90 days and it compares against the
+   equal period before, so anything under 180 leaves that comparison short. */
+const DAYS = 190;
 const iso = d => d.toISOString().slice(0, 10);
 const addDays = (d, n) => { const x = new Date(d.getTime()); x.setUTCDate(x.getUTCDate() + n); return x; };
 
@@ -80,7 +82,7 @@ async function buildMeta(today) {
   /* Ad sets whose names matched no product line are kept (as Multi/Broad) and
      listed, so a naming gap is visible on the page rather than silently
      folded into the blend. */
-  const unmapped = [...new Set(rows.filter(r => !r.mapped).map(r => [r.campaign, r.adset].filter(Boolean).join(' · ')))].slice(0, 40);
+  const unmapped = [...new Set(rows.filter(r => !r.mapped).map(r => [r.campaign, r.adset].filter(Boolean).join(' · ')))].slice(0, 80);
   return {
     configured: true,
     meta: { source: 'Meta Marketing API · insights, level=adset, daily', account: account(), since, until, currency: 'AUD',

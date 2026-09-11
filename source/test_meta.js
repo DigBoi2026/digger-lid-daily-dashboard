@@ -50,6 +50,15 @@ ok('classify: "Prospecting · Pro Mat Broad" → Pro Mats / Prospecting', c('Pro
 ok('classify: Coupler wins over Grease', c('KAJO Grease Coupler cold').line === 'Coupler');
 ok('classify: Draw Bar wins over Covers', c('Covers RT — Draw Bar').line === 'Draw Bar' && c('Covers RT — Draw Bar').tier === 'Retargeting');
 ok('classify: Diggershield by machine kit words', c('Earthmovers Bundle LAL').line === 'Diggershield');
+ok('classify: team shorthand — PRO ENCL', c('Creative Testing · AU_PRO ENCL_30 SECOND INSTALL_SEPT26').line === 'Pro Enclosure');
+ok('classify: team shorthand — PR MAT typo', c('Creative Testing · AU_AUSSIEADVENTURE_SEPT26_PR MAT').line === 'Pro Mats');
+ok('classify: [M] and [PM] prefixes are Pro Mats', c('Creative Testing · [M] AU|PRO||"REVIEW UGC"|JULY26').line === 'Pro Mats' && c('x · [PM] 4WD - 12/5').line === 'Pro Mats');
+ok('classify: [G] prefix is Grease, [C] prefix is Covers unless the name says Enclosure', c('x · [G] BJP - 24/04').line === 'Grease' && c('x · [C] Current Colours Quicky').line === 'Excavator Covers' && c('x · [C] DLCIVIL V1 | PRO ENCLOSURE').line === 'Pro Enclosure');
+ok('classify: battery grease-gun brands are the Grease line', c('x · Dewalt_ASMR - 24/04').line === 'Grease' && c('x · [S] Milwaukee_ASMR').line === 'Grease');
+ok('classify: TerraPro hauler is Accessories', c('x · Terra Pro 2nd run - No Excl.').line === 'Accessories');
+ok('classify: MOF / BOF / Mid are Retargeting', c('THS - AU - Conversions/Sales (NEW) · MOF High Ticket Items').tier === 'Retargeting' && c('#8 EOFY26 NASC - LS - BOF - All').tier === 'Retargeting' && c('AU #5 MOF - All Mid - All Placements').tier === 'Retargeting');
+ok('classify: ASC broad flagship is Multi/Broad prospecting BY DESIGN (mapped)', c('AU - ASC - RS - TOF - Broad - Excl. · Maximise Value - Flagship').line === 'Multi/Broad' && c('AU - ASC - RS - TOF - Broad - Excl. · Maximise Value - Flagship').tier === 'Prospecting' && c('AU - ASC - RS - TOF - Broad - Excl. · Maximise Value - Flagship').lineHit === true);
+ok('classify: a name nobody can place is Multi/Broad and UNMAPPED', c('Creative Testing - TOM - ABO - Broad · Operator POV - 30/04').lineHit === true || c('Some Campaign · Operator POV - 30/04').lineHit === false);
 ok('classify: retargeting words', c('DPA — all products viewed').tier === 'Retargeting');
 ok('classify: retention words', c('Existing customers — grease reorder').tier === 'Retention' && c('Existing customers — grease reorder').line === 'Grease');
 ok('classify: nothing recognised → Multi/Broad, Prospecting, flagged unmapped', c('Campaign 7').line === 'Multi/Broad' && c('Campaign 7').lineHit === false);

@@ -42,7 +42,15 @@ function windowRange(){
   if(!live()) return null;
   const end = LIVE.rows.reduce((a,r)=>r.date>a?r.date:a, '');
   const n = parseInt(S.win,10);
-  return { start: addDays(end, -(n-1)), end, prev: { start: addDays(end, -(2*n-1)), end: addDays(end, -n) } };
+  const prev = { start: addDays(end, -(2*n-1)), end: addDays(end, -n) };
+  /* A comparison against a prior window the pull only partly covers is a
+     comparison against a fragment — "▲ 979%" on 90 days when the pull had ten
+     days of the prior ninety. The prior window is dropped unless the data
+     covers at least 90% of its days. */
+  const first = LIVE.rows.reduce((a,r)=>r.date<a?r.date:a, '9999');
+  const have = LIVE.rows.reduce((set,r)=>{ if(r.date>=prev.start && r.date<=prev.end) set.add(r.date); return set; }, new Set()).size;
+  const covered = have >= Math.ceil(n*0.9);
+  return { start: addDays(end, -(n-1)), end, prev: covered ? prev : null, prevPartial: !covered, first };
 }
 const inRange = (r, rg) => r.date >= rg.start && r.date <= rg.end;
 /* Rows for the window: live daily rows filtered to the range, or the snapshot's
@@ -91,7 +99,7 @@ function render(){
   const rows = board(rg, rg && rg.prev);
   renderHeader(rg);
   renderKPIs(rows, rg);
-  renderBoard(rows);
+  renderBoard(rows, rg);
   renderFunnel(rows, rg);
   renderAlerts(rows, rg);
   renderRef();
@@ -103,7 +111,7 @@ function renderHeader(rg){
   document.querySelectorAll('#winSeg button').forEach(b=>{ b.classList.toggle('active', b.dataset.win===S.win); b.disabled=!isLive; });
   document.getElementById('winLabel').textContent = isLive ? (S.win==='90'?'LAST 90 DAYS':`LAST ${S.win} DAYS`) : '90-DAY SNAPSHOT';
   document.getElementById('winDates').textContent = isLive
-    ? `${nice(rg.start)}–${nice(rg.end)} · VS ${nice(rg.prev.start)}–${nice(rg.prev.end)}`.toUpperCase()
+    ? (rg.prev ? `${nice(rg.start)}–${nice(rg.end)} · VS ${nice(rg.prev.start)}–${nice(rg.prev.end)}` : `${nice(rg.start)}–${nice(rg.end)} · NO FULL PRIOR PERIOD IN THE PULL`).toUpperCase()
     : (SNAP.meta.window||'').toUpperCase()+' · NO DAILY DETAIL';
   document.getElementById('throughVal').textContent = isLive ? nice(rg.end) : nice(SNAP.meta.asOf);
   document.getElementById('throughPend').textContent = isLive
@@ -112,12 +120,12 @@ function renderHeader(rg){
 }
 function renderKPIs(rows, rg){
   const el=document.getElementById('kpis');
-  const all = DLmeta.rollup(rows.flatMap(g=>g.rows)), prev = live() ? DLmeta.rollup(rows.flatMap(g=>g.prev)) : null;
+  const all = DLmeta.rollup(rows.flatMap(g=>g.rows)), prev = live() && rg.prev ? DLmeta.rollup(rows.flatMap(g=>g.prev)) : null;
   const hc = haircut(rg);
   const bl = B.blended;
   const ncpa = all.cpa!=null ? all.cpa*hc.ratio : null;
   const prosp = DLmeta.rollup(rows.filter(g=>g.tier==='Prospecting').flatMap(g=>g.rows));
-  const per = `<span class="k-per">${live()?'vs prior '+S.win+' days':'snapshot · no comparison'}</span>`;
+  const per = `<span class="k-per">${live() ? (rg.prev ? 'vs prior '+S.win+' days' : 'no full prior period') : 'snapshot · no comparison'}</span>`;
   const tile=(lbl,val,sub,foot,cls)=>`<div class="kpi ${cls||''}"><div class="k-head"><div class="k-lbl">${lbl}</div><div class="k-val">${val}</div><div class="k-sub">${sub||''}</div></div><div class="k-foot">${foot||''}</div></div>`;
   const cpaCls = all.cpa==null?'' : ncpa>bl.kill ? 'bad' : ncpa>bl.target ? 'warn' : 'good';
   el.innerHTML = [
@@ -129,10 +137,10 @@ function renderKPIs(rows, rg){
     tile('LPV → ATC', pct(all.lpvToAtc), `${numf(all.lpv)} landing views · CPV ${d2(all.cpv)}`, (prev?deltaEl(all.lpvToAtc,prev.lpvToAtc,'high'):'<span class="delta flat">—</span>')+`<span class="k-per">retargeting should run 2–3× prospecting</span>`),
   ].join('');
 }
-function renderBoard(rows){
+function renderBoard(rows, rg){
   const wrap=document.getElementById('board');
   if(!S.line && rows.length){ S.line=rows[0].line; S.tier=rows[0].tier; }
-  document.getElementById('boardNote').textContent = `${rows.length} line × tier combinations · sorted by spend · ${live()?'vs prior period':'90-day snapshot'} · click a row`;
+  document.getElementById('boardNote').textContent = `${rows.length} line × tier combinations · sorted by spend · ${live() ? (rg.prev ? 'vs prior period' : 'no full prior period in the pull') : '90-day snapshot'} · click a row`;
   let html=`<div class="thead mt"><div>Line · tier</div><div class="num">Spend</div><div class="num">Purch</div><div class="num">CPA</div><div class="num">Target</div><div class="num">Kill</div><div class="num">ROAS / kill</div><div class="num">Cost/ATC / kill</div><div class="num">LPV→ATC</div><div>Status</div></div>`;
   html += rows.map(g=>{
     const b=g.bench, tb=g.tier_b, r=g.roll, p=g.prev;
