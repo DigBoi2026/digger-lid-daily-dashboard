@@ -22,7 +22,8 @@ let LIVE = null;                                  // /api/meta payload when conf
 const S = { win: '7', line: null, tier: null, ref: 'econ', stage: 'all' };
 /* Funnel stages, in the team's own naming. MOF and BOF are one stage. */
 const STAGE_DEFS = [['all','All stages','every campaign'], ['TOF','TOF','top of funnel'], ['TOM','TOM','creative tests'], ['MOF','MOF / BOF','warm · closing']];
-const stageOfRow = r => r._stage !== undefined ? r._stage : (r._stage = DLmeta.stageOf(r.campaign, r.adset));
+const stageOfRow = r => r._stage !== undefined ? r._stage : (r._stage = DLmeta.stageFor(r.campaign, r.adset, r.tier));
+const stageLabel = st => DLmeta.STAGE_LABEL[st] || st;
 const inStage = r => S.stage === 'all' || stageOfRow(r) === S.stage;
 /* Live rows in the selected stage. Every reader of daily data goes through this,
    so the board, the chart and the streaks all agree on what "TOF" means. */
@@ -69,9 +70,10 @@ function rowsFor(rg){
 /* Group rows by line × tier, roll each up, attach benchmarks and verdicts. */
 function board(rg, prevRg){
   const cur = rowsFor(rg), prev = prevRg && live() ? rowsFor(prevRg) : null;
-  const key = r => r.line+'|'+r.tier;
+  const key = r => r.line+'|'+stageOfRow(r);
   const groups = {};
-  cur.forEach(r=>{ (groups[key(r)] = groups[key(r)] || {line:r.line, tier:r.tier, rows:[], prev:[]}).rows.push(r); });
+  /* tier is the FRAMEWORK tier the stage is judged on; stage is what the page shows. */
+  cur.forEach(r=>{ const st=stageOfRow(r); (groups[key(r)] = groups[key(r)] || {line:r.line, stage:st, tier:DLmeta.STAGE_TIER[st]||'Prospecting', rows:[], prev:[]}).rows.push(r); });
   (prev||[]).forEach(r=>{ if(groups[key(r)]) groups[key(r)].prev.push(r); });
   return Object.values(groups).map(g=>{
     const roll = DLmeta.rollup(g.rows), pr = g.prev.length ? DLmeta.rollup(g.prev) : null;
@@ -164,7 +166,7 @@ function renderKPIs(rows, rg){
   const hc = haircut(rg);
   const bl = B.blended;
   const ncpa = all.cpa!=null ? all.cpa*hc.ratio : null;
-  const prosp = DLmeta.rollup(rows.filter(g=>g.tier==='Prospecting').flatMap(g=>g.rows));
+  const prosp = DLmeta.rollup(rows.filter(g=>g.tier==='Prospecting').flatMap(g=>g.rows));   // cold: TOF + TOM
   const per = `<span class="k-per">${live() ? (rg.prev ? (S.win==='1' ? 'vs the day before' : 'vs prior '+S.win+' days') : 'no full prior period') : 'snapshot · no comparison'}</span>`;
   const tile=(lbl,val,sub,foot,cls)=>`<div class="kpi ${cls||''}"><div class="k-head"><div class="k-lbl">${lbl}</div><div class="k-val">${val}</div><div class="k-sub">${sub||''}</div></div><div class="k-foot">${foot||''}</div></div>`;
   const cpaCls = all.cpa==null?'' : ncpa>bl.kill ? 'bad' : ncpa>bl.target ? 'warn' : 'good';
@@ -172,26 +174,26 @@ function renderKPIs(rows, rg){
     tile('Meta Spend', money(all.spend), `${numf(all.purchases)} purchases · ${live() ? all.days+' day'+(all.days===1?'':'s') : '90-day snapshot'}`, (prev?deltaEl(all.spend,prev.spend,'neutral'):'<span class="delta flat">—</span>')+per, 'accent'),
     tile('Blended CPA', d0(all.cpa), `new-cust est. <b>${d0(ncpa)}</b> · ×${hc.ratio.toFixed(2)} ${hc.live?`(${hc.newPct.toFixed(0)}% of orders new, sheet${hc.span?' · '+hc.span:''})`:'framework default'}`, (prev?deltaEl(all.cpa,prev.cpa,'low'):'<span class="delta flat">—</span>')+`<span class="k-per">target ${d0(bl.target)} · kill ${d0(bl.kill)} (new-cust)</span>`, cpaCls),
     tile('ROAS (Meta)', xr(all.roas), `revenue ${money(all.revenue)} · AOV ${d0(all.aov)}`, (prev?deltaEl(all.roas,prev.roas,'high'):'<span class="delta flat">—</span>')+`<span class="k-per">blended kill ~${xr(bl.killRoasMeta)}</span>`, all.roas!=null && all.roas<bl.killRoasMeta ? 'bad':''),
-    tile('Cost per ATC', d2(all.costPerAtc), `${numf(all.atc)} adds to cart · prospecting ${d2(prosp.costPerAtc)}`, (prev?deltaEl(all.costPerAtc,prev.costPerAtc,'low'):'<span class="delta flat">—</span>')+`<span class="k-per">leads CPA by 3–7 days</span>`),
-    tile('ATC → Purchase', pct(all.atcToPurchase), `prospecting ${pct(prosp.atcToPurchase)} · baseline 28.4%`, (prev?deltaEl(all.atcToPurchase,prev.atcToPurchase,'high'):'<span class="delta flat">—</span>')+per),
-    tile('LPV → ATC', pct(all.lpvToAtc), `${numf(all.lpv)} landing views · CPV ${d2(all.cpv)}`, (prev?deltaEl(all.lpvToAtc,prev.lpvToAtc,'high'):'<span class="delta flat">—</span>')+`<span class="k-per">retargeting should run 2–3× prospecting</span>`),
+    tile('Cost per ATC', d2(all.costPerAtc), `${numf(all.atc)} adds to cart · TOF+TOM ${d2(prosp.costPerAtc)}`, (prev?deltaEl(all.costPerAtc,prev.costPerAtc,'low'):'<span class="delta flat">—</span>')+`<span class="k-per">leads CPA by 3–7 days</span>`),
+    tile('ATC → Purchase', pct(all.atcToPurchase), `TOF+TOM ${pct(prosp.atcToPurchase)} · baseline 28.4%`, (prev?deltaEl(all.atcToPurchase,prev.atcToPurchase,'high'):'<span class="delta flat">—</span>')+per),
+    tile('LPV → ATC', pct(all.lpvToAtc), `${numf(all.lpv)} landing views · CPV ${d2(all.cpv)}`, (prev?deltaEl(all.lpvToAtc,prev.lpvToAtc,'high'):'<span class="delta flat">—</span>')+`<span class="k-per">MOF/BOF should run 2–3× TOF</span>`),
   ].join('');
 }
 function renderBoard(rows, rg){
   const wrap=document.getElementById('board');
-  if(rows.length && !rows.some(g=>g.line===S.line && g.tier===S.tier)){ S.line=rows[0].line; S.tier=rows[0].tier; }
-  document.getElementById('boardNote').textContent = `${rows.length} line × tier combinations · sorted by spend · ${live() ? (rg.prev ? 'vs prior period' : 'no full prior period in the pull') : '90-day snapshot'}${S.stage==='all'?'':' · '+STAGE_DEFS.find(d=>d[0]===S.stage)[1]+' campaigns only'} · click a row`;
-  let html=`<div class="thead mt"><div>Line · tier</div><div class="num">Spend</div><div class="num">Purch</div><div class="num">CPA</div><div class="num">Target</div><div class="num">Kill</div><div class="num">ROAS / kill</div><div class="num">Cost/ATC / kill</div><div class="num">LPV→ATC</div><div>Status</div></div>`;
+  if(rows.length && !rows.some(g=>g.line===S.line && g.stage===S.tier)){ S.line=rows[0].line; S.tier=rows[0].stage; }
+  document.getElementById('boardNote').textContent = `${rows.length} line × stage combinations · sorted by spend · ${live() ? (rg.prev ? 'vs prior period' : 'no full prior period in the pull') : '90-day snapshot'}${S.stage==='all'?'':' · '+STAGE_DEFS.find(d=>d[0]===S.stage)[1]+' campaigns only'} · click a row`;
+  let html=`<div class="thead mt"><div>Line · stage</div><div class="num">Spend</div><div class="num">Purch</div><div class="num">CPA</div><div class="num">Target</div><div class="num">Kill</div><div class="num">ROAS / kill</div><div class="num">Cost/ATC / kill</div><div class="num">LPV→ATC</div><div>Status</div></div>`;
   html += rows.map(g=>{
     const b=g.bench, tb=g.tier_b, r=g.roll, p=g.prev;
-    const sel = g.line===S.line && g.tier===S.tier;
+    const sel = g.line===S.line && g.stage===S.tier;
     const tgt = b && b.target!=null ? d0(b.target) : (b && b.kill!=null ? '<span class="dim">INFEAS</span>' : '—');
     const kill = b && b.kill!=null ? d0(b.kill)+(b.policy?'<sup title="policy cap, not break-even">†</sup>':'')+(b.id==='Coupler'?'<sup title="own economics, not the Grease cap">‡</sup>':'') : '—';
     const roasCls = r.roas!=null && b && b.killRoasMeta ? (r.roas<b.killRoasMeta?'b-t':'g-t') : '';
     const catcCls = r.costPerAtc!=null && tb && tb.killCostPerAtc ? (r.costPerAtc>tb.killCostPerAtc?'b-t': tb.targetCostPerAtc && r.costPerAtc<=tb.targetCostPerAtc ? 'g-t':'a-t') : '';
     const lpvCls = r.lpvToAtc!=null && tb && tb.lpvToAtc ? (r.lpvToAtc < tb.lpvToAtc*0.8 ? 'b-t' : '') : '';
-    return `<div class="trow mt ${sel?'sel':''}" data-line="${esc(g.line)}" data-tier="${esc(g.tier)}" title="${esc(g.v.rule||'')}">
-      <div><div class="pname">${esc(b?b.label:g.line)}</div><div class="pcat">${esc(g.tier)}${tb&&tb.est?' · <span class="est">est</span>':''}</div></div>
+    return `<div class="trow mt ${sel?'sel':''}" data-line="${esc(g.line)}" data-tier="${esc(g.stage)}" title="${esc(g.v.rule||'')}">
+      <div><div class="pname">${esc(b?b.label:g.line)}</div><div class="pcat">${esc(stageLabel(g.stage))}${tb&&tb.est?' · <span class="est">est</span>':''}</div></div>
       <div class="num">${money(r.spend)}<div class="sub">${p?deltaEl(r.spend,p.spend,'neutral'):''}</div></div>
       <div class="num dim">${numf(r.purchases)}</div>
       <div class="num">${d0(r.cpa)}<div class="sub">${p?deltaEl(r.cpa,p.cpa,'low'):''}</div></div>
@@ -209,11 +211,11 @@ function renderBoard(rows, rg){
 /* The selected line's funnel, each stage against its benchmark, and the daily
    CPA / Cost-per-ATC series against the Kill and Target lines. */
 function renderFunnel(rows, rg){
-  const g = rows.find(x=>x.line===S.line && x.tier===S.tier) || rows[0];
+  const g = rows.find(x=>x.line===S.line && x.stage===S.tier) || rows[0];
   const wrap=document.getElementById('funnel');
   if(!g){ wrap.innerHTML=''; return; }
   const b=g.bench, tb=g.tier_b, r=g.roll, p=g.prev;
-  document.getElementById('funnelLine').textContent = `${b?b.label:g.line} · ${g.tier}`;
+  document.getElementById('funnelLine').textContent = `${b?b.label:g.line} · ${stageLabel(g.stage)}`;
   document.getElementById('funnelNote').textContent = (b && b.action) ? b.action : 'cost per landing view → add to cart → purchase';
   const cell=(lbl,val,bench,delta,cls)=>`<div class="fcell ${cls||''}"><div class="l">${lbl}</div><div class="v">${val}</div><div class="s">${bench||''}</div><div class="s">${delta||''}</div></div>`;
   const vsCls=(a,lim,above)=> a==null||lim==null?'' : (above ? (a>lim?'bad':'good') : (a<lim?'bad':'good'));
@@ -235,7 +237,7 @@ function renderChart(g, rg){
      the rules themselves read 3-day and 24-hour windows in the alerts panel. */
   const daysBack = Math.max(parseInt(S.win,10), 28);
   const start = addDays(rg.end, -(daysBack-1));
-  const daily = liveRows().filter(r=>r.line===g.line && r.tier===g.tier && r.date>=start && r.date<=rg.end);
+  const daily = liveRows().filter(r=>r.line===g.line && stageOfRow(r)===g.stage && r.date>=start && r.date<=rg.end);
   const byDate={}; daily.forEach(r=>{ const d=byDate[r.date]||(byDate[r.date]={spend:0,atc:0,purchases:0}); d.spend+=r.spend; d.atc+=r.atc; d.purchases+=r.purchases; });
   const dates=[]; for(let d=start; d<=rg.end; d=addDays(d,1)) dates.push(d);
   const roll = (k, den) => dates.map((d,i)=>{ let s=0,n=0; for(let j=Math.max(0,i-6); j<=i; j++){ const x=byDate[dates[j]]; if(x){ s+=x.spend; n+=x[den]; } } return n? s/n : null; });
@@ -267,14 +269,14 @@ function renderAlerts(rows, rg){
     let extra='';
     if(live() && g.bench && g.bench.kill!=null){
       const dates=[]; for(let d=addDays(rg.end,-6); d<=rg.end; d=addDays(d,1)) dates.push(d);
-      const byDate={}; liveRows().filter(r=>r.line===g.line&&r.tier===g.tier).forEach(r=>{ const x=byDate[r.date]||(byDate[r.date]={s:0,p:0,a:0}); x.s+=r.spend; x.p+=r.purchases; x.a+=r.atc; });
+      const byDate={}; liveRows().filter(r=>r.line===g.line&&stageOfRow(r)===g.stage).forEach(r=>{ const x=byDate[r.date]||(byDate[r.date]={s:0,p:0,a:0}); x.s+=r.spend; x.p+=r.purchases; x.a+=r.atc; });
       const dailyCpa = dates.map(d=> byDate[d]&&byDate[d].p ? byDate[d].s/byDate[d].p : null);
       const dailyCatc = dates.map(d=> byDate[d]&&byDate[d].a ? byDate[d].s/byDate[d].a : null);
       const sc = DLmeta.streak(dailyCpa, g.bench.kill, true), sa = g.tier_b&&g.tier_b.killCostPerAtc ? DLmeta.streak(dailyCatc, g.tier_b.killCostPerAtc, true) : 0;
       if(sc>=1) extra += ` · CPA above Kill ${sc} day${sc>1?'s':''} running`;
       if(sa>=3) extra += ` · Cost/ATC above Kill ${sa} days running`;
     }
-    items.push({ st:g.v.status, name:`${g.bench?g.bench.label:g.line} · ${g.tier}`, rule:(g.v.rule||'')+extra, spend:g.roll.spend });
+    items.push({ st:g.v.status, name:`${g.bench?g.bench.label:g.line} · ${stageLabel(g.stage)}`, rule:(g.v.rule||'')+extra, spend:g.roll.spend });
   });
   items.sort((a,b)=>order[a.st]-order[b.st] || b.spend-a.spend);
   document.getElementById('alertNote').textContent = `${items.filter(i=>i.st==='PAUSE').length} pause · ${items.filter(i=>i.st==='WATCH').length} watch · ${items.filter(i=>i.st==='SCALE').length} scale candidates` + (live()?'':' · snapshot: 90-day averages, not today');
@@ -310,7 +312,7 @@ function renderRef(){
       <li>Cost per ATC above its Kill line for 3+ days → tighten bid or pause; the CPA breach follows within a week</li>
       <li>LPV→ATC down 20%+ vs baseline → landing page or creative, not bidding</li>
       <li>CPV up while LPV→ATC holds → audience saturation; refresh or expand</li>
-      <li>Retargeting LPV→ATC should run 2–3× prospecting; if not, the audience is stale</li></ul></div>
+      <li>MOF/BOF LPV→ATC should run 2–3× TOF/TOM; if not, the audience is stale</li></ul></div>
     <div><b>Purchase (the verdict)</b><ul>
       <li>CPA above Kill for 24 hours → PAUSE the ad set. Not monitor. Every day above Kill is money burnt</li>
       <li>CPA between Target and Kill → optimise creative or audience, don’t pause</li>

@@ -856,5 +856,8 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .meta-stage .status .freshness .pend,.meta-stage .status .freshness .val{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .meta-stage .daynav .datebox .dow{font-size:1.05cqh;letter-spacing:.1em;white-space:nowrap;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
 .meta-stage .daynav .seg.small button:disabled{opacity:.35;cursor:not-allowed}
+/* six period buttons now; tighter so the header still fits beside the nav */
+.meta-stage .daynav .seg.small button{font-size:1.05cqh;padding:.45cqh .55cqw;letter-spacing:.04em}
+.meta-stage .daynav .datebox{max-width:13cqw}
 .meta-stage .topnav a{padding-left:.55cqw;padding-right:.55cqw}
 .topnav a{padding-left:.6cqw;padding-right:.6cqw}

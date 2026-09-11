@@ -53,6 +53,9 @@ ok('classify: Diggershield by machine kit words', c('Earthmovers Bundle LAL').li
 ok('stageOf: TOF / TOM / MOF from the campaign name', M.stageOf('🦘AU - ASC - RS - TOF - Broad - Excl.', 'Flagship') === 'TOF' && M.stageOf('🎨 Creative Testing - TOM - ABO - Broad', 'Operator POV') === 'TOM' && M.stageOf('🔥 #5 - EOFY26 - AU - NASC - LS - MOF - All Mid', 'x') === 'MOF');
 ok('stageOf: BOF is the MOF stage; ad set decides only when the campaign says nothing', M.stageOf('🔥 #8 - EOFY26 - AU - NASC - LS - BOF - All', 'x') === 'MOF' && M.stageOf('THS - AU - Conversions/Sales (NEW)', 'MOF (C) Low Ticket Items Retargeting') === 'MOF' && M.stageOf('Prospecting — Pro Mat', 'Broad AU') === null);
 ok('stageOf: does not match inside words', M.stageOf('Bottom line TOMORROW offer', 'x') === null);
+ok('stageFor: falls back on the audience tier when no stage word — Prospecting → TOF, Retargeting/Retention → MOF', M.stageFor('Prospecting — Pro Mat', 'Broad AU', 'Prospecting') === 'TOF' && M.stageFor('RT — Covers DPA', 'viewed 14d', 'Retargeting') === 'MOF' && M.stageFor('x', 'customers', 'Retention') === 'MOF');
+ok('stageFor: a stage word in the name wins over the audience tier', M.stageFor('AU - ASC - RS - MOF - All Mid', 'Broad', 'Prospecting') === 'MOF');
+ok('STAGE_TIER: TOF and TOM judged on Prospecting, MOF on Retargeting', M.STAGE_TIER.TOF === 'Prospecting' && M.STAGE_TIER.TOM === 'Prospecting' && M.STAGE_TIER.MOF === 'Retargeting');
 ok('classify: team shorthand — PRO ENCL', c('Creative Testing · AU_PRO ENCL_30 SECOND INSTALL_SEPT26').line === 'Pro Enclosure');
 ok('classify: team shorthand — PR MAT typo', c('Creative Testing · AU_AUSSIEADVENTURE_SEPT26_PR MAT').line === 'Pro Mats');
 ok('classify: [M] and [PM] prefixes are Pro Mats', c('Creative Testing · [M] AU|PRO||"REVIEW UGC"|JULY26').line === 'Pro Mats' && c('x · [PM] 4WD - 12/5').line === 'Pro Mats');
