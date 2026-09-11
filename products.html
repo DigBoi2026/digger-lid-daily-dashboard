@@ -14,7 +14,7 @@
 </head>
 <body>
 <div id="stageWrap">
-  <div id="stage">
+  <div id="stage" class="products-stage">
     <!-- HEADER -->
     <header id="top">
       <div class="hleft">
@@ -31,22 +31,25 @@
 
       <div class="daynav">
         <div class="datebox">
-          <div class="d">Product Performance</div>
-          <div class="dow" id="winLabel">LAST 30 DAYS</div>
+          <div class="d" id="winLabel">LAST 30 DAYS</div>
+          <div class="dow" id="winDates">—</div>
         </div>
-        <div class="seg small" id="winSeg" role="group" aria-label="Select trailing period" title="Trailing period, ending yesterday, vs the prior equal period">
-          <button data-win="3" aria-label="3 day trailing period">3D</button>
-          <button data-win="7" aria-label="7 day trailing period">7D</button>
-          <button data-win="30" class="active" aria-label="30 day trailing period">30D</button>
-          <button data-win="90" aria-label="90 day trailing period">90D</button>
-          <button data-win="12M" aria-label="12 month trailing period">12M</button>
+        <div class="seg small" id="winSeg" role="group" aria-label="Select period" title="Period ending yesterday on the shop's clock (AEST)">
+          <button data-win="1" aria-label="Yesterday">1D</button>
+          <button data-win="3" aria-label="Last 3 days">3D</button>
+          <button data-win="7" aria-label="Last 7 days">7D</button>
+          <button data-win="30" class="active" aria-label="Last 30 days">30D</button>
+          <button data-win="90" aria-label="Last 90 days">90D</button>
+          <button data-win="MTD" aria-label="Month to date">MTD</button>
+          <button data-win="FYTD" aria-label="Financial year to date, from 1 July">FYTD</button>
+          <button data-win="12M" aria-label="Last 12 months">12M</button>
         </div>
       </div>
 
       <div class="status">
-        <div class="freshness">
-          <div class="lbl">Shopify · through</div>
-          <div class="val" id="throughVal">—</div>
+        <div class="seg small" id="cmpSeg" role="group" aria-label="Compare against" title="What every change on the page is measured against">
+          <button data-cmp="prev" class="active" aria-label="Versus the equal period immediately before">VS PRIOR</button>
+          <button data-cmp="ly" aria-label="Versus the same dates last year">VS LAST YR</button>
         </div>
         <div class="livepill" id="livePill" title="Data source status">
           <span class="dot snap" id="liveDot"></span>
@@ -63,7 +66,7 @@
       <div class="panel">
         <div class="p-head">
           <div class="p-title">Sales by <span>Category</span></div>
-          <div class="p-note" id="catNote">net sales · share · vs 30-day pace</div>
+          <div class="p-note" id="catNote">net sales · share · vs prior period</div>
         </div>
         <div class="catlist" id="catList"></div>
       </div>
@@ -87,7 +90,7 @@
               <button data-mode="net" class="active" aria-label="Net sales dollars">Net $</button>
               <button data-mode="share" aria-label="Share of sales percent">Mix %</button>
             </div>
-            <div class="p-note" id="trendNote">last 12 months</div>
+            <div class="p-note" id="trendNote">by month</div>
           </div>
         </div>
         <div id="p2trendWrap"><canvas id="trendChart"></canvas></div>
@@ -95,7 +98,7 @@
       <div class="panel">
         <div class="p-head">
           <div class="p-title">Top <span>Movers</span></div>
-          <div class="p-note" id="moversNote">run-rate vs 30-day avg</div>
+          <div class="p-note" id="moversNote">products · vs prior period</div>
         </div>
         <div class="health" id="moversWrap"></div>
       </div>
@@ -103,11 +106,11 @@
 
     <footer id="foot">
       <div id="footSource">—</div>
-      <div id="footNote">Read-only · Shopify sales data</div>
+      <div id="footNote">Read-only · Shopify net sales by product, by day</div>
     </footer>
 
     <div class="err" id="errBox">
-      <div><h2>No data loaded</h2><p>Couldn't find <code>shopify_data.js</code>.</p></div>
+      <div><h2>No data loaded</h2><p>Couldn't find <code>products_history.js</code>.</p></div>
     </div>
   </div>
 </div>
@@ -116,7 +119,7 @@
 <script src="https://cdn.jsdelivr.net/npm/animejs@4.0.0/lib/anime.iife.min.js"></script>
 <script src="./motion.js?v=1788991676"></script>
 <script src="./core.js?v=1788991676"></script>
-<script src="./shopify_data.js?v=1788991676"></script>
+<script src="./products_history.js?v=1788991676"></script>
 <script src="./products.js?v=1788991676"></script>
 </body>
 </html>

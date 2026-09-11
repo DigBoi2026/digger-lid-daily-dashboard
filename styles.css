@@ -249,6 +249,19 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .nz-stats .nzc .v{font-size:1.9cqh;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
 .nz-stats .nzc .v small{font-size:1.1cqh;font-weight:400;color:var(--muted)}
 #p2main{display:grid;grid-template-columns:42% 1fr;gap:1.1cqw;min-height:0}
+/* Products header: a period picker and a comparison picker have to share the
+   centre column with the date box, so everything in it is a size down and the
+   date box no longer reserves width it does not use. */
+.hrow .mv-sub .dim{color:var(--muted);opacity:.7;font-weight:400}
+.products-stage .daynav{gap:.5cqw}
+.products-stage .daynav .datebox{min-width:0;text-align:left;padding-right:.4cqw}
+.products-stage .daynav .datebox .d{font-size:1.6cqh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.products-stage .daynav .datebox{max-width:15cqw;overflow:hidden}
+.products-stage .daynav .datebox .dow{font-size:1.05cqh;letter-spacing:.12em;white-space:nowrap;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.products-stage .daynav .seg.small button{font-size:1.05cqh;padding:.45cqh .5cqw;letter-spacing:.04em}
+.products-stage .status{gap:.7cqw}
+.products-stage .status .seg.small button{font-size:1.05cqh;padding:.45cqh .6cqw;letter-spacing:.05em}
+.products-stage .topnav a{padding-left:.6cqw;padding-right:.6cqw}
 #p2bottom{display:grid;grid-template-columns:1.55fr 1fr;gap:1.1cqw;min-height:0}
 #p2donutWrap{flex:1;min-height:0;position:relative}
 #p2trendWrap{flex:1;min-height:0;position:relative}
@@ -287,7 +300,7 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .ptable{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;scrollbar-gutter:stable}
 .ptable .thead{position:sticky;top:0;z-index:2;background:var(--panel)}
 .ptable .trow{flex:0 0 auto}
-.ptable .thead,.ptable .trow{display:grid;grid-template-columns:1.6cqw 1fr auto auto auto auto;gap:.7cqw;align-items:center}
+.ptable .thead,.ptable .trow{display:grid;grid-template-columns:1.6cqw 1fr auto auto auto auto auto;gap:.7cqw;align-items:center}
 .ptable .thead{font-size:1.2cqh;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;padding:.5cqh .6cqw;border-bottom:1px solid var(--line)}
 .ptable .trow{padding:.42cqh .6cqw;border-bottom:1px solid rgba(255,255,255,.04);font-variant-numeric:tabular-nums}
 .ptable .trow:nth-child(even){background:rgba(255,255,255,.02)}
