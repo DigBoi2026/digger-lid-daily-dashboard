@@ -796,3 +796,68 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .nacc b{color:var(--dl-white)}
 .nacc span{display:block;margin-top:.35cqh;padding-top:.35cqh;
   border-top:1px solid rgba(255,255,255,.08);color:var(--warn)}
+
+/* ============ META ADS PAGE ============ */
+/* stage rows: header / kpis / main / bottom / foot */
+#stage.meta-stage{grid-template-rows:9cqh 17cqh minmax(0,1fr) 24cqh 2.8cqh}
+#mtMain{display:grid;grid-template-columns:1.45fr 1fr;gap:1.1cqw;min-height:0}
+#mtBottom{display:grid;grid-template-columns:1.1fr 1fr;gap:1.1cqw;min-height:0}
+.meta-stage .kpi.good{border-color:rgba(57,217,138,.5)} .meta-stage .kpi.warn{border-color:rgba(255,176,32,.55)} .meta-stage .kpi.bad{border-color:rgba(255,90,82,.6)}
+.meta-stage .kpi.bad .k-val{color:var(--bad)} .meta-stage .kpi.warn .k-val{color:var(--warn)} .meta-stage .kpi.good .k-val{color:var(--good)}
+.meta-stage .kpi .k-per{margin-left:.5cqw}
+/* the board: ten columns, dense */
+.ptable .thead.mt,.ptable .trow.mt{grid-template-columns:1.7fr .9fr .55fr .8fr .7fr .7fr .9fr 1fr .9fr .9fr;gap:.5cqw}
+.ptable .trow.mt{cursor:pointer;padding:.4cqh .6cqw}
+.ptable .trow.mt:hover{background:rgba(245,235,25,.05)}
+.ptable .trow.mt.sel{background:rgba(245,235,25,.09);box-shadow:inset .25cqw 0 0 var(--dl-yellow)}
+.ptable .trow.mt .num{font-size:1.3cqh}
+.ptable .trow.mt .num .sub{font-size:1.0cqh;font-weight:400;color:var(--muted);line-height:1.1}
+.ptable .trow.mt .num .sub .delta{font-size:1.0cqh;padding:0 .3cqw}
+.ptable .trow.mt .pname{font-size:1.3cqh}
+.ptable .trow.mt .pcat .est{color:var(--warn);font-style:italic;text-transform:none;letter-spacing:0}
+.ptable .thead.mt{font-size:1.05cqh}
+.ptable sup{font-size:.7em;color:var(--warn);margin-left:.1cqw}
+.vchip{display:inline-block;font-size:.95cqh;font-weight:800;letter-spacing:.1em;padding:.3cqh .6cqw;border-radius:.5cqh;border:1px solid currentColor;white-space:nowrap}
+.v-pause{color:var(--bad)} .v-watch{color:var(--warn)} .v-scale{color:var(--good)} .v-optimise{color:var(--dl-yellow)} .v-low,.v-none{color:var(--muted)}
+/* funnel cells */
+.funnel{display:grid;grid-template-columns:repeat(3,1fr);gap:.6cqw;margin-bottom:.8cqh}
+.fcell{background:var(--panel-2);border:1px solid var(--line);border-radius:.7cqh;padding:.6cqh .8cqw;min-width:0}
+.fcell .l{font-size:1.0cqh;color:var(--muted);text-transform:uppercase;letter-spacing:.12em}
+.fcell .v{font-size:2.1cqh;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.05}
+.fcell .s{font-size:1.0cqh;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fcell .s .delta{font-size:1.0cqh;padding:0 .3cqw}
+.fcell.bad{border-color:rgba(255,90,82,.6)} .fcell.bad .v{color:var(--bad)}
+.fcell.good{border-color:rgba(57,217,138,.45)} .fcell.good .v{color:var(--good)}
+.fcell.warn{border-color:rgba(255,176,32,.5)} .fcell.warn .v{color:var(--warn)}
+#mtChartWrap{flex:1;min-height:0;position:relative}
+/* absolutely positioned so an undrawn canvas's default 300×150 cannot push the panel */
+#mtChartWrap canvas{position:absolute;inset:0;width:100%!important;height:100%!important}
+.meta-stage .p-note.chartfoot{margin-top:.4cqh;font-size:1.0cqh}
+/* alerts */
+.hrow.alert{grid-template-columns:auto 1fr auto;align-items:center}
+.hrow.alert .hnm{text-transform:none;letter-spacing:0;color:var(--dl-white);font-size:1.25cqh;white-space:normal;line-height:1.2}
+.hrow.alert .hnm b{color:var(--dl-white)} .hrow.alert .hnm small{display:block;color:var(--muted);font-size:1.05cqh;margin-top:.1cqh}
+.hrow.alert .hval{grid-column:3}
+.meta-stage .health{justify-content:flex-start;overflow-y:auto}
+/* reference panel */
+.ptable .thead.mt2,.ptable .trow.mt2{grid-template-columns:1.3fr .9fr .7fr .55fr .6fr .6fr .65fr .7fr 2fr;gap:.5cqw}
+.ptable .trow.mt2{padding:.35cqh .6cqw} .ptable .trow.mt2 .num{font-size:1.25cqh} .ptable .trow.mt2 .pname{font-size:1.25cqh}
+.ptable .trow.mt2 .note{font-size:1.0cqh;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.refnote{font-size:1.0cqh;color:var(--muted);padding:.6cqh .6cqw;line-height:1.35;border-top:1px solid var(--line);margin-top:.3cqh}
+.xhead,.xrow{display:grid;grid-template-columns:1.6fr repeat(6,1fr);gap:.3cqw;align-items:center;padding:.25cqh .6cqw}
+.xhead{font-size:.95cqh;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;border-bottom:1px solid var(--line)}
+.xhead div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.xrow .xl{font-size:1.2cqh;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .xrow .xl small{color:var(--muted);font-weight:400;font-size:.95cqh}
+.xrow .xc{font-size:1.15cqh;text-align:center;border-radius:.4cqh;padding:.35cqh 0;font-variant-numeric:tabular-nums}
+.xrow .xc.diag{outline:1px solid rgba(245,235,25,.35)}
+.rules{display:grid;grid-template-columns:repeat(3,1fr);gap:.8cqw;padding:.4cqh .6cqw;font-size:1.05cqh;color:var(--muted);line-height:1.3}
+.rules b{color:var(--dl-white);font-size:1.1cqh;letter-spacing:.04em} .rules ul{margin:.4cqh 0 0 1.2cqw;padding:0} .rules li{margin-bottom:.35cqh}
+.meta-stage .daynav .datebox{min-width:0;text-align:left;padding-right:.4cqw}
+.meta-stage .daynav .datebox .d{font-size:1.7cqh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta-stage .daynav .datebox{max-width:14cqw;overflow:hidden}
+.meta-stage .status .freshness{max-width:14cqw}
+.meta-stage .status .freshness .pend,.meta-stage .status .freshness .val{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.meta-stage .daynav .datebox .dow{font-size:1.05cqh;letter-spacing:.1em;white-space:nowrap;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.meta-stage .daynav .seg.small button:disabled{opacity:.35;cursor:not-allowed}
+.meta-stage .topnav a{padding-left:.55cqw;padding-right:.55cqw}
+.topnav a{padding-left:.6cqw;padding-right:.6cqw}

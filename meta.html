@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DiggerLid — Meta Ads vs Benchmarks</title>
+<link rel="icon" href="./assets/favicon32.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300;400;500;700&family=League+Spartan:wght@400;700;900&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="./styles.css?v=1788991676" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div id="stageWrap">
+  <div id="stage" class="meta-stage">
+    <!-- HEADER -->
+    <header id="top">
+      <div class="hleft">
+        <div class="brand"><img src="./assets/dl_wordmark.png" alt="DiggerLid" /></div>
+        <nav class="topnav">
+          <a href="index.html">Daily Ops</a>
+          <a href="daily.html">Pulse</a>
+          <a href="performance.html">Performance Marketing</a>
+          <a href="meta.html" class="active" aria-current="page">Meta Ads</a>
+          <a href="products.html">Products</a>
+          <a href="region.html">Region</a>
+          <a href="forecast.html">Forecast</a>
+        </nav>
+      </div>
+
+      <div class="daynav">
+        <div class="datebox">
+          <div class="d" id="winLabel">LAST 7 DAYS</div>
+          <div class="dow" id="winDates">—</div>
+        </div>
+        <div class="seg small" id="winSeg" role="group" aria-label="Select period" title="Period ending yesterday, vs the equal period before">
+          <button data-win="3">3D</button>
+          <button data-win="7" class="active">7D</button>
+          <button data-win="14">14D</button>
+          <button data-win="30">30D</button>
+          <button data-win="90">90D</button>
+        </div>
+      </div>
+
+      <div class="status">
+        <div class="freshness">
+          <div class="lbl" id="throughLbl">Meta · through</div>
+          <div class="val" id="throughVal">—</div>
+          <div class="pend" id="throughPend"></div>
+        </div>
+        <div class="livepill" id="livePill" title="Data source status">
+          <span class="dot snap" id="liveDot"></span>
+          <span id="liveText">Snapshot</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- KPI STRIP: the account against the blended benchmarks -->
+    <section id="kpis"></section>
+
+    <!-- MAIN -->
+    <section id="mtMain">
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Benchmark <span>Board</span></div>
+          <div class="p-note" id="boardNote">every line × tier against its Target and Kill · click a row</div>
+        </div>
+        <div class="ptable" id="board"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Funnel · <span id="funnelLine">—</span></div>
+          <div class="p-note" id="funnelNote">cost per landing view → add to cart → purchase, each against its line</div>
+        </div>
+        <div class="funnel" id="funnel"></div>
+        <div id="mtChartWrap"><canvas id="mtChart"></canvas></div>
+        <div class="p-note chartfoot" id="chartNote"></div>
+      </div>
+    </section>
+
+    <!-- BOTTOM -->
+    <section id="mtBottom">
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Rules <span>Fired</span></div>
+          <div class="p-note" id="alertNote">the framework’s daily rules, applied to the window</div>
+        </div>
+        <div class="health" id="alerts"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Where the <span>numbers come from</span></div>
+          <div class="p-head-right">
+            <div class="seg tiny" id="refSeg" role="group" aria-label="Reference view">
+              <button data-ref="econ" class="active">Economics</button>
+              <button data-ref="xsell">Cross-sell</button>
+              <button data-ref="rules">Rules</button>
+            </div>
+          </div>
+        </div>
+        <div class="ptable" id="refWrap"></div>
+      </div>
+    </section>
+
+    <footer id="foot">
+      <div id="footSource">—</div>
+      <div id="footNote">Read-only · Meta Ads vs v5.2 benchmarks · targets calibrated to new-customer economics</div>
+    </footer>
+
+    <div class="err" id="errBox">
+      <div><h2>No data loaded</h2><p>Couldn't find <code>meta_snapshot.js</code>.</p></div>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/animejs@4.0.0/lib/anime.iife.min.js"></script>
+<script src="./motion.js?v=1788991676"></script>
+<script src="./core.js?v=1788991676"></script>
+<script src="./lib/meta_bench.js?v=1788991676"></script>
+<script src="./data.js?v=1788991676"></script>
+<script src="./meta_snapshot.js?v=1788991676"></script>
+<script src="./meta.js?v=1788991676"></script>
+</body>
+</html>

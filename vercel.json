@@ -25,6 +25,9 @@
     },
     "api/ai/llms.js": {
       "maxDuration": 10
+    },
+    "api/meta.js": {
+      "maxDuration": 30
     }
   },
   "headers": [
