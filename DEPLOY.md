@@ -44,6 +44,16 @@ the page silently stays on the snapshot — so a half-configured deploy still wo
 | `SHOPIFY_TOKEN` | Admin API access token, `shpat_…` |
 | `SHOPIFY_API_VERSION` | *(optional)* defaults to `2025-01` |
 
+**Meta Ads page** (`/api/meta`; without these the page shows the committed 90-day snapshot):
+
+| Var | Value |
+|---|---|
+| `META_ACCESS_TOKEN` | system-user token with `ads_read` (Business Settings → System users → Generate token) |
+| `META_AD_ACCOUNT_ID` | the **ad account** number — `285154215` for DiggerLid AU — with or without `act_`. Not the app ID, not the business ID. |
+| `META_API_VERSION` | *(optional)* defaults to `v21.0` |
+
+If the page's pill stays orange, open `/api/meta`: on a refused read it lists the scopes the token holds and the ad accounts it can see, with the fix. Env var changes only reach the function after a redeploy.
+
 ---
 
 ## 2. Create the Google service account (≈5 min, you must do this — I can't create credentials)
