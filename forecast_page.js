@@ -140,7 +140,7 @@ function activeSale() {
 /* Typed declarations as the engine sees them. Lifts arrive as percentages
    from the form; the engine wants fractions. */
 function userMods() {
-  return S.mods.map((m, i) => ({
+  return DECLARED.concat(S.mods).map((m, i) => ({
     key: 'user:' + i, kind: 'user', name: m.name,
     start: m.start, end: m.end, lift: m.lift / 100,
     payback: m.payback ? m.payback / 100 : 0,
@@ -633,10 +633,14 @@ function renderChart(p, ctx) {
           c.fillRect(x1, ar.top, x2 - x1, ar.bottom - ar.top);
           c.fillStyle = 'rgba(245,235,25,0.55)';
           c.font = '600 9px system-ui, sans-serif';
-          c.fillText(bd.name.replace(/ \d{4}$/, ''), x1 + 3, ar.top + 10);
+          c.fillText(bd.name.replace(/ \d{4}$/, '') + ' sale', x1 + 3, ar.top + 10);
         }
         const x3 = at(bd.pbEnd);
         if (x2 != null && x3 != null) {
+          /* On a long window the run-up is a sliver, and "payback" would print
+             on top of the sale's own label; it takes the next line instead. */
+          const nameW = x1 != null ? c.measureText(bd.name.replace(/ \d{4}$/, '') + ' sale').width + 6 : 0;
+          const pbY = (x1 != null && x2 - x1 < nameW) ? ar.top + 21 : ar.top + 10;
           /* Lighter than the run-up, and labelled: an unlabelled red wash over
              three weeks of the chart reads as an error region rather than as
              the demand that was pulled forward out of it. */
@@ -644,7 +648,7 @@ function renderChart(p, ctx) {
           c.fillRect(x2, ar.top, x3 - x2, ar.bottom - ar.top);
           c.fillStyle = 'rgba(255,90,82,0.5)';
           c.font = '600 9px system-ui, sans-serif';
-          c.fillText('payback', x2 + 3, ar.top + 10);
+          c.fillText('payback', x2 + 3, pbY);
         }
       });
       const xt = at(p.from);
@@ -769,8 +773,8 @@ function renderTimeline(p, ctx) {
       /* The day count leads on a part month. $197K for the 22 days left of
          September is not September, and the figure is quoted against the same
          22 days last year, so both halves of the comparison need saying. */
-      sub = (ds.length < dim ? ds.length + 'd · ' : '') +
-            (ly.sum ? 'x' + (m.revenue / ly.sum).toFixed(2) + ' vs last yr' : 'no prior year');
+      sub = (ds.length < dim ? ds.length + ' days left · ' : '') +
+            (ly.sum ? 'x' + (m.revenue / ly.sum).toFixed(2) + ' on same dates last yr' : 'no prior year to compare');
     } else {
       head = fmtv(b.actual);
       /* A banked month reports the same measure as a forecast one — its
@@ -779,8 +783,8 @@ function renderTimeline(p, ctx) {
       const a2 = k + '-01' < first ? first : k + '-01';
       const z2 = k + '-' + String(b.days).padStart(2, '0');
       const ly = priorSameDates(srcRows, a2, z2 > last ? last : z2);
-      sub = (b.days < dim ? b.days + ' of ' + dim + 'd · ' : '') +
-            (ly.sum ? 'x' + (b.actual / ly.sum).toFixed(2) + ' vs last yr' : 'no prior year');
+      sub = (b.days < dim ? b.days + ' of ' + dim + ' days · ' : '') +
+            (ly.sum ? 'x' + (b.actual / ly.sum).toFixed(2) + ' on same dates last yr' : 'no prior year to compare');
     }
     /* HOW MUCH FITS IS DECIDED HERE, not by the browser cutting text off.
 
@@ -791,57 +795,96 @@ function renderTimeline(p, ctx) {
        the least important line at each threshold and keeps everything in the
        tooltip. Degrading on purpose beats clipping by accident. */
     const px = g.width / 100 * plotW;
-    const idxLine = n ? 'season x' + idx.toFixed(2) + (n <= 1 ? ' · 1 yr' : '') : 'no history';
-    const full = [monthLabel(k), m ? '' : 'actual', head, sub, idxLine].filter(Boolean).join(' · ');
-    return `<div class="tl-m${m ? '' : ' past'}" style="left:${g.left}%;width:${g.width}%"
+    /* Every line says what kind of number it is. "season x0.73 · 1 yr" was
+       three abbreviations deep; "month index x0.73 · 1 yr of data" is the same
+       fact in words a reader who has not seen the maths can follow. */
+    const idxLine = n ? 'month index x' + idx.toFixed(2) + (n <= 1 ? ' · 1 yr of data' : '') : 'no history for this month';
+    const kind = m ? 'forecast' : 'actual';
+    const full = [monthLabel(k), kind, head, sub, idxLine].filter(Boolean).join(' · ');
+    const name = px < 64 ? MONTH_ABBR[+k.slice(5, 7) - 1] : monthLabel(k);
+    return `<div class="tl-m${m ? '' : ' past'}${px < 64 ? ' narrow' : ''}" style="left:${g.left}%;width:${g.width}%"
         title="${esc(full)}">
-      <div class="tl-m-name">${monthLabel(k)}${m || px < 110 ? '' : ' <i>actual</i>'}</div>
+      <div class="tl-m-name">${name}${px < 118 ? '' : ' <i>' + kind + '</i>'}</div>
       ${px >= 52 ? `<div class="tl-m-val">${head}</div>` : ''}
       ${px >= 96 ? `<div class="tl-m-sub">${sub}</div>` : ''}
-      ${px >= 140 ? `<div class="tl-m-idx">${idxLine}</div>` : ''}
+      ${px >= 96 ? `<div class="tl-m-idx">${idxLine}</div>` : ''}
     </div>`;
   }).join('');
 
-  /* ---- lane 2: what is being applied, and by how much ------------------- */
+  /* ---- lane 2: multipliers applied on top of the seasonality --------------
+     Each band is one modifier, quoted at its PEAK day: "+47% on average" says
+     nothing about the day it mattered most. The label is allowed to run past a
+     narrow band — a fortnight is 6% of a six-month window — but never past the
+     lane's right edge. */
+  const laneRight = pctLeft => Math.max(40, (100 - pctLeft) / 100 * plotW - 6);
   const bars = [];
   allMods().forEach(m => {
     if ((m.paybackEnd || m.end) < first || m.start > last) return;
     const mine = m.kind === 'user';
-    /* The multiple, which is the whole point of the bar: a sale period whose
-       run-up ramps is quoted at its PEAK day, because "+47% on average" tells
-       you nothing about the day it mattered most. */
     const peak = (m.profile && m.profile.length)
       ? Math.max.apply(null, m.profile.map(o => o.lift)) : (m.lift || 0);
     const g = seg(m.start < first ? first : m.start, m.end > last ? last : m.end);
+    const nm = m.name.replace(/ \d{4}$/, '');
+    const what = mine ? 'declared' : (m.measured && m.measured.own ? 'sale period · measured' : 'sale period · carried fwd');
+    const span = isoToNice(m.start) + '–' + isoToNice(m.end);
     bars.push(`<div class="tl-b${mine ? ' mine' : ''}" style="left:${g.left}%;width:${g.width}%"
-        title="${esc(m.name)} · ${isoToNice(m.start)} to ${isoToNice(m.end)} · peak x${(1 + peak).toFixed(2)}">
-        <b>x${(1 + peak).toFixed(2)}</b> <span>${esc(m.name.replace(/ \d{4}$/, ''))}</span></div>`);
+        title="${esc(nm)} · ${what} · ${span} · peak x${(1 + peak).toFixed(2)} on the forecast">
+        <div class="tl-bl" style="max-width:${laneRight(g.left).toFixed(0)}px"><b>x${(1 + peak).toFixed(2)}</b>
+        <span>${esc(nm)} · ${esc(what)} · ${span}</span></div></div>`);
     if (m.payback && m.paybackEnd) {
       const gp = seg(m.end, m.paybackEnd > last ? last : m.paybackEnd);
       bars.push(`<div class="tl-b pb" style="left:${gp.left}%;width:${gp.width}%"
-        title="payback after ${esc(m.name)} · to ${isoToNice(m.paybackEnd)}">
-        <b>x${(1 + m.payback).toFixed(2)}</b> <span>payback</span></div>`);
+        title="payback after ${esc(nm)} · demand pulled forward · ${isoToNice(m.end)}–${isoToNice(m.paybackEnd)} · x${(1 + m.payback).toFixed(2)}">
+        <div class="tl-bl" style="max-width:${laneRight(gp.left).toFixed(0)}px"><b>x${(1 + m.payback).toFixed(2)}</b>
+        <span>payback after ${esc(nm)} · to ${isoToNice(m.paybackEnd)}</span></div></div>`);
     }
   });
-  /* Recurring events get a marker, not a bar: they are already inside the month
-     index above, and a bar would read as a second multiplier on top of it. */
-  const evs = F.EVENTS.filter(e => e.via === 'index').map(e => {
+  /* Recurring events get a marker, not a band: they are already inside the
+     month index above, and a band would read as a second multiplier on top of
+     it. The marker quotes the index so the reader can see where the event's
+     effect actually lives. */
+  const evList = F.EVENTS.filter(e => e.via === 'index').map(e => {
     const k = Object.keys(byMonth).find(x => +x.slice(5, 7) === e.month);
-    if (!k) return '';
+    if (!k) return null;
     const dim = F.daysInMonth(+k.slice(0, 4), e.month);
     const mid = k + '-' + String(Math.round(dim / 2)).padStart(2, '0');
-    if (mid < first || mid > last) return '';
-    return `<div class="tl-e" style="left:${pos(mid)}%" title="${esc(e.note)}">
-        ${esc(e.name)}<small>in the season index</small></div>`;
+    if (mid < first || mid > last) return null;
+    return { e, x: pos(mid), idx: p.basis.season.index[e.month] };
+  }).filter(Boolean).sort((a, b) => a.x - b.x);
+  /* A marker's text may not run into its neighbour's: on a six-month window
+     BFCM and its December payback sit 16% apart, and two lines of small print
+     printed over each other read as neither. */
+  const isRight = o => o.x > 88;
+  const evs = evList.map((o, i) => {
+    const right = isRight(o);
+    /* The room on the side the text grows into. A neighbour whose text grows
+       towards this one shares the gap, so each takes half. */
+    let gapPct;
+    if (right) { const pv = evList[i - 1]; gapPct = pv ? (o.x - pv.x) * (isRight(pv) ? 1 : 0.5) : o.x; }
+    else { const nx = evList[i + 1]; gapPct = nx ? (nx.x - o.x) * (isRight(nx) ? 0.5 : 1) : 100 - o.x; }
+    const maxW = Math.max(40, Math.min(plotW * 0.16, gapPct / 100 * plotW - 6));
+    const at = right ? `right:${(100 - o.x).toFixed(2)}%` : `left:${o.x.toFixed(2)}%`;
+    return `<div class="tl-e${right ? ' r' : o.x < 8 ? ' l' : ''}" style="${at};max-width:${maxW.toFixed(0)}px" title="${esc(o.e.name)} · ${esc(o.e.note)}">
+        ${esc(o.e.name)}<small>${MONTH_ABBR[o.e.month - 1]} index x${o.idx ? o.idx.toFixed(2) : '—'}</small></div>`;
   }).join('');
 
   const today = pos(p.from);
+  const key = `<div class="tl-key">
+      <span class="tk-h">Timeline</span>
+      <span class="tk months" title="Each month: the forecast (or the actual once it is banked), its multiple on the same dates last year, and its month index">months: forecast or actual · x on same dates last yr · month index</span>
+      <span class="tk band" title="A sale period or declaration, multiplied onto the forecast for those days; quoted at its peak">multiplier applied</span>
+      <span class="tk band pb" title="Demand pulled forward by the sale: the days after it run below trend">payback</span>
+      <span class="tk band mine" title="Declared by the business, not measured from the book">declared</span>
+      <span class="tk ev" title="Recurring event already inside the month index — shown so you know where it lives, not added again">event in the month index</span>
+      <span class="tk now">today</span>
+    </div>`;
   el.innerHTML = `<div class="tl-inner" style="padding-left:${padL}%;padding-right:${padR}%">
       <div class="tl-rel">
+        ${key}
         <div class="tl-now" style="left:${today}%"></div>
         <div class="tl-lane tl-months">${monthCells}</div>
         <div class="tl-lane tl-drivers">${evs}${bars.join('') ||
-          '<div class="tl-none">Nothing declared in this window — the forecast is the seasonality alone.</div>'}</div>
+          '<div class="tl-none">No sale period or declaration falls in this window — the forecast is the seasonality and trend alone.</div>'}</div>
       </div>
     </div>`;
 }
@@ -940,8 +983,8 @@ function renderTrends(p, ctx) {
 
 /* ------------------------------------------------- where every $100 goes */
 
-/* The single most useful picture on this page, and the only one that needs no
-   model at all: five costs as shares of a hundred dollars of sales.
+/* Five costs as shares of a hundred dollars of sales. Drawn under the profit
+   forecast for the horizon, and in the explanation for the last 30 days.
 
    Computed from ACTUAL rows, not the forecast. Pending days are excluded — a
    day with revenue typed but ad spend not yet would show ads at zero and
@@ -997,201 +1040,97 @@ function hundredBar(h, label, sub, compact) {
   </div>`;
 }
 
-function renderHundred(p, ctx) {
-  const el = document.getElementById('hundredWrap');
-  /* Costs are recorded for the business, not per customer group and not per
-     destination, so there is no honest $100 to break down on the other lenses. */
+/* ------------------------------------------------------ profit forecast */
+
+/* Month by month, under the scenario on screen. Revenue is the headline on the
+   rest of the page; this is the panel that says what is left of it, and it
+   exists because the answer changes sign: a September at $197K loses money and
+   a November at $1.3M makes the year, on the same cost base.
+
+   Bars are drawn from a zero line — a loss goes left in red, a profit right in
+   green — so the sign is visible before the number is read. Each row's tooltip
+   carries the pessimistic-to-optimistic spread for that month. The $100 bar
+   beneath is the horizon's own cost structure: how the forecast revenue splits
+   into GST, variable cost, ads, fixed cost and profit. */
+function renderProfit(p, ctx) {
+  const bars = document.getElementById('profitBars');
+  const h100 = document.getElementById('profitH100');
+  const note = document.getElementById('profitNote');
+  if (!bars) return;
   if (ctx.L && !ctx.L.profit) {
-    el.innerHTML = `<div class="empty">Your costs are recorded for the business as a whole —
-      not per customer group and not per destination — so there is no cost breakdown for
-      the <b>${esc(ctx.L.label)}</b> lens. Switch to <b>Total</b> for this.</div>`;
-    document.getElementById('hundredNote').textContent = 'available on the Total lens';
+    bars.innerHTML = `<div class="empty">Costs are recorded for the business as a whole —
+      not per customer group, destination or product — so profit is forecast on the
+      <b>Total</b> lens only.</div>`;
+    h100.innerHTML = '';
+    note.textContent = 'Total lens only';
     return;
   }
-  const complete = ctx.list.filter(r => r.revenue > 0 && !r.pending && r.totalFC != null);
-  const last30 = complete.slice(-30);
-  const now = hundredOf(last30);
-  if (!now) { el.innerHTML = '<div class="empty">Not enough complete days.</div>'; return; }
-  /* The same 30 calendar dates a year earlier, so the comparison is like for
-     like rather than "the last 30 days versus a whole month". */
-  const yb = d => { const t = new Date(d + 'T00:00:00Z'); t.setUTCFullYear(t.getUTCFullYear() - 1); return t.toISOString().slice(0, 10); };
-  const a = yb(last30[0].date), z = yb(last30[last30.length - 1].date);
-  const prior = hundredOf(ctx.list.filter(r => r.date >= a && r.date <= z));
-
-  el.innerHTML =
-    hundredBar(now, 'Last ' + now.days + ' days', money(now.perDay, true) + '/day') +
-    (prior ? hundredBar(prior, 'Same dates last year', money(prior.perDay, true) + '/day') : '') +
-    `<div class="h100-foot">Wages and overheads take
-       <b>${now.fixed.toFixed(0)}c</b> of every dollar${prior ?
-       ', against <b>' + prior.fixed.toFixed(0) + 'c</b> a year ago' : ''}. It is a fixed
-       ${money(p.pnl.fcPerDay)} a day whatever you sell, so the only way that share falls is
-       to sell more.</div>`;
-  document.getElementById('hundredNote').textContent =
-    isoToNice(now.from) + ' → ' + isoToNice(now.to) + ' · actual, not forecast';
-}
-
-/* -------------------------------------------------------- sale periods */
-
-/* Measured, recurring, dated by rule. The lift is a FACT about the past for a
-   year that has happened, and an editable expectation for one that has not —
-   so the input is offered either way but says which it is. */
-function renderSales(p) {
-  const el = document.getElementById('saleList');
-  const horFrom = F.addDays(p.from, 1), horTo = F.addDays(p.from, p.horizon);
-  const runsFor = key => (p.modifierEffect.runs || []).filter(r => r.keys.indexOf(key) !== -1);
-
-  el.innerHTML = S.sale.map(m => {
-    const off = S.saleOff.indexOf(m.key) !== -1;
-    const live = (m.paybackEnd || m.end) >= horFrom && m.start <= horTo;
-    const other = (m.measured.allYears || []).filter(y => y.year !== m.measured.from);
-    const ov = runsFor(m.key);
-    const past = m.end <= p.from;
-    return `<div class="catrow sale${off ? ' off' : ''}">
-      <div class="cinfo">
-        <div class="cname">${esc(m.name)}
-          ${m.overridden ? '<small class="yours">yours</small>'
-            : m.measured.own ? '<small>measured</small>' : '<small>carried fwd</small>'}</div>
-        <div class="cmeta">${isoToNice(m.start)} → ${isoToNice(m.end)}${m.paybackEnd
-          ? ', payback to ' + isoToNice(m.paybackEnd) : ', no payback'}
-          ${m.measured.lift != null ? '· book says ' + pct(m.measured.lift * 100, 0) : '· no precedent'}
-          ${other.length ? '(' + other.map(y => y.year + ' ' + pct(y.lift * 100, 0)).join(', ') + ')' : ''}
-          ${ov.length ? '<b class="ovl">overlaps ' + ov.reduce((a, r) => a + r.days, 0) + 'd with ' +
-             esc(ov[0].names.filter(n => n !== m.name).join(', ')) + '</b>' : ''}</div>
-        <div class="saleedit">
-          <label>Lift <input type="number" step="5" data-sale-lift="${esc(m.key)}"
-            value="${Math.round(m.lift * 100)}" ${past ? 'disabled' : ''} aria-label="Lift percent" />%</label>
-          <label>Payback <input type="number" step="5" data-sale-pay="${esc(m.key)}"
-            value="${Math.round((m.payback || 0) * 100)}" ${past ? 'disabled' : ''} aria-label="Payback percent" />%</label>
-          ${m.overridden && !past ? `<button class="salereset" data-sale-reset="${esc(m.key)}">reset</button>` : ''}
-        </div>
-      </div>
-      <div class="cright">
-        ${off ? '<span class="cf none">off</span>'
-          : live ? '<span class="cf ok">applied</span>' : '<span class="cf thin">outside</span>'}
-        <button class="modx" data-sale="${esc(m.key)}"
-          aria-label="${off ? 'Switch on' : 'Switch off'} ${esc(m.name)}">${off ? '+' : '✕'}</button>
-      </div>
+  const months = p.months || [];
+  const per = k => {
+    const by = {}; ((ctx.scen[k] && ctx.scen[k].months) || []).forEach(m => by[m.month] = m); return by;
+  };
+  const lo = per('pessimistic'), hi = per('optimistic');
+  const maxAbs = Math.max(1, ...months.map(m => Math.abs(m.profit || 0)),
+                          ...months.map(m => Math.abs((lo[m.month] || {}).profit || 0)),
+                          ...months.map(m => Math.abs((hi[m.month] || {}).profit || 0)));
+  const dim = k => F.daysInMonth(+k.slice(0, 4), +k.slice(5, 7));
+  bars.innerHTML = months.map(m => {
+    const pr = m.profit || 0, neg = pr < 0;
+    const w = Math.abs(pr) / maxAbs * 50;
+    const l = (lo[m.month] || {}).profit, h = (hi[m.month] || {}).profit;
+    const part = m.days < dim(m.month);
+    const label = MONTH_ABBR[+m.month.slice(5, 7) - 1] + (part ? ' <i>' + m.days + 'd</i>' : '');
+    const range = (l != null && h != null) ? ' · pessimistic ' + money(l, true) + ' to optimistic ' + money(h, true) : '';
+    const title = monthLabel(m.month) + (part ? ' (' + m.days + ' days)' : '') + ': ' + money(pr, true) +
+      ' profit on ' + money(m.revenue, true) + ' revenue, margin ' + (m.margin != null ? (m.margin * 100).toFixed(1) + '%' : '—') +
+      ' · ads ' + money(m.adSpend, true) + ' · fixed ' + money(m.fixed, true) + range;
+    /* The spread as a faint whisker on the same scale, so a month whose sign is
+       not settled between the scenarios looks unsettled. */
+    const wl = l != null ? l / maxAbs * 50 : null, wh = h != null ? h / maxAbs * 50 : null;
+    const whisker = (wl != null && wh != null)
+      ? `<u style="left:${(50 + Math.min(wl, wh)).toFixed(1)}%;width:${Math.max(0.4, Math.abs(wh - wl)).toFixed(1)}%"></u>` : '';
+    return `<div class="pr${neg ? ' neg' : ' pos'}" title="${esc(title)}">
+      <div class="pr-l">${label}</div>
+      <div class="pr-t"><s></s>${whisker}<i style="left:${(neg ? 50 - w : 50).toFixed(1)}%;width:${w.toFixed(1)}%"></i></div>
+      <div class="pr-v">${money(pr, true)}<small>${m.margin != null ? (m.margin * 100).toFixed(0) + '% margin' : '—'}</small></div>
     </div>`;
-  }).join('') || '<div class="empty">No sale period measurable in the book yet.</div>';
+  }).join('');
 
-  el.querySelectorAll('[data-sale]').forEach(b => b.onclick = () => {
-    const k = b.dataset.sale, at = S.saleOff.indexOf(k);
-    if (at === -1) S.saleOff.push(k); else S.saleOff.splice(at, 1);
-    saveMods(); render();
-  });
-  /* `change`, not `input`: re-rendering the board on every keystroke would take
-     the focus out of the field being typed into. */
-  el.querySelectorAll('[data-sale-lift]').forEach(i => i.onchange = () => {
-    setSaleOverride(i.dataset.saleLift, 'lift', parseFloat(i.value));
-  });
-  el.querySelectorAll('[data-sale-pay]').forEach(i => i.onchange = () => {
-    setSaleOverride(i.dataset.salePay, 'payback', parseFloat(i.value));
-  });
-  el.querySelectorAll('[data-sale-reset]').forEach(b => b.onclick = () => {
-    delete S.saleEdit[b.dataset.saleReset]; saveMods(); render();
-  });
+  /* The horizon's own $100. GST and variable cost are rates; ads and fixed are
+     what the projection actually applied, so a horizon that crosses November
+     shows fixed cost's share shrinking as it should. */
+  const pnl = p.pnl;
+  if (pnl && p.total) {
+    const fixed = months.reduce((a, m) => a + (m.fixed || 0), 0);
+    const hh = { gst: (1 - pnl.exGstRate) * 100, variable: pnl.vcRate * 100,
+                 ads: p.adSpend / p.total * 100, fixed: fixed / p.total * 100 };
+    hh.profit = 100 - hh.gst - hh.variable - hh.ads - hh.fixed;
+    const complete = ctx.list.filter(r => r.revenue > 0 && !r.pending && r.totalFC != null);
+    const now = hundredOf(complete.slice(-30));
+    h100.innerHTML = hundredBar(hh, 'Every $100 of forecast sales',
+      now ? 'last ' + now.days + 'd actual: $' + now.profit.toFixed(0) : '', true);
+  } else h100.innerHTML = '';
 
-  const nLive = activeSale().filter(m => (m.paybackEnd || m.end) >= horFrom && m.start <= horTo).length;
-  document.getElementById('saleNote').textContent =
-    nLive ? nLive + ' applied in this horizon' : 'none in this horizon';
-
-  const lc = levelCorrected(p);
-  document.getElementById('saleWarn').innerHTML = lc ? (() => {
-    const bare = uncorrectedLevel(p);
-    return `<div class="bwarn"><b>Level corrected:</b> ${esc(lc.name)} is divided out before
-      anything is fitted, taking the level from ${money(bare)} to ${money(p.level)} a day
-      (${pct((p.level / bare - 1) * 100, 0)}). The three weeks of August before it ran x1.69 on
-      last year, in line with May's x1.77 and June's x1.72; the promotion fortnight ran x2.93.
-      Direction certain, size less so — an independent estimate lands about 9% above.</div>`;
-  })() : `<div class="bwarn">No sale period touches the window the level is measured over,
-      so the level is an ordinary trading baseline.</div>`;
+  const label = S.hor === 'EOY' ? 'to year end' : 'next ' + p.horizon + ' days';
+  const lo_t = ctx.scen.pessimistic && ctx.scen.pessimistic.profit, hi_t = ctx.scen.optimistic && ctx.scen.optimistic.profit;
+  note.textContent = S.scen + ' · ' + money(p.profit, true) + ' ' + label +
+    (lo_t != null && hi_t != null ? ' · ' + money(lo_t, true) + ' to ' + money(hi_t, true) : '');
 }
 
-function setSaleOverride(key, field, val) {
-  if (isNaN(val)) return;
-  const base = S.sale.find(m => m.key === key);
-  if (!base) return;
-  const e = S.saleEdit[key] || (S.saleEdit[key] = {});
-  e[field] = val / 100;
-  /* Switching a payback off has to clear the window too, or the modifier keeps a
-     date range with a zero factor in it and the overlap report counts days that
-     do nothing. */
-  if (field === 'payback' && val === 0) e.paybackDays = null;
-  else if (field === 'payback' && !e.paybackDays && !base.paybackEnd) {
-    e.paybackDays = 14;                       // a window to put the number in
-  }
-  saveMods(); render();
-}
+/* Declarations the page cannot measure from the book, and the reader once typed
+   into a form. The form is gone: a modifier typed into one browser's storage
+   applied to that browser only, and the board is read in several. Anything the
+   business knows that the book does not — a launch, a price rise, a sale being
+   planned — is declared HERE, ships with the page, and shows on the timeline
+   in green as "declared" so nobody mistakes it for something measured.
 
-/* --------------------------------------------------------- modifiers */
+     { name: 'Pro Mat Plus launch', start: '2026-08-06', end: '2026-08-22', lift: 26, payback: 0 }
 
-/* Your assertions about the future. Nothing here is measured and nothing here
-   is defaulted on: the data cannot check a launch that has not happened. */
-function renderMods(p) {
-  const el = document.getElementById('modList');
-  const runsFor = key => (p.modifierEffect.runs || []).filter(r => r.keys.indexOf(key) !== -1);
-  el.innerHTML = S.mods.map((m, i) => {
-    const ov = runsFor('user:' + i);
-    return `<div class="catrow mod">
-      <div class="cinfo"><div class="cname">${esc(m.name)} <small class="yours">yours</small></div>
-        <div class="cmeta">${isoToNice(m.start)} → ${isoToNice(m.end)} at ${pct(m.lift, 0)}${
-          m.payback ? ', then ' + pct(m.payback, 0) + ' for 14 days' : ''}
-          ${ov.length ? '<b class="ovl">overlaps ' + ov.reduce((a, r) => a + r.days, 0) + 'd with ' +
-             esc(ov[0].names.filter(n => n !== m.name).join(', ')) + '</b>' : ''}</div></div>
-      <div class="cright"><button class="modx" data-i="${i}" aria-label="Remove ${esc(m.name)}">✕</button></div>
-    </div>`;
-  }).join('') || `<div class="empty">Nothing added. A launch, a price change, a channel
-     going live — anything the last two years cannot know about.</div>`;
-  el.querySelectorAll('.modx[data-i]').forEach(b => b.onclick = () => {
-    S.mods.splice(+b.dataset.i, 1); saveMods(); render();
-  });
-  document.getElementById('modNote').textContent = S.mods.length
-    ? S.mods.length + ' applied' : 'what the data cannot know';
-  renderCombined(p);
-}
+   lift and payback are percentages. A browser that still carries an older
+   typed declaration keeps applying it, so that nothing silently changes on a
+   page that has been trusted. */
+const DECLARED = [];
 
-/* The combined effect, stated rather than left to be inferred.
-
-   Factors multiply, so two declarations over the same days compound: a +47%
-   sale period and a +30% launch make +91%, not +77%. That is the standard
-   treatment of independent proportional effects and it is what each measured
-   lift already is — but it is also the easiest way to forecast a number with no
-   precedent by accident, so every overlap is named and the peak is compared
-   against the largest lift the book has ever recorded. Not capped: the
-   assertion is the user's, and clipping it quietly would be worse than a large
-   number they can see. */
-function renderCombined(p) {
-  const e = p.modifierEffect, el = document.getElementById('combined');
-  if (!e || !e.runs.length) {
-    const n = (p.modifiers || []).length;
-    el.innerHTML = n
-      ? `<div class="comb"><span class="l">Combined</span> ${n} declaration${n > 1 ? 's' : ''}, none overlapping</div>`
-      : '';
-    return;
-  }
-  const days = e.runs.reduce((a, r) => a + r.days, 0);
-  el.innerHTML = `<div class="comb${e.beyondBook ? ' warn' : ''}">
-      <span class="l">Combined</span> ${days} overlapping day${days > 1 ? 's' : ''} ·
-      peak ${pct((e.peak - 1) * 100, 0)}
-      ${e.ceiling ? '(biggest ever recorded ' + pct((e.ceiling - 1) * 100, 0) + ')' : ''}
-      ${e.beyondBook ? '<b>— past anything recorded</b>' : ''}
-      <div class="cruns">${e.runs.map(r => isoToNice(r.start) + '–' + isoToNice(r.end) +
-        ' ' + esc(r.names.join(' + ')) + ' → ' + pct((r.peak - 1) * 100, 0) +
-        (Math.abs(r.peak - r.low) > 0.02 ? ' … ' + pct((r.low - 1) * 100, 0) : '')).join('<br>')}</div>
-    </div>`;
-}
-
-/* Three separate declarations, three separate keys. A sale period the user
-   switched off, a lift they re-sized, and a modifier they typed are different
-   kinds of decision, and merging them into one blob would mean a change to the
-   shape of any of them silently discarding the other two. */
-function saveMods() {
-  try {
-    localStorage.setItem(MOD_KEY, JSON.stringify(S.mods));
-    localStorage.setItem(OFF_KEY, JSON.stringify(S.saleOff));
-    localStorage.setItem(EDIT_KEY, JSON.stringify(S.saleEdit));
-  } catch (e) { /* private mode, or site data blocked — the page still works */ }
-}
 function loadMods() {
   try { const v = JSON.parse(localStorage.getItem(MOD_KEY) || '[]'); if (Array.isArray(v)) S.mods = v; }
   catch (e) { S.mods = []; }
@@ -1316,7 +1255,7 @@ function renderNotesPlain(p) {
           tested the model on a year that had never seen one, it under-guessed by more than
           half.</p>
         <p><b>It cannot know what you have not told it.</b> A new product, a price rise, a
-          sale you are planning — add those as modifiers and it will.</p>
+          sale you are planning — declare those and it will. They show on the timeline in green.</p>
       </div>
     </div>`;
 }
@@ -1539,9 +1478,7 @@ function render() {
     safe('chart', () => renderChart(pv, ctx));
     safe('timeline', () => renderTimeline(pv, ctx));
     safe('trends', () => renderTrends(pv, ctx));
-    safe('hundred', () => renderHundred(p, ctx));
-    safe('sales', () => renderSales(p));
-    safe('modifiers', () => renderMods(p));
+    safe('profit', () => renderProfit(p, ctx));
   } else {
     safe('notes', () => renderNotes(p));
   }
@@ -1649,19 +1586,6 @@ function wire() {
     setView(bt.dataset.view); render();
   });
 
-  /* Modals. Both are things you OPEN — a picture to go and look at, and a set
-     of controls — so neither takes permanent space from the map. */
-  const openModal = id => {
-    document.querySelectorAll('.modal').forEach(m => m.hidden = m.id !== id);
-  };
-  const closeModals = () => document.querySelectorAll('.modal').forEach(m => m.hidden = true);
-  document.getElementById('hundredBtn').onclick = () => openModal('hundredModal');
-  document.getElementById('declBtn').onclick = () => openModal('declModal');
-  document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => closeModals());
-  /* Clicking the backdrop closes; clicking the card must not. */
-  document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => {
-    if (e.target === m) closeModals();
-  }));
   document.querySelectorAll('#notesSeg button').forEach(bt => bt.onclick = () => {
     document.querySelectorAll('#notesSeg button').forEach(x => x.classList.remove('active'));
     bt.classList.add('active'); S.notesMode = bt.dataset.mode; render();
@@ -1669,8 +1593,6 @@ function wire() {
   /* Escape returns to the map, since that is where the page starts. */
   window.addEventListener('keydown', e => {
     if (e.key !== 'Escape') return;
-    const open = [...document.querySelectorAll('.modal')].some(m => !m.hidden);
-    if (open) { closeModals(); return; }              // a modal first, then the view
     if (S.view !== 'map') { setView('map'); render(); }
   });
   document.querySelectorAll('#lensSeg button').forEach(b => b.onclick = () => {
@@ -1682,18 +1604,6 @@ function wire() {
   document.querySelectorAll('#horSeg button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#horSeg button').forEach(x => x.classList.remove('active'));
     b.classList.add('active'); S.hor = b.dataset.hor === 'EOY' ? 'EOY' : parseInt(b.dataset.hor, 10); render();
-  });
-  document.getElementById('modForm').addEventListener('submit', e => {
-    e.preventDefault();
-    const name = document.getElementById('modName').value.trim();
-    const start = document.getElementById('modStart').value;
-    const end = document.getElementById('modEnd').value;
-    const lift = parseFloat(document.getElementById('modLift').value);
-    const payback = parseFloat(document.getElementById('modPay').value);
-    if (!name || !start || !end || isNaN(lift)) return;
-    if (end < start) return;
-    S.mods.push({ name, start, end, lift, payback: isNaN(payback) ? 0 : payback });
-    saveMods(); e.target.reset(); render();
   });
   window.addEventListener('resize', () => { clearTimeout(window._rz); window._rz = setTimeout(render, 200); });
   /* Coming back to the map means the canvas has just regained its height, so
