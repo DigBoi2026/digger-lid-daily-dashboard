@@ -31,7 +31,7 @@ const CONFIG = {
 
 // Shared math/utilities live in core.js (unit-tested by source/test_core.js).
 const { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline,
-        isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE } = DLcore;
+        isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE, weeklyBuckets } = DLcore;
 
 /* ----------------------------- state ----------------------------------- */
 // Unified period selector: win ∈ {3,7,30,90,'YTD'} (trailing period ending yesterday); off = periods back.
@@ -159,7 +159,13 @@ function ctx(){
   S.off=sl.off;                                          // reflect any clamping back into state
   const cur=sl.cur, prevSeries=sl.prev;
   const rec=aggregate(cur), prev=prevSeries.length?aggregate(prevSeries):null;
-  return {rec, prev, series:cur, prevSeries, gran:'day',
+  /* A window of two months or more is drawn as its own weeks, not ninety bars:
+     the same weekly buckets the Products page uses (DLcore.weeklyBuckets). The
+     totals are unchanged — a week's sum is its days' sum. */
+  const gran = P>=60 ? 'week' : 'day';
+  const series = gran==='week' ? weeklyBuckets(cur) : cur;
+  const prevS = gran==='week' && prevSeries.length ? weeklyBuckets(prevSeries) : prevSeries;
+  return {rec, prev, series, prevSeries:prevS, gran,
     title:fmtRange(cur[0].date,cur[cur.length-1].date),
     sub:periodSub(P, cur.length, S.off), periodLabel:`vs prior ${P}d`, win:P, shifted};
 }
@@ -336,7 +342,7 @@ function valueLabelPlugin(vals){
 /* ------------------------------ trend chart --------------------------- */
 function renderTrend(c){
   const s=c.series;
-  const labels=s.map(d=> c.gran==='day'? isoToNice(d.date) : d.month);
+  const labels=s.map(d=> c.gran==='day'? isoToNice(d.date) : c.gran==='week'? d.label : d.month);
   const Y=(id)=>s.map(d=>d[id]);
   const yell='#f5eb19', grey='#7d7576', white='#efe9e9', green='#39d98a', purp='#c98bff';
   let datasets=[], scales={};
@@ -396,7 +402,7 @@ function renderTrend(c){
         tension:.35,pointRadius:0,borderWidth:2,order:0});
     }
   }
-  const periodTxt = c.win==='YTD' ? '· year to date' : `· ${c.win}-day period`;
+  const periodTxt = c.win==='YTD' ? '· year to date' : `· ${c.win}-day period${c.gran==='week'?' · by week':''}`;
   if(S.metric==='mer'){
     const b=breakeven(c.rec);
     document.getElementById('trendSpan').textContent = b

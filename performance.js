@@ -5,7 +5,7 @@
    ========================================================================= */
 // Shared math/utilities from core.js (unit-tested by source/test_core.js).
 const { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline,
-        isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE } = DLcore;
+        isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE, weeklyBuckets } = DLcore;
 const S = { win:30, off:0, metric:'spend_rev', live:'snap' };   // win ∈ {3,7,30,90,'YTD'}
 const API_URL = '/api/data';          // same backend route Daily Ops reads
 const REFRESH_MINUTES = 30;           // periodic re-pull while the board is open
@@ -101,7 +101,10 @@ function ctx(){
   const sl=periodSlices(DATA.daily, wEnd, P, S.off);
   S.off=sl.off;
   const cur=sl.cur, prevSeries=sl.prev;
-  return {rec:aggregate(cur),prev:prevSeries.length?aggregate(prevSeries):null,series:cur,prevSeries,gran:'day',
+  const gran = P>=60 ? 'week' : 'day';                  // two months or more: the period's own weeks
+  const series = gran==='week' ? weeklyBuckets(cur) : cur;
+  const prevS = gran==='week' && prevSeries.length ? weeklyBuckets(prevSeries) : prevSeries;
+  return {rec:aggregate(cur),prev:prevSeries.length?aggregate(prevSeries):null,series,prevSeries:prevS,gran,
     title:fmtRange(cur[0].date,cur[cur.length-1].date),
     sub:periodSub(P, cur.length, S.off),periodLabel:`vs prior ${P}d`,win:P, shifted};
 }
@@ -180,7 +183,7 @@ function renderBand(c){
   const beCash=s.map(d=>{const b=breakeven(d);return b?b.contrib:null;});
   const merv=Y('mer');
   const cap=Math.ceil(Math.max(60,...merv.filter(v=>v!=null),...beCash.filter(v=>v!=null))*1.05/10)*10;
-  const labels=s.map(d=>c.gran==='day'?isoToNice(d.date):d.month);
+  const labels=s.map(d=>c.gran==='day'?isoToNice(d.date):c.gran==='week'?d.label:d.month);
   const ds=[
     {label:'Profit breakeven',data:beFull,borderColor:'rgba(57,217,138,.55)',borderDash:[5,3],borderWidth:1.5,pointRadius:0,fill:'origin',backgroundColor:'rgba(57,217,138,.10)',tension:.2,order:9},
     {label:'Cash breakeven',data:beCash,borderColor:'rgba(255,176,32,.55)',borderDash:[5,3],borderWidth:1.5,pointRadius:0,fill:'-1',backgroundColor:'rgba(255,176,32,.13)',tension:.2,order:9},
@@ -211,7 +214,7 @@ function renderBand(c){
 /* ---- trend ---- */
 function renderTrend(c){
   const s=c.series, Y=id=>s.map(d=>d[id]);
-  const labels=s.map(d=>c.gran==='day'?isoToNice(d.date):d.month);
+  const labels=s.map(d=>c.gran==='day'?isoToNice(d.date):c.gran==='week'?d.label:d.month);
   const baseX={grid:{display:false},ticks:{color:'#9a9193',font:{size:9},maxRotation:0,autoSkip:true,maxTicksLimit:12}};
   let ds=[],scales={},rollKey=null,rollFmt='money';
   if(S.metric==='spend_rev'){
@@ -236,7 +239,7 @@ function renderTrend(c){
   if(c.gran==='day' && rollKey && s.length>=10){
     ds.push({type:'line',label:'7-day avg',data:rollingAvg(Y(rollKey),7),borderColor:'#ff8a4a',borderDash:[5,4],pointRadius:0,borderWidth:2,tension:.35,order:0});
   }
-  document.getElementById('trendSpan').textContent = c.win==='YTD' ? '· year to date' : `· ${c.win}-day period`;
+  document.getElementById('trendSpan').textContent = c.win==='YTD' ? '· year to date' : `· ${c.win}-day period${c.gran==='week'?' · by week':''}`;
   const cfg={data:{labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,animation:{duration:500},
     interaction:{mode:'index',intersect:false},
     plugins:{legend:{display:true,labels:{color:'#c9c1c2',boxWidth:10,font:{size:10},filter:it=>!!it.text}},

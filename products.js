@@ -169,7 +169,7 @@ function render(){
   dates.title = cmpLong;
   document.querySelectorAll('#winSeg button').forEach(b=>b.classList.toggle('active', b.dataset.win===S.win));
   document.querySelectorAll('#cmpSeg button').forEach(b=>b.classList.toggle('active', b.dataset.cmp===S.cmp));
-  renderKPIs(t); renderCategories(t); renderProducts(t); renderMovers(t); renderFooter(t);
+  renderKPIs(t); renderCategories(t); renderProducts(t); renderMovers(t); renderFooter(t); renderTrend();
   if(window.DLmotion) DLmotion.countUpAll();
 }
 function kpiTile(lbl,val,sub,foot,accent,sparkKey){
@@ -236,32 +236,50 @@ function renderProducts(t){
   </div>`).join('');
   wrap.innerHTML=html;
 }
-/* Category Trends: net sales by category by month over the grid (the over-time view,
-   independent of the period selector). Top 6 categories get a line; the rest fold
-   into "Other". Toggle net $ vs mix %. */
+/* Category Trends: net sales by category ACROSS THE SELECTED PERIOD, at the
+   resolution the period can carry. A month is thirty days, not one point:
+   up to 31 days the chart is daily, up to 120 days weekly, beyond that monthly.
+   A single day has no shape, so 1D shows the fortnight it ends. Top 6
+   categories get a line; the rest fold into "Other". Toggle net $ vs mix %. */
+function resolutionFor(r){
+  const len = Math.round((Date.parse(r.end+'T00:00:00Z')-Date.parse(r.start+'T00:00:00Z'))/86400000)+1;
+  return len<=31 ? 'day' : len<=120 ? 'week' : 'month';
+}
+function trendRange(){
+  const end=anchorDay(); const r=rangeFor(S.win,end);
+  return S.win==='1' ? { start: addDays(end,-13), end } : r;
+}
 function trendSeries(){
-  const months={};
-  G.days.forEach((d,i)=>{ const m=d.slice(0,7); const b=months[m]||(months[m]={m, cats:{}});
-    G.products.forEach(p=>{ const v=p.cells[i][0]; if(v) b.cats[p.k]=(b.cats[p.k]||0)+v; }); });
-  const end=anchorDay().slice(0,7);
-  const cm=Object.values(months).filter(b=>b.m<=end).sort((a,b)=>a.m<b.m?-1:1).slice(-13);
-  const labels=cm.map(b=>{const [y,m]=b.m.split('-'); return MONTH[+m-1]+' '+y.slice(2);});
+  const r=trendRange(), res=resolutionFor(r), di=dayIndex();
+  const bucketOf = d => res==='day' ? d : res==='month' ? d.slice(0,7)
+    : addDays(r.start, Math.floor((Date.parse(d+'T00:00:00Z')-Date.parse(r.start+'T00:00:00Z'))/86400000/7)*7);   // weeks from the period's first day
+  const buckets={};
+  for(let d=r.start; d<=r.end; d=addDays(d,1)){
+    const key=bucketOf(d); const b=buckets[key]||(buckets[key]={m:key, first:d, cats:{}});
+    const i=di[d]; if(i==null) continue;
+    G.products.forEach(p=>{ const v=p.cells[i][0]; if(v) b.cats[p.k]=(b.cats[p.k]||0)+v; });
+  }
+  const cm=Object.values(buckets).sort((a,b)=>a.m<b.m?-1:1);
+  const labels=cm.map(b=> res==='month' ? (()=>{const [y,m]=b.m.split('-'); return MONTH[+m-1]+' '+y.slice(2);})()
+                       : res==='week' ? 'w/c '+nice(b.first) : nice(b.first));
   const tot={}; cm.forEach(r=>Object.entries(r.cats).forEach(([k,v])=>tot[k]=(tot[k]||0)+v));
   const ranked=Object.keys(tot).filter(k=>k!=='other').sort((a,b)=>tot[b]-tot[a]);
   const top=ranked.slice(0,6), keys=top.concat(['other']);
   const val=(r,k)=> k==='other' ? Object.entries(r.cats).reduce((a,[ck,cv])=>a+(top.includes(ck)?0:cv),0) : (r.cats[k]||0);
   const monthTot=cm.map(r=>Object.values(r.cats).reduce((a,b)=>a+b,0));
-  return {labels, keys, series:keys.map(k=>cm.map((r,i)=>{ const v=val(r,k); return S.trendMode==='share' ? (monthTot[i]? v/monthTot[i]*100:0) : v; })), partialLast: anchorDay().slice(8)!==String(new Date(Date.UTC(+anchorDay().slice(0,4), +anchorDay().slice(5,7), 0)).getUTCDate())};
+  const lastFull = res==='month' ? anchorDay().slice(8)===String(new Date(Date.UTC(+anchorDay().slice(0,4), +anchorDay().slice(5,7), 0)).getUTCDate())
+                 : res==='week' ? ((Date.parse(r.end+'T00:00:00Z')-Date.parse(r.start+'T00:00:00Z'))/86400000+1)%7===0 : true;
+  return {labels, keys, res, range:r, series:keys.map(k=>cm.map((row,i)=>{ const v=val(row,k); return S.trendMode==='share' ? (monthTot[i]? v/monthTot[i]*100:0) : v; })), partialLast: !lastFull};
 }
 function renderTrend(){
   if(!G) return;
   const share=S.trendMode==='share';
-  const {labels, keys, series, partialLast}=trendSeries();
+  const {labels, keys, series, res, range, partialLast}=trendSeries();
   const name=k=>KEYS[k]||(k==='other'?'Other':k);
   const datasets=keys.map((k,i)=>{ const col=CATCOLORS[k]||PALETTE[i%PALETTE.length];
     return {label:name(k), data:series[i], borderColor:col, backgroundColor: share? col+'cc' : col+'22',
       fill: share?(i===0?'origin':'-1'):false, borderWidth: share?1:2.4, tension:.32, pointRadius:0, pointHoverRadius:4, cubicInterpolationMode:'monotone'}; });
-  document.getElementById('trendNote').textContent = (share?'by month · % of net':'by month · net sales') + (partialLast?' · latest month to date':'');
+  document.getElementById('trendNote').textContent = `by ${res} · ${nice(range.start)} – ${nice(range.end)} · ${share?'% of net':'net sales'}` + (partialLast? (res==='month'?' · latest month to date':' · last week partial') : '');
   const cfg={type:'line', data:{labels, datasets},
     options:{responsive:true, maintainAspectRatio:false, animation:{duration:600}, interaction:{mode:'index', intersect:false},
       scales:{ x:{stacked:share, grid:{color:'rgba(255,255,255,0.05)'}, ticks:{color:'#9a9193', font:{size:9.5}}},
@@ -314,7 +332,7 @@ function wire(){
     document.querySelectorAll('#trendMode button').forEach(x=>x.classList.toggle('active',x===b));
     renderTrend();
   });
-  window.addEventListener('resize',()=>{clearTimeout(window._rz);window._rz=setTimeout(()=>{render();renderTrend();},200);});
+  window.addEventListener('resize',()=>{clearTimeout(window._rz);window._rz=setTimeout(render,200);});
 }
 /* The snapshot draws first; the last 45 days are then replaced live. */
 async function tryLive(){
@@ -323,13 +341,13 @@ async function tryLive(){
     const r=await fetch('/api/shopify?dataset=productsRecent'); if(!r.ok) throw new Error('http-'+r.status);
     const j=await r.json(); if(!j||j.error||!j.days||!j.days.length) throw new Error('empty');
     G=mergeGrid(HIST, j); KEYS=G.keys||KEYS;
-    render(); renderTrend(); setLive('live');
+    render(); setLive('live');
   }catch(e){ setLive('snap', 'Live top-up unavailable — showing the committed grid through '+(G&&G.days.length?nice(G.days[G.days.length-1]):'—')); }
 }
 (function init(){
   G = mergeGrid(HIST, null);
   if(!G){ document.getElementById('errBox').classList.add('show'); return; }
-  wire(); render(); renderTrend(); setLive('snap');
+  wire(); render(); setLive('snap');
   if(window.DLmotion) DLmotion.entrance();
   tryLive();
 })();

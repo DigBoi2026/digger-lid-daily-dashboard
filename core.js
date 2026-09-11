@@ -226,9 +226,33 @@ var DLcore = (function () {
       }));
   }
 
+  /* A long window drawn day by day is ninety bars nobody can read; drawn as
+     thirteen weeks it is a shape. Chunks of seven from the window's FIRST day
+     (so the buckets are the period's own weeks, not calendar weeks that would
+     clip both ends), each aggregated the same way a window is — sums for
+     flows, ratios recomputed — and dated by its first day. The last bucket may
+     be short; it says so in `days`. */
+  function weeklyBuckets(list) {
+    const out = [];
+    for (let i = 0; i < (list || []).length; i += 7) {
+      const chunk = list.slice(i, i + 7);
+      const rec = aggregate(chunk);
+      if (!rec) continue;
+      /* aggregate() sums (x || 0), so a field no day in the week carries comes
+         out 0. Daily Ops reads "every day null" as "no forecast row", and a 0
+         there would render as a zero target with every dollar an overspend —
+         so a field that is null on every day of the week stays null. */
+      const keys = new Set(); chunk.forEach(d => Object.keys(d).forEach(k => keys.add(k)));
+      keys.forEach(k => { if (typeof rec[k] === 'number' && chunk.every(d => d[k] == null)) rec[k] = null; });
+      rec.date = chunk[0].date; rec.days = chunk.length; rec.label = 'w/c ' + isoToNice(chunk[0].date);
+      out.push(rec);
+    }
+    return out;
+  }
+
   return { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline,
            pendingOf, isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE,
-           windowBaselines, todayAEST, previousDayAEST, shopifyFill, AEST_TZ };
+           windowBaselines, todayAEST, previousDayAEST, shopifyFill, AEST_TZ, weeklyBuckets };
 })();
 
 if (typeof window !== 'undefined') window.DLcore = DLcore;                       // browser

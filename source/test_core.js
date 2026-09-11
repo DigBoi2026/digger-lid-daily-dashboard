@@ -127,5 +127,23 @@ const daily = Array.from({ length: 181 }, (_, i) => ({ date: '2026-01-01', v: i 
   ok('a day with no sales is not a day', C.shopifyFill(sheet, [{ date: '2026-09-09', total: 0, orders: 0 }], '2026-09-11').length === 0);
 })();
 
+
+/* ---- weeklyBuckets: a long window as its own weeks ---- */
+(() => {
+  const list = Array.from({ length: 20 }, (_, i) => ({ date: `2026-08-${String(i + 1).padStart(2, '0')}`, revenue: 100 * (i + 1), orders: 2, sessions: 50, revExGst: 90 * (i + 1), totalVC: 10, totalFC: 5, totalAds: 20 }));
+  const w = C.weeklyBuckets(list);
+  ok('20 days is three buckets', w.length === 3, w.length);
+  ok('buckets start on the window\'s first day, not a calendar Monday', w[0].date === '2026-08-01' && w[1].date === '2026-08-08' && w[2].date === '2026-08-15', w.map(x => x.date));
+  ok('flows are summed', w[0].revenue === 100 * (1 + 2 + 3 + 4 + 5 + 6 + 7), w[0].revenue);
+  ok('ratios are recomputed, not averaged', near(w[0].cvr, 14 / 350 * 100), w[0].cvr);
+  ok('the short last bucket says how many days it holds', w[2].days === 6 && w[0].days === 7, w.map(x => x.days));
+  ok('each bucket carries a week-commencing label', /^w\/c 1 Aug$/.test(w[0].label), w[0].label);
+  ok('an empty list is an empty set of weeks', C.weeklyBuckets([]).length === 0);
+  const noF = C.weeklyBuckets(list.map(d => Object.assign({}, d, { fcRev: null })));
+  ok('a field null on every day of the week stays null, not 0', noF[0].fcRev === null, noF[0].fcRev);
+  const someF = C.weeklyBuckets(list.map((d, i) => Object.assign({}, d, { fcRev: i === 2 ? 500 : null })));
+  ok('...but a field present on one day sums', someF[0].fcRev === 500, someF[0].fcRev);
+})();
+
 console.log(`\ncore.js: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
