@@ -781,7 +781,23 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 /* ============ META ADS PAGE ============ */
 /* stage rows: header / kpis / main / bottom / foot */
 #stage.meta-stage{grid-template-rows:9cqh 17cqh minmax(0,1fr) 24cqh 2.8cqh}
-#mtMain{display:grid;grid-template-columns:1.45fr 1fr;gap:1.1cqw;min-height:0}
+#mtMain{display:grid;grid-template-columns:8.6cqw 1.45fr 1fr;gap:1.1cqw;min-height:0}
+/* the stage rail: four tall buttons, one per funnel stage */
+.stagerail{display:flex;flex-direction:column;min-height:0;padding-left:.8cqw;padding-right:.8cqw}
+.stagerail .p-title{font-size:1.25cqh;letter-spacing:.1em}
+.stagelist{flex:1;min-height:0;display:flex;flex-direction:column;gap:.5cqh;margin-top:.4cqh}
+.stbtn{flex:1 1 0;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:.2cqh;
+  text-align:left;background:var(--panel-2);border:1px solid var(--line);border-radius:.7cqh;
+  padding:.5cqh .7cqw;color:var(--dl-white);cursor:pointer;font-family:inherit;overflow:hidden}
+.stbtn:hover{border-color:var(--muted)}
+.stbtn.on{background:linear-gradient(180deg,#3a3407,#2a2708);border-color:#6b6209}
+.stbtn:disabled{opacity:.4;cursor:not-allowed}
+.stbtn .st-k{font-family:var(--font-head);font-size:1.5cqh;font-weight:700;letter-spacing:.1em;line-height:1}
+.stbtn.on .st-k{color:var(--dl-yellow)}
+.stbtn .st-n{font-size:.95cqh;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stbtn .st-v{font-size:1.15cqh;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stbtn .st-v b{font-weight:700} .stbtn .st-v span{color:var(--muted)}
+.stagenote{flex:0 0 auto;margin-top:.5cqh;font-size:.95cqh;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #mtBottom{display:grid;grid-template-columns:1.1fr 1fr;gap:1.1cqw;min-height:0}
 .meta-stage .kpi.good{border-color:rgba(57,217,138,.5)} .meta-stage .kpi.warn{border-color:rgba(255,176,32,.55)} .meta-stage .kpi.bad{border-color:rgba(255,90,82,.6)}
 .meta-stage .kpi.bad .k-val{color:var(--bad)} .meta-stage .kpi.warn .k-val{color:var(--warn)} .meta-stage .kpi.good .k-val{color:var(--good)}

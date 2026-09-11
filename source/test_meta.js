@@ -50,6 +50,9 @@ ok('classify: "Prospecting · Pro Mat Broad" → Pro Mats / Prospecting', c('Pro
 ok('classify: Coupler wins over Grease', c('KAJO Grease Coupler cold').line === 'Coupler');
 ok('classify: Draw Bar wins over Covers', c('Covers RT — Draw Bar').line === 'Draw Bar' && c('Covers RT — Draw Bar').tier === 'Retargeting');
 ok('classify: Diggershield by machine kit words', c('Earthmovers Bundle LAL').line === 'Diggershield');
+ok('stageOf: TOF / TOM / MOF from the campaign name', M.stageOf('🦘AU - ASC - RS - TOF - Broad - Excl.', 'Flagship') === 'TOF' && M.stageOf('🎨 Creative Testing - TOM - ABO - Broad', 'Operator POV') === 'TOM' && M.stageOf('🔥 #5 - EOFY26 - AU - NASC - LS - MOF - All Mid', 'x') === 'MOF');
+ok('stageOf: BOF is the MOF stage; ad set decides only when the campaign says nothing', M.stageOf('🔥 #8 - EOFY26 - AU - NASC - LS - BOF - All', 'x') === 'MOF' && M.stageOf('THS - AU - Conversions/Sales (NEW)', 'MOF (C) Low Ticket Items Retargeting') === 'MOF' && M.stageOf('Prospecting — Pro Mat', 'Broad AU') === null);
+ok('stageOf: does not match inside words', M.stageOf('Bottom line TOMORROW offer', 'x') === null);
 ok('classify: team shorthand — PRO ENCL', c('Creative Testing · AU_PRO ENCL_30 SECOND INSTALL_SEPT26').line === 'Pro Enclosure');
 ok('classify: team shorthand — PR MAT typo', c('Creative Testing · AU_AUSSIEADVENTURE_SEPT26_PR MAT').line === 'Pro Mats');
 ok('classify: [M] and [PM] prefixes are Pro Mats', c('Creative Testing · [M] AU|PRO||"REVIEW UGC"|JULY26').line === 'Pro Mats' && c('x · [PM] 4WD - 12/5').line === 'Pro Mats');

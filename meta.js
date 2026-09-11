@@ -19,7 +19,14 @@ const SNAP = window.DL_META_SNAPSHOT || null;
 const SHEET = window.DL_DATA || null;
 const B = DLmeta.deriveAll();
 let LIVE = null;                                  // /api/meta payload when configured
-const S = { win: '7', line: null, tier: null, ref: 'econ' };
+const S = { win: '7', line: null, tier: null, ref: 'econ', stage: 'all' };
+/* Funnel stages, in the team's own naming. MOF and BOF are one stage. */
+const STAGE_DEFS = [['all','All stages','every campaign'], ['TOF','TOF','top of funnel'], ['TOM','TOM','creative tests'], ['MOF','MOF / BOF','warm · closing']];
+const stageOfRow = r => r._stage !== undefined ? r._stage : (r._stage = DLmeta.stageOf(r.campaign, r.adset));
+const inStage = r => S.stage === 'all' || stageOfRow(r) === S.stage;
+/* Live rows in the selected stage. Every reader of daily data goes through this,
+   so the board, the chart and the streaks all agree on what "TOF" means. */
+const liveRows = () => live() ? LIVE.rows.filter(inStage) : [];
 let charts = { mt: null };
 
 /* ---- formatters ---- */
@@ -56,7 +63,7 @@ const inRange = (r, rg) => r.date >= rg.start && r.date <= rg.end;
 /* Rows for the window: live daily rows filtered to the range, or the snapshot's
    90-day totals as a single pseudo-day. */
 function rowsFor(rg){
-  if(live()) return LIVE.rows.filter(r=>inRange(r, rg));
+  if(live()) return liveRows().filter(r=>inRange(r, rg));
   return (SNAP.rows||[]).map(r=>Object.assign({date:SNAP.meta.asOf}, r));
 }
 /* Group rows by line × tier, roll each up, attach benchmarks and verdicts. */
@@ -98,6 +105,7 @@ function render(){
   const rg = windowRange();
   const rows = board(rg, rg && rg.prev);
   renderHeader(rg);
+  renderStages(rg);
   renderKPIs(rows, rg);
   renderBoard(rows, rg);
   renderFunnel(rows, rg);
@@ -117,6 +125,28 @@ function renderHeader(rg){
   document.getElementById('throughPend').textContent = isLive
     ? (LIVE.unmapped && LIVE.unmapped.length ? `${LIVE.unmapped.length} ad set${LIVE.unmapped.length>1?'s':''} unmapped → Multi/Broad` : 'all ad sets mapped to a line')
     : 'snapshot · connect Meta';
+}
+/* The rail: spend in the window per stage, so the choice is informed before
+   it is made. In snapshot mode there are no campaign names to read, so the
+   buttons are shown but disabled. */
+function renderStages(rg){
+  const wrap=document.getElementById('stageList'), note=document.getElementById('stageNote');
+  if(!wrap) return;
+  const isLive = live();
+  const win = isLive ? LIVE.rows.filter(r=>inRange(r, rg)) : [];
+  const total = win.reduce((a,r)=>a+(r.spend||0),0);
+  const spendOf = id => win.reduce((a,r)=> a + ((id==='all' || stageOfRow(r)===id) ? (r.spend||0) : 0), 0);
+  const other = isLive ? win.reduce((a,r)=> a + (stageOfRow(r)==null ? (r.spend||0) : 0), 0) : 0;
+  wrap.innerHTML = STAGE_DEFS.map(([id,k,n])=>{
+    const sp = spendOf(id), share = total ? sp/total*100 : null;
+    const v = !isLive ? '<span>snapshot</span>' : id==='all' ? `<b>${money(sp)}</b>` : `<b>${money(sp)}</b> <span>· ${share!=null?share.toFixed(0):'—'}%</span>`;
+    return `<button class="stbtn${S.stage===id?' on':''}" data-stage="${id}" ${isLive?'':'disabled'} title="${id==='all'?'Every campaign':'Campaigns whose name contains '+k.replace(' / ',' or ')}">
+      <div class="st-k">${k}</div><div class="st-n">${n}</div><div class="st-v">${v}</div></button>`;
+  }).join('');
+  wrap.querySelectorAll('.stbtn').forEach(b=>b.onclick=()=>{ S.stage=b.dataset.stage; S.line=null; render(); });
+  note.textContent = !isLive ? 'needs live names'
+    : other > 0 ? `${money(other)} · ${(other/total*100).toFixed(0)}% of spend has no stage in its name` : 'by campaign name';
+  note.title = other > 0 ? 'Campaigns with none of TOF, TOM, MOF or BOF in the name are counted under All stages only' : '';
 }
 function renderKPIs(rows, rg){
   const el=document.getElementById('kpis');
@@ -139,8 +169,8 @@ function renderKPIs(rows, rg){
 }
 function renderBoard(rows, rg){
   const wrap=document.getElementById('board');
-  if(!S.line && rows.length){ S.line=rows[0].line; S.tier=rows[0].tier; }
-  document.getElementById('boardNote').textContent = `${rows.length} line × tier combinations · sorted by spend · ${live() ? (rg.prev ? 'vs prior period' : 'no full prior period in the pull') : '90-day snapshot'} · click a row`;
+  if(rows.length && !rows.some(g=>g.line===S.line && g.tier===S.tier)){ S.line=rows[0].line; S.tier=rows[0].tier; }
+  document.getElementById('boardNote').textContent = `${rows.length} line × tier combinations · sorted by spend · ${live() ? (rg.prev ? 'vs prior period' : 'no full prior period in the pull') : '90-day snapshot'}${S.stage==='all'?'':' · '+STAGE_DEFS.find(d=>d[0]===S.stage)[1]+' campaigns only'} · click a row`;
   let html=`<div class="thead mt"><div>Line · tier</div><div class="num">Spend</div><div class="num">Purch</div><div class="num">CPA</div><div class="num">Target</div><div class="num">Kill</div><div class="num">ROAS / kill</div><div class="num">Cost/ATC / kill</div><div class="num">LPV→ATC</div><div>Status</div></div>`;
   html += rows.map(g=>{
     const b=g.bench, tb=g.tier_b, r=g.roll, p=g.prev;
@@ -195,7 +225,7 @@ function renderChart(g, rg){
      the rules themselves read 3-day and 24-hour windows in the alerts panel. */
   const daysBack = Math.max(parseInt(S.win,10), 28);
   const start = addDays(rg.end, -(daysBack-1));
-  const daily = LIVE.rows.filter(r=>r.line===g.line && r.tier===g.tier && r.date>=start && r.date<=rg.end);
+  const daily = liveRows().filter(r=>r.line===g.line && r.tier===g.tier && r.date>=start && r.date<=rg.end);
   const byDate={}; daily.forEach(r=>{ const d=byDate[r.date]||(byDate[r.date]={spend:0,atc:0,purchases:0}); d.spend+=r.spend; d.atc+=r.atc; d.purchases+=r.purchases; });
   const dates=[]; for(let d=start; d<=rg.end; d=addDays(d,1)) dates.push(d);
   const roll = (k, den) => dates.map((d,i)=>{ let s=0,n=0; for(let j=Math.max(0,i-6); j<=i; j++){ const x=byDate[dates[j]]; if(x){ s+=x.spend; n+=x[den]; } } return n? s/n : null; });
@@ -227,7 +257,7 @@ function renderAlerts(rows, rg){
     let extra='';
     if(live() && g.bench && g.bench.kill!=null){
       const dates=[]; for(let d=addDays(rg.end,-6); d<=rg.end; d=addDays(d,1)) dates.push(d);
-      const byDate={}; LIVE.rows.filter(r=>r.line===g.line&&r.tier===g.tier).forEach(r=>{ const x=byDate[r.date]||(byDate[r.date]={s:0,p:0,a:0}); x.s+=r.spend; x.p+=r.purchases; x.a+=r.atc; });
+      const byDate={}; liveRows().filter(r=>r.line===g.line&&r.tier===g.tier).forEach(r=>{ const x=byDate[r.date]||(byDate[r.date]={s:0,p:0,a:0}); x.s+=r.spend; x.p+=r.purchases; x.a+=r.atc; });
       const dailyCpa = dates.map(d=> byDate[d]&&byDate[d].p ? byDate[d].s/byDate[d].p : null);
       const dailyCatc = dates.map(d=> byDate[d]&&byDate[d].a ? byDate[d].s/byDate[d].a : null);
       const sc = DLmeta.streak(dailyCpa, g.bench.kill, true), sa = g.tier_b&&g.tier_b.killCostPerAtc ? DLmeta.streak(dailyCatc, g.tier_b.killCostPerAtc, true) : 0;
