@@ -27,7 +27,7 @@
       "maxDuration": 10
     },
     "api/meta.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     }
   },
   "headers": [

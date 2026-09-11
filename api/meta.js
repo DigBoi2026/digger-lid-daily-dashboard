@@ -27,10 +27,20 @@ function account() {
   return id.startsWith('act_') ? id : 'act_' + id;
 }
 
-async function fetchInsights(since, until) {
+/* The action types the page reads, and nothing else. Without this filter Meta
+   returns every action type it tracks for every ad set for every day — page
+   views, video plays, link clicks — and the response was large enough that
+   100 days at ad-set level took the function past its 30-second limit. */
+const ACTION_TYPES = ['landing_page_view', 'omni_add_to_cart', 'add_to_cart', 'offsite_conversion.fb_pixel_add_to_cart',
+                      'omni_purchase', 'purchase', 'offsite_conversion.fb_pixel_purchase'];
+const CHUNK_DAYS = 20;
+
+async function fetchRange(since, until) {
   const fields = 'campaign_name,adset_name,spend,impressions,actions,action_values';
+  const filtering = JSON.stringify([{ field: 'action_type', operator: 'IN', value: ACTION_TYPES }]);
   let url = `https://graph.facebook.com/${VERSION}/${account()}/insights?level=adset&time_increment=1&limit=500` +
             `&fields=${fields}&time_range=${encodeURIComponent(JSON.stringify({ since, until }))}` +
+            `&filtering=${encodeURIComponent(filtering)}` +
             `&access_token=${encodeURIComponent(process.env.META_ACCESS_TOKEN)}`;
   const out = [];
   for (let page = 0; url && page < 40; page++) {
@@ -43,6 +53,19 @@ async function fetchInsights(since, until) {
   return out;
 }
 
+/* The window in 20-day slices fetched together. Meta pages one call
+   sequentially, so a 100-day read was five round trips in a row; five slices
+   in parallel is one. */
+async function fetchInsights(since, until) {
+  const slices = [];
+  for (let a = new Date(since + 'T00:00:00Z'); iso(a) <= until; a = addDays(a, CHUNK_DAYS)) {
+    const z = addDays(a, CHUNK_DAYS - 1);
+    slices.push([iso(a), iso(z) > until ? until : iso(z)]);
+  }
+  const parts = await Promise.all(slices.map(([a, z]) => fetchRange(a, z)));
+  return parts.flat();
+}
+
 /* Shared with the AI read subsystem, and unit-tested with a stubbed fetch. */
 async function buildMeta(today) {
   today = today || new Date();
@@ -51,6 +74,7 @@ async function buildMeta(today) {
   if (!configured()) {
     return { configured: false, meta: { source: 'Meta Marketing API', note: 'META_ACCESS_TOKEN / META_AD_ACCOUNT_ID not set — the page shows the committed 90-day snapshot.' }, rows: [] };
   }
+  const t0 = Date.now();
   const raw = await fetchInsights(since, until);
   const rows = raw.map(M.fromInsight);
   /* Ad sets whose names matched no product line are kept (as Multi/Broad) and
@@ -60,7 +84,7 @@ async function buildMeta(today) {
   return {
     configured: true,
     meta: { source: 'Meta Marketing API · insights, level=adset, daily', account: account(), since, until, currency: 'AUD',
-            rows: rows.length, unmapped: unmapped.length,
+            rows: rows.length, unmapped: unmapped.length, ms: Date.now() - t0,
             note: 'Purchases and revenue are Meta-attributed (omni_purchase). Names are mapped to line × tier by keyword; unmapped ad sets are listed.' },
     rows, unmapped,
   };

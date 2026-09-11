@@ -12,6 +12,9 @@ const ok = (n, c, g) => { if (c) pass++; else { fail++; console.log(`  ✗ ${n}`
   const URLS = [];
   global.fetch = async (url) => {
     URLS.push(url);
+    /* Only the slice that holds 9–10 Sep has rows; the earlier slices are empty. */
+    const rng = JSON.parse(decodeURIComponent(url.match(/time_range=([^&]+)/)[1]));
+    if (rng.until < '2026-09-09') return { ok: true, status: 200, json: async () => ({ data: [], paging: {} }) };
     const page2 = /after=abc/.test(url);
     const data = page2
       ? [{ date_start: '2026-09-10', date_stop: '2026-09-10', campaign_name: 'RT — Covers DPA', adset_name: 'viewed 14d', spend: '50', impressions: '4000', actions: [{ action_type: 'landing_page_view', value: '40' }, { action_type: 'omni_add_to_cart', value: '6' }, { action_type: 'omni_purchase', value: '2' }], action_values: [{ action_type: 'omni_purchase', value: '600' }] }]
@@ -22,8 +25,11 @@ const ok = (n, c, g) => { if (c) pass++; else { fail++; console.log(`  ✗ ${n}`
   const on = await R.buildMeta(new Date('2026-09-11T00:00:00Z'));
   ok('configured: account carries the act_ prefix', /act_123456\/insights/.test(URLS[0]), URLS[0]);
   ok('configured: level=adset, daily, with names, spend, actions and values', /level=adset/.test(URLS[0]) && /time_increment=1/.test(URLS[0]) && /campaign_name,adset_name,spend,impressions,actions,action_values/.test(URLS[0]));
-  ok('configured: window is ~100 days through yesterday', /2026-06-03/.test(decodeURIComponent(URLS[0])) && /2026-09-10/.test(decodeURIComponent(URLS[0])), decodeURIComponent(URLS[0]).slice(-120));
-  ok('configured: follows paging', URLS.length === 2 && on.rows.length === 3, [URLS.length, on.rows.length]);
+  const ranges = URLS.filter(u => !/after=/.test(u)).map(u => JSON.parse(decodeURIComponent(u.match(/time_range=([^&]+)/)[1])));
+  ok('configured: window is ~100 days through yesterday, in 20-day slices', ranges[0].since === '2026-06-03' && ranges[ranges.length - 1].until === '2026-09-10' && ranges.length === 5, ranges);
+  ok('configured: slices are contiguous', ranges.every((r, i) => i === 0 || r.since > ranges[i - 1].until), ranges);
+  ok('configured: asks only for the action types the page reads', /action_type/.test(decodeURIComponent(URLS[0])) && /omni_purchase/.test(decodeURIComponent(URLS[0])) && /landing_page_view/.test(decodeURIComponent(URLS[0])));
+  ok('configured: follows paging within a slice', URLS.filter(u => /after=abc/.test(u)).length === 1 && on.rows.length === 3, [URLS.length, on.rows.length]);
   const pm = on.rows.find(r => r.line === 'Pro Mats');
   ok('rows are mapped to line × tier', pm && pm.tier === 'Prospecting' && pm.spend === 300 && pm.purchases === 3 && pm.revenue === 750 && pm.atc === 12, pm);
   ok('retargeting ad set mapped', on.rows.some(r => r.line === 'Excavator Covers' && r.tier === 'Retargeting'));
