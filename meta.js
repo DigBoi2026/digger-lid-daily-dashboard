@@ -24,6 +24,10 @@ const S = { win: '7', line: null, tier: null, ref: 'econ', stage: 'all' };
 const STAGE_DEFS = [['all','All stages','every campaign'], ['TOF','TOF','top of funnel'], ['TOM','TOM','creative tests'], ['MOF','MOF / BOF','warm · closing']];
 const stageOfRow = r => r._stage !== undefined ? r._stage : (r._stage = DLmeta.stageFor(r.campaign, r.adset, r.tier));
 const stageLabel = st => DLmeta.STAGE_LABEL[st] || st;
+/* The framework writes "prospecting" and "retargeting"; the page speaks the
+   team's TOF / MOF. One translation at the point of display, so the framework
+   text stays verbatim in the library and consistent on the screen. */
+const speak = t => String(t || '').replace(/\bprospecting\b/gi, 'TOF/TOM').replace(/\bretargeting\b/gi, 'MOF/BOF').replace(/\bretention\b/gi, 'retention (existing customers)');
 const inStage = r => S.stage === 'all' || stageOfRow(r) === S.stage;
 /* Live rows in the selected stage. Every reader of daily data goes through this,
    so the board, the chart and the streaks all agree on what "TOF" means. */
@@ -216,7 +220,7 @@ function renderFunnel(rows, rg){
   if(!g){ wrap.innerHTML=''; return; }
   const b=g.bench, tb=g.tier_b, r=g.roll, p=g.prev;
   document.getElementById('funnelLine').textContent = `${b?b.label:g.line} · ${stageLabel(g.stage)}`;
-  document.getElementById('funnelNote').textContent = (b && b.action) ? b.action : 'cost per landing view → add to cart → purchase';
+  document.getElementById('funnelNote').textContent = (b && b.action) ? speak(b.action) : 'cost per landing view → add to cart → purchase';
   const cell=(lbl,val,bench,delta,cls)=>`<div class="fcell ${cls||''}"><div class="l">${lbl}</div><div class="v">${val}</div><div class="s">${bench||''}</div><div class="s">${delta||''}</div></div>`;
   const vsCls=(a,lim,above)=> a==null||lim==null?'' : (above ? (a>lim?'bad':'good') : (a<lim?'bad':'good'));
   wrap.innerHTML = [
@@ -276,7 +280,7 @@ function renderAlerts(rows, rg){
       if(sc>=1) extra += ` · CPA above Kill ${sc} day${sc>1?'s':''} running`;
       if(sa>=3) extra += ` · Cost/ATC above Kill ${sa} days running`;
     }
-    items.push({ st:g.v.status, name:`${g.bench?g.bench.label:g.line} · ${stageLabel(g.stage)}`, rule:(g.v.rule||'')+extra, spend:g.roll.spend });
+    items.push({ st:g.v.status, name:`${g.bench?g.bench.label:g.line} · ${stageLabel(g.stage)}`, rule:speak((g.v.rule||'')+extra), spend:g.roll.spend });
   });
   items.sort((a,b)=>order[a.st]-order[b.st] || b.spend-a.spend);
   document.getElementById('alertNote').textContent = `${items.filter(i=>i.st==='PAUSE').length} pause · ${items.filter(i=>i.st==='WATCH').length} watch · ${items.filter(i=>i.st==='SCALE').length} scale candidates` + (live()?'':' · snapshot: 90-day averages, not today');
