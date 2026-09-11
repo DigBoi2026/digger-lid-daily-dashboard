@@ -77,7 +77,9 @@ function board(rg, prevRg){
     const roll = DLmeta.rollup(g.rows), pr = g.prev.length ? DLmeta.rollup(g.prev) : null;
     const bench = B[g.line] || null;
     const v = DLmeta.verdict(roll, bench, g.tier);
-    return Object.assign(g, { roll, prev: pr, bench, tier_b: bench && bench.tiers ? bench.tiers[g.tier] : null, v });
+    /* prevRows keeps the raw prior-period rows: the KPI strip re-rolls them as one
+       account, and a group with no prior rows contributes nothing rather than a null. */
+    return Object.assign(g, { roll, prevRows: g.prev, prev: pr, bench, tier_b: bench && bench.tiers ? bench.tiers[g.tier] : null, v });
   }).sort((a,b)=>b.roll.spend-a.roll.spend);
 }
 /* The sheet's own new-customer CPA ÷ blended CPA over the window — the live
@@ -150,7 +152,7 @@ function renderStages(rg){
 }
 function renderKPIs(rows, rg){
   const el=document.getElementById('kpis');
-  const all = DLmeta.rollup(rows.flatMap(g=>g.rows)), prev = live() && rg.prev ? DLmeta.rollup(rows.flatMap(g=>g.prev)) : null;
+  const all = DLmeta.rollup(rows.flatMap(g=>g.rows)), prev = live() && rg.prev ? DLmeta.rollup(rows.flatMap(g=>g.prevRows||[])) : null;
   const hc = haircut(rg);
   const bl = B.blended;
   const ncpa = all.cpa!=null ? all.cpa*hc.ratio : null;
