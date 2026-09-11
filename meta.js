@@ -90,9 +90,15 @@ function haircut(rg){
      CPA (all spend over all orders) the ratio is simply orders ÷ new orders —
      January: $85 vs $62, 1.37. Read over the window from the sheet; the
      framework's 1.35 stands in when the sheet has no days there. */
-  const rows = SHEET && SHEET.daily ? SHEET.daily.filter(d=> rg ? (d.date>=rg.start && d.date<=rg.end) : true).filter(d=>d.orders>0 && d.newOrders>0) : [];
+  const good = SHEET && SHEET.daily ? SHEET.daily.filter(d=>d.orders>0 && d.newOrders>0) : [];
+  let rows = good.filter(d=> rg ? (d.date>=rg.start && d.date<=rg.end) : true);
+  /* One or two days is too thin for a ratio — a single day's mix swings ±20% —
+     so a short window reads the seven sheet days up to its end instead, and
+     the tile says so. */
+  let span = null;
+  if(rows.length<3 && rg){ rows = good.filter(d=>d.date<=rg.end).slice(-7); span = rows.length ? `${rows.length}d to ${nice(rows[rows.length-1].date)}` : null; }
   const o = rows.reduce((a,d)=>a+(d.orders||0),0), n = rows.reduce((a,d)=>a+(d.newOrders||0),0);
-  if(o && n && rows.length>=3) return { ratio: o/n, newPct: n/o*100, days: rows.length, live: true };
+  if(o && n && rows.length>=3) return { ratio: o/n, newPct: n/o*100, days: rows.length, live: true, span };
   return { ratio: 1.35, live: false };
 }
 const deltaEl=(cur,prev,dir)=>{ if(cur==null||prev==null||!prev) return '<span class="delta flat">—</span>';
@@ -119,9 +125,11 @@ function render(){
 function renderHeader(rg){
   const isLive = live();
   document.querySelectorAll('#winSeg button').forEach(b=>{ b.classList.toggle('active', b.dataset.win===S.win); b.disabled=!isLive; });
-  document.getElementById('winLabel').textContent = isLive ? (S.win==='90'?'LAST 90 DAYS':`LAST ${S.win} DAYS`) : '90-DAY SNAPSHOT';
+  document.getElementById('winLabel').textContent = isLive ? (S.win==='1' ? 'YESTERDAY' : `LAST ${S.win} DAYS`) : '90-DAY SNAPSHOT';
   document.getElementById('winDates').textContent = isLive
-    ? (rg.prev ? `${nice(rg.start)}–${nice(rg.end)} · VS ${nice(rg.prev.start)}–${nice(rg.prev.end)}` : `${nice(rg.start)}–${nice(rg.end)} · NO FULL PRIOR PERIOD IN THE PULL`).toUpperCase()
+    ? (S.win==='1'
+        ? `${nice(rg.end)} · VS ${rg.prev ? nice(rg.prev.end) : 'NO PRIOR DAY'}`
+        : rg.prev ? `${nice(rg.start)}–${nice(rg.end)} · VS ${nice(rg.prev.start)}–${nice(rg.prev.end)}` : `${nice(rg.start)}–${nice(rg.end)} · NO FULL PRIOR PERIOD IN THE PULL`).toUpperCase()
     : (SNAP.meta.window||'').toUpperCase()+' · NO DAILY DETAIL';
   document.getElementById('throughVal').textContent = isLive ? nice(rg.end) : nice(SNAP.meta.asOf);
   document.getElementById('throughPend').textContent = isLive
@@ -157,12 +165,12 @@ function renderKPIs(rows, rg){
   const bl = B.blended;
   const ncpa = all.cpa!=null ? all.cpa*hc.ratio : null;
   const prosp = DLmeta.rollup(rows.filter(g=>g.tier==='Prospecting').flatMap(g=>g.rows));
-  const per = `<span class="k-per">${live() ? (rg.prev ? 'vs prior '+S.win+' days' : 'no full prior period') : 'snapshot · no comparison'}</span>`;
+  const per = `<span class="k-per">${live() ? (rg.prev ? (S.win==='1' ? 'vs the day before' : 'vs prior '+S.win+' days') : 'no full prior period') : 'snapshot · no comparison'}</span>`;
   const tile=(lbl,val,sub,foot,cls)=>`<div class="kpi ${cls||''}"><div class="k-head"><div class="k-lbl">${lbl}</div><div class="k-val">${val}</div><div class="k-sub">${sub||''}</div></div><div class="k-foot">${foot||''}</div></div>`;
   const cpaCls = all.cpa==null?'' : ncpa>bl.kill ? 'bad' : ncpa>bl.target ? 'warn' : 'good';
   el.innerHTML = [
     tile('Meta Spend', money(all.spend), `${numf(all.purchases)} purchases · ${live() ? all.days+' day'+(all.days===1?'':'s') : '90-day snapshot'}`, (prev?deltaEl(all.spend,prev.spend,'neutral'):'<span class="delta flat">—</span>')+per, 'accent'),
-    tile('Blended CPA', d0(all.cpa), `new-cust est. <b>${d0(ncpa)}</b> · ×${hc.ratio.toFixed(2)} ${hc.live?`(${hc.newPct.toFixed(0)}% of orders new, sheet)`:'framework default'}`, (prev?deltaEl(all.cpa,prev.cpa,'low'):'<span class="delta flat">—</span>')+`<span class="k-per">target ${d0(bl.target)} · kill ${d0(bl.kill)} (new-cust)</span>`, cpaCls),
+    tile('Blended CPA', d0(all.cpa), `new-cust est. <b>${d0(ncpa)}</b> · ×${hc.ratio.toFixed(2)} ${hc.live?`(${hc.newPct.toFixed(0)}% of orders new, sheet${hc.span?' · '+hc.span:''})`:'framework default'}`, (prev?deltaEl(all.cpa,prev.cpa,'low'):'<span class="delta flat">—</span>')+`<span class="k-per">target ${d0(bl.target)} · kill ${d0(bl.kill)} (new-cust)</span>`, cpaCls),
     tile('ROAS (Meta)', xr(all.roas), `revenue ${money(all.revenue)} · AOV ${d0(all.aov)}`, (prev?deltaEl(all.roas,prev.roas,'high'):'<span class="delta flat">—</span>')+`<span class="k-per">blended kill ~${xr(bl.killRoasMeta)}</span>`, all.roas!=null && all.roas<bl.killRoasMeta ? 'bad':''),
     tile('Cost per ATC', d2(all.costPerAtc), `${numf(all.atc)} adds to cart · prospecting ${d2(prosp.costPerAtc)}`, (prev?deltaEl(all.costPerAtc,prev.costPerAtc,'low'):'<span class="delta flat">—</span>')+`<span class="k-per">leads CPA by 3–7 days</span>`),
     tile('ATC → Purchase', pct(all.atcToPurchase), `prospecting ${pct(prosp.atcToPurchase)} · baseline 28.4%`, (prev?deltaEl(all.atcToPurchase,prev.atcToPurchase,'high'):'<span class="delta flat">—</span>')+per),
@@ -246,7 +254,7 @@ function renderChart(g, rg){
                y1:{position:'right',beginAtZero:true,grid:{display:false},ticks:{color:'#5ec8ff',font:{size:9},callback:v=>'$'+v}} },
       plugins:{legend:{position:'bottom',labels:{color:'#c9c1c2',boxWidth:10,boxHeight:2,font:{size:9},padding:6}},
                tooltip:{callbacks:{label:i=>`${i.dataset.label}: $${i.raw==null?'—':i.raw.toFixed(i.raw<20?2:0)}`}}}}});
-  note.textContent = `7-day rolling · ${nice(start)}–${nice(rg.end)} · the window is the right-hand ${S.win} days · Cost per ATC leads CPA by 3–7 days`;
+  note.textContent = `7-day rolling · ${nice(start)}–${nice(rg.end)} · the window is the right-hand ${S.win==='1' ? 'day' : S.win+' days'} · Cost per ATC leads CPA by 3–7 days`;
 }
 /* The daily rules, applied: PAUSE on a Kill breach, WATCH on a top-of-funnel
    breach, plus the 3-day streaks the framework asks for when the data is daily. */
