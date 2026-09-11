@@ -66,6 +66,33 @@ async function buildMeta(today) {
   };
 }
 
+/* When Meta refuses, say what the token CAN see. "(#200) Ad account owner has
+   NOT grant ads_read" is one message for three different mistakes — the scope
+   was not ticked, the system user was never assigned the account, or the
+   account id is another number entirely — and the fix is different for each.
+   Two cheap reads settle it. The token itself is never returned. */
+async function diagnose() {
+  const tok = encodeURIComponent(process.env.META_ACCESS_TOKEN);
+  const get = async path => {
+    try { const r = await fetch(`https://graph.facebook.com/${VERSION}/${path}&access_token=${tok}`); return await r.json(); }
+    catch (e) { return { error: { message: String(e.message || e) } }; }
+  };
+  const perms = await get('me/permissions?limit=100');
+  const accts = await get('me/adaccounts?fields=account_id,name&limit=50');
+  const granted = (perms.data || []).filter(p => p.status === 'granted').map(p => p.permission);
+  const visible = (accts.data || []).map(a => `${a.account_id} (${a.name})`);
+  return {
+    account: account(),
+    tokenScopes: perms.error ? 'unreadable: ' + perms.error.message : granted,
+    accountsTokenCanSee: accts.error ? 'unreadable: ' + accts.error.message : visible,
+    hint: !granted.includes('ads_read') && !granted.includes('ads_management') && !perms.error
+      ? 'The token has no ads_read scope: regenerate it with ads_read ticked.'
+      : accts.data && !accts.data.some(a => 'act_' + a.account_id === account())
+        ? 'The token cannot see ' + account() + ': assign that ad account to the system user (Business Settings → System users → Assign assets → Ad accounts), or check META_AD_ACCOUNT_ID.'
+        : 'Scopes and account both look right — the app may need the Marketing API product added (App dashboard → Add product).',
+  };
+}
+
 module.exports = async (req, res) => {
   try {
     const payload = await buildMeta(new Date());
@@ -73,7 +100,9 @@ module.exports = async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.status(200).send(JSON.stringify(payload));
   } catch (err) {
-    res.status(500).json({ error: String((err && err.message) || err) });
+    const body = { error: String((err && err.message) || err) };
+    if (configured()) { try { body.diagnostic = await diagnose(); } catch (e) { /* the error above is the answer */ } }
+    res.status(500).json(body);
   }
 };
 module.exports.buildMeta = buildMeta;
