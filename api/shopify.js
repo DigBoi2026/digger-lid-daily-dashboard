@@ -491,6 +491,94 @@ async function buildRecent(today) {
   };
 }
 
+/* --------------------------- products, by day ---------------------------- */
+
+/* Every product, every day — the grid the Products page needs to answer any
+   period at all (yesterday, month to date, financial year to date, the same
+   window last year) without a query per period per product.
+
+   Two shapes, one grid:
+
+     productsHistory   the long pull, in 31-day chunks, paced. Used to build the
+                       committed snapshot (products_history.js); too slow and
+                       too expensive in API points to run on a page load.
+     productsRecent    the last 45 days in one query, for the live top-up. The
+                       days it covers replace the snapshot's, so a refund that
+                       reprices an old day is picked up as the tail moves.
+
+   Rows are product_title x day, which is exactly the sparse grid the country
+   lens avoids -- but here it is the point: the page wants every product, and a
+   (product, day) with no sale is a genuine 0 the page fills in itself. Each
+   chunk asks for at most ~34 products x 31 days ~ 1,050 rows and carries an
+   explicit LIMIT so a silent default cap cannot truncate a month; the chunk
+   row count is reported so a truncation would be visible, not quiet. */
+const HISTORY_CHUNK_DAYS = 31;
+const RECENT_DAYS = 45;
+const GRID_LIMIT = 5000;
+
+function gridRows(rows) {
+  return (rows || []).map(r => ({
+    date: String(r.day || '').slice(0, 10),
+    t: r.product_title == null || !String(r.product_title).trim() ? '(untitled)' : String(r.product_title),
+    net: n2(r.net_sales), orders: +r.orders || 0, units: +r.net_items_sold || 0,
+  })).filter(r => r.date);
+}
+async function gridChunk(since, until) {
+  const rows = await paced(
+    `FROM sales SHOW net_sales, orders, net_items_sold GROUP BY product_title, day SINCE ${since} UNTIL ${until} ORDER BY day LIMIT ${GRID_LIMIT}`);
+  return { since, until, rows: gridRows(rows), count: (rows || []).length };
+}
+function packGrid(chunks, totals, today, since, until) {
+  const byT = {}; const daySet = new Set();
+  chunks.forEach(c => c.rows.forEach(r => {
+    daySet.add(r.date);
+    (byT[r.t] = byT[r.t] || {})[r.date] = [r.net, r.orders, r.units];
+  }));
+  (totals || []).forEach(r => daySet.add(r.date));
+  const days = [...daySet].sort();
+  const di = Object.fromEntries(days.map((d, i) => [d, i]));
+  const products = Object.keys(byT).sort((a, b) => {
+    const s = t => Object.values(byT[t]).reduce((x, v) => x + v[0], 0); return s(b) - s(a);
+  }).map(t => {
+    const cells = new Array(days.length).fill(0).map(() => [0, 0, 0]);
+    Object.entries(byT[t]).forEach(([d, v]) => { cells[di[d]] = v; });
+    return { title: t, k: categorize(t === '(untitled)' ? null : t), cells };
+  });
+  const tot = new Array(days.length).fill(0).map(() => [0, 0, 0]);
+  (totals || []).forEach(r => { if (di[r.date] != null) tot[di[r.date]] = [r.net, r.orders, r.units]; });
+  return {
+    meta: {
+      source: 'Shopify · ShopifyQL sales, product_title x day', currency: 'AUD', asOf: iso(today), since, until,
+      days: days.length, products: products.length, keys: KEYS,
+      cells: 'per product, per day: [net_sales, orders containing it, units]; totals: [net_sales, orders, units] for the whole store',
+      chunks: chunks.map(c => ({ since: c.since, until: c.until, rows: c.count })),
+      note: 'net_sales is ex GST and net of refunds. Orders on a product row are orders CONTAINING it; totals carry the true order count.',
+    },
+    days, products, totals: tot,
+  };
+}
+async function buildProductsHistory(today, opts) {
+  opts = opts || {};
+  const since = opts.since || iso(addDays(today, -440));
+  const until = opts.until || iso(addDays(today, 1));      // both overridable so a long pull can go in halves
+  const chunks = [];
+  for (let a = new Date(since + 'T00:00:00Z'); iso(a) < until; a = addDays(a, HISTORY_CHUNK_DAYS)) {
+    const b = addDays(a, HISTORY_CHUNK_DAYS);
+    chunks.push(await gridChunk(iso(a), iso(b) < until ? iso(b) : until));
+  }
+  const totals = gridRows((await paced(
+    `FROM sales SHOW net_sales, orders, net_items_sold GROUP BY day SINCE ${since} UNTIL ${until} ORDER BY day`)).map(r => Object.assign({ product_title: 'total' }, r)));
+  return packGrid(chunks, totals, today, since, until);
+}
+async function buildProductsRecent(today) {
+  const since = iso(addDays(today, -RECENT_DAYS));
+  const until = iso(addDays(today, 1));
+  const chunk = await gridChunk(since, until);
+  const totals = gridRows((await shopifyql(
+    `FROM sales SHOW net_sales, orders, net_items_sold GROUP BY day SINCE ${since} UNTIL ${until} ORDER BY day`)).map(r => Object.assign({ product_title: 'total' }, r)));
+  return packGrid([chunk], totals, today, since, until);
+}
+
 /* -------------------------------- region -------------------------------- */
 async function buildRegion(today) {
   const M = twelveMonths(today);
@@ -545,6 +633,8 @@ module.exports = async (req, res) => {
                   : dataset === 'customers' ? await buildCustomers(today)
                   : dataset === 'productsDaily' ? await buildProductsDaily(today)
                   : dataset === 'recent' ? await buildRecent(today)
+                  : dataset === 'productsHistory' ? await buildProductsHistory(today, { since: req.query && req.query.since, until: req.query && req.query.until })
+                  : dataset === 'productsRecent' ? await buildProductsRecent(today)
                   : await buildProducts(today);
     res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=1800');
     res.setHeader('Content-Type', 'application/json');
@@ -574,6 +664,9 @@ module.exports.buildGeo = buildGeo;               // the Forecast page's country
 module.exports.buildCustomers = buildCustomers;   // the Forecast page's customer lens
 module.exports.buildProductsDaily = buildProductsDaily;   // the Forecast page's product lens
 module.exports.buildRecent = buildRecent;         // the Pulse page's Shopify fill-in
+module.exports.buildProductsHistory = buildProductsHistory;   // the Products page's committed grid
+module.exports.buildProductsRecent = buildProductsRecent;     // the Products page's live top-up
+module.exports.packGrid = packGrid;                           // for offline unit testing
 module.exports.categorize = categorize;   // for offline unit testing
 module.exports.accessToken = accessToken;         // for offline unit testing
 module.exports.storeDomain = storeDomain;         // for offline unit testing

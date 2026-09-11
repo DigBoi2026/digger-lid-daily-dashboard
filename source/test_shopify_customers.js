@@ -141,6 +141,41 @@ const day = (d, net, orders) => ({ day: d, net_sales: String(net), orders: Strin
   ok('recent: rows shaped for shopifyFill', rc.daily[0].date === '2026-09-09' && rc.daily[0].total === 13734.31 && rc.daily[0].orders === 38, rc.daily[0]);
   ok('recent: names the measure', rc.meta.measure === 'total_sales');
 
+  /* ------------------------------------------------------- product grid */
+  QUERIES = [];
+  ANSWER = ql => {
+    if (/GROUP BY product_title, day/.test(ql)) return [
+      { day: '2026-09-09', product_title: 'KAJO Grease Packs', net_sales: '4000', orders: '12', net_items_sold: '30' },
+      { day: '2026-09-09', product_title: 'PRO Mat', net_sales: '1000', orders: '4', net_items_sold: '4' },
+      { day: '2026-09-10', product_title: 'KAJO Grease Packs', net_sales: '6000', orders: '18', net_items_sold: '45' },
+      { day: '2026-09-10', product_title: null, net_sales: '50', orders: '1', net_items_sold: '1' },
+    ];
+    return [ { day: '2026-09-09', net_sales: '5000', orders: '15', net_items_sold: '34' },
+             { day: '2026-09-10', net_sales: '6050', orders: '18', net_items_sold: '46' } ];
+  };
+  const g = await S.buildProductsRecent(TODAY);
+  ok('grid: two queries — the product grid and the store totals', QUERIES.length === 2, QUERIES.length);
+  ok('grid: the grid query carries an explicit LIMIT so a default cap cannot truncate it silently', /LIMIT \d{4,}/.test(QUERIES[0]), QUERIES[0]);
+  ok('grid: 45 days', /SINCE 2026-07-27/.test(QUERIES[0]), QUERIES[0]);
+  ok('grid: days are the union, sorted', g.days.join() === '2026-09-09,2026-09-10', g.days);
+  ok('grid: products ranked by net over the pull', g.products[0].title === 'KAJO Grease Packs' && g.products[1].title === 'PRO Mat', g.products.map(p => p.title));
+  ok('grid: a (product, day) with no sale is a 0 cell, not a gap', g.products[1].cells[1].join() === '0,0,0', g.products[1].cells);
+  ok('grid: cells are [net, orders, units]', g.products[0].cells[1].join() === '6000,18,45', g.products[0].cells);
+  ok('grid: products carry their category', g.products[0].k === 'grease' && g.products[1].k === 'mobile', g.products.map(p => p.k));
+  ok('grid: an untitled line is kept, as "(untitled)", category other', g.products.some(p => p.title === '(untitled)' && p.k === 'other'), g.products.map(p => p.title));
+  ok('grid: store totals are separate and carry the true order count', g.totals[1].join() === '6050,18,46', g.totals);
+  ok('grid: chunk row counts are reported so truncation would show', g.meta.chunks.length === 1 && g.meta.chunks[0].rows === 4, g.meta.chunks);
+  ok('grid: the category names travel with it', g.meta.keys && g.meta.keys.grease === 'Grease');
+
+  /* the long pull goes in 31-day chunks, paced, with since/until overridable */
+  QUERIES = []; ANSWER = () => [];
+  const h = await S.buildProductsHistory(TODAY, { since: '2026-07-01', until: '2026-09-11' });
+  const gridQ = QUERIES.filter(q => /GROUP BY product_title, day/.test(q));
+  ok('history: 72 days is three chunks plus one totals query', gridQ.length === 3 && QUERIES.length === 4, QUERIES.length);
+  ok('history: chunks tile the range without overlap or gap',
+     /SINCE 2026-07-01 UNTIL 2026-08-01/.test(gridQ[0]) && /SINCE 2026-08-01 UNTIL 2026-09-01/.test(gridQ[1]) && /SINCE 2026-09-01 UNTIL 2026-09-11/.test(gridQ[2]), gridQ);
+  ok('history: empty pull is an empty grid, not a throw', h.days.length === 0 && h.products.length === 0);
+
   console.log(`shopify customers+products: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })();
