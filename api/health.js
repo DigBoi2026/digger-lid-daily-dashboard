@@ -24,6 +24,17 @@ module.exports = async (req, res) => {
     enabled: has('AI_TOKENS'),
     note: 'Read-only. Tokens are issued per consumer and scoped; ask the board owner.',
   };
+  /* Which consumers this deployment knows — names and scopes, never tokens —
+     so "401" can be told apart from "the variable was saved but never
+     redeployed": a consumer you just added and cannot see here has not
+     reached the function yet. */
+  try {
+    const A = require('../lib/ai-access.js');
+    const diag = A.diagnose(process.env.AI_TOKENS);
+    out.ai.tokens_valid = !!diag.ok;
+    if (!diag.ok && has('AI_TOKENS')) out.ai.problem = diag.reason;
+    out.ai.consumers = A.parseTokens(process.env.AI_TOKENS).map(e => ({ name: e.name, scopes: e.scopes }));
+  } catch (e) { out.ai.consumers_error = clip(e); }
 
   // ---- Shopify ----
   // Either credential shape counts as configured: a long-lived SHOPIFY_TOKEN, or
