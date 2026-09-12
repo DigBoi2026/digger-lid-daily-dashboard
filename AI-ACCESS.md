@@ -94,7 +94,9 @@ password prompt from `WWW-Authenticate`, so nothing changes for a human.
 
 `/api/health` needs no credential and carries the same pointer under `ai`,
 including `enabled` so a caller can tell "no token issued yet" from "wrong
-token".
+token". It also lists the consumers the live deployment knows — names and
+scopes, never tokens — so a 401 after editing `AI_TOKENS` can be told apart
+from a save that has not been redeployed yet.
 
 None of that hands out data or a credential. It only says a token-based API is
 here and how to ask. **A private board cannot be self-serve: the token has to
