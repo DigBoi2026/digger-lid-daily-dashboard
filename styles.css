@@ -256,12 +256,12 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .products-stage .daynav{gap:.5cqw}
 .products-stage .daynav .datebox{min-width:0;text-align:left;padding-right:.4cqw}
 .products-stage .daynav .datebox .d{font-size:1.6cqh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.products-stage .daynav .datebox{max-width:15cqw;overflow:hidden}
+.products-stage .daynav .datebox{max-width:13.5cqw;overflow:hidden}
 .products-stage .daynav .datebox .dow{font-size:1.05cqh;letter-spacing:.12em;white-space:nowrap;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
 .products-stage .daynav .seg.small button{font-size:1.05cqh;padding:.45cqh .5cqw;letter-spacing:.04em}
 .products-stage .status{gap:.7cqw}
 .products-stage .status .seg.small button{font-size:1.05cqh;padding:.45cqh .6cqw;letter-spacing:.05em}
-.products-stage .topnav a{padding-left:.6cqw;padding-right:.6cqw}
+.products-stage .topnav a{padding-left:.5cqw;padding-right:.5cqw}
 #p2bottom{display:grid;grid-template-columns:1.55fr 1fr;gap:1.1cqw;min-height:0}
 #p2donutWrap{flex:1;min-height:0;position:relative}
 #p2trendWrap{flex:1;min-height:0;position:relative}
@@ -868,3 +868,55 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .meta-stage .daynav .datebox{max-width:13cqw}
 .meta-stage .topnav a{padding-left:.55cqw;padding-right:.55cqw}
 .topnav a{padding-left:.6cqw;padding-right:.6cqw}
+
+/* ---- GPAM page ------------------------------------------------------------ */
+#stage.gpam-stage{grid-template-rows:9cqh 17cqh minmax(0,1fr) 31cqh 2.8cqh}
+.gpam-stage .daynav .datebox{min-width:0;max-width:14cqw;overflow:hidden;text-align:left;padding-right:.4cqw}
+.gpam-stage .daynav .datebox .d{font-size:1.7cqh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gpam-stage .daynav .datebox .dow{font-size:1.05cqh;letter-spacing:.1em;white-space:nowrap;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.gpam-stage .daynav .seg.small button{font-size:1.05cqh;padding:.45cqh .6cqw;letter-spacing:.04em}
+.gpam-stage .status .freshness{max-width:14cqw}
+.gpam-stage .status .freshness .pend,.gpam-stage .status .freshness .val{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gpam-stage .topnav a{padding-left:.5cqw;padding-right:.5cqw}
+.gpam-stage .kpi.bad .k-val{color:var(--bad)}
+.gpam-stage .kpi .k-per{margin-left:.5cqw}
+#gpMain{display:grid;grid-template-columns:1.25fr 1fr;gap:1.1cqw;min-height:0}
+#gpBottom{display:grid;grid-template-columns:1.2fr 1fr;gap:1.1cqw;min-height:0}
+#wfWrap{flex:1;min-height:0;position:relative}
+#wfWrap canvas{position:absolute;inset:0;width:100%!important;height:100%!important}
+/* FY months */
+.ptable .thead.gp,.ptable .trow.gp{grid-template-columns:1.2fr 1fr .65fr .65fr .65fr 1fr .7fr .9fr;gap:.5cqw}
+.ptable .trow.gp{padding:.42cqh .6cqw}
+.ptable .trow.gp .pname{font-size:1.3cqh} .ptable .trow.gp .pname small{color:var(--muted);font-weight:400;margin-left:.2cqw}
+.ptable .trow.gp .num{font-size:1.3cqh} .ptable .trow.gp .num.pos{color:var(--good)} .ptable .trow.gp .num.neg{color:var(--bad)}
+.ptable .trow.gp.cur{background:rgba(245,235,25,.05)}
+.ptable .trow.gp.tot{border-top:1px solid var(--line);background:rgba(245,235,25,.06)} .ptable .trow.gp.tot .pname{color:var(--dl-yellow);letter-spacing:.08em}
+.ptable .thead.gp{font-size:1.05cqh}
+/* the formulation */
+.fform{flex:0 0 auto;font-size:1.1cqh;color:var(--muted);margin-bottom:.5cqh;line-height:1.35} .fform b{color:var(--dl-yellow)}
+.form2{flex:1;min-height:0;display:grid;grid-template-columns:1.05fr 1fr 1fr;gap:1.1cqw;overflow:hidden}
+.fcol{min-height:0;overflow-y:auto;scrollbar-gutter:stable;padding-right:.3cqw}
+.fhead{font-family:var(--font-head);font-size:1.15cqh;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--dl-yellow);margin-bottom:.3cqh}
+.fhead small{color:var(--muted);font-weight:400;letter-spacing:.04em;text-transform:none;margin-left:.3cqw}
+.fgrp{font-size:.9cqh;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-top:.3cqh;opacity:.8}
+.fline{display:flex;justify-content:space-between;align-items:baseline;gap:.6cqw;font-size:1cqh;line-height:1.25;padding:.08cqh 0;border-bottom:1px dashed rgba(255,255,255,.06)}
+.fline .fl-n{color:var(--dl-white);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fline .fl-n i{font-style:normal;color:var(--muted);font-size:.95cqh;margin-left:.3cqw}
+.fline .fl-v{color:var(--dl-white);font-variant-numeric:tabular-nums;white-space:nowrap} .fline .fl-v small{color:var(--muted);margin-left:.3cqw;min-width:3.2cqw;display:inline-block;text-align:right}
+.fline.dim .fl-n,.fline.dim .fl-v{color:var(--muted)}
+.fline.sum{border-bottom:1px solid var(--line);font-weight:700} .fline.sum .fl-n{text-transform:uppercase;letter-spacing:.06em;font-size:1cqh}
+.fline.gpam .fl-n,.fline.gpam .fl-v{color:var(--good)} .fline.profit .fl-v{color:var(--dl-yellow)}
+.fline.warn .fl-n,.fline.warn .fl-n i{color:var(--warn)} .fline.warn .fl-v{color:var(--warn)}
+.fwhy{margin-top:.6cqh;font-size:1cqh;color:var(--muted);line-height:1.35;border-top:1px solid var(--line);padding-top:.5cqh}
+/* the bridge reuses the profit-row bars, with room for a label */
+.bridge{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-evenly;gap:.3cqh;overflow:hidden}
+.bridge .pr{grid-template-columns:11cqw 1fr auto}
+.bridge .pr-l{text-transform:none;letter-spacing:0;font-size:1.15cqh;white-space:normal;line-height:1.15}
+.bridge .pr-l i{display:block;font-size:.95cqh;margin-left:0;margin-top:.1cqh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bridge .pr.tot{border-top:1px solid var(--line);padding-top:.4cqh} .bridge .pr.tot .pr-l{font-weight:700;color:var(--dl-yellow)}
+.bridge .empty{font-size:1.1cqh;color:var(--muted);line-height:1.4;padding:.8cqh .6cqw;border:1px dashed var(--line);border-radius:.6cqh}
+.gpam-stage .chartfoot{flex:0 0 auto;margin-top:.4cqh;font-size:1cqh;line-height:1.3}
+
+/* eight tabs now (GPAM joined): a little tighter everywhere so the header fits at 1440 */
+.topnav a{padding-left:.5cqw;padding-right:.5cqw;gap:.35cqw;font-size:1.1cqh}
+.topnav{gap:.15cqw}

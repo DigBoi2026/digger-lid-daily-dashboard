@@ -67,6 +67,10 @@ const LABELS = {
   fcr:        /^FCR\b/i,
   returns:    /^Returns$/i,
   returnsPct: /^Returns ?%/i,
+  /* GPAM's marketing-overhead layer. Neither row exists in the sheet yet; the
+     labels are here so the day they are added they flow through untouched. */
+  mktConsult: /^Marketing Consultants/i,
+  creative:   /^(Content ?& ?Creative|Creative)/i,
   totalExp:   /^TOTAL EXPENSES/i,
   profit:     /^PROFIT$/i,
   profitPct:  /^Profit ?%/i,

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DiggerLid — GPAM</title>
+<link rel="icon" href="./assets/favicon32.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300;400;500;700&family=League+Spartan:wght@400;700;900&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="./styles.css?v=1788991676" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div id="stageWrap">
+  <div id="stage" class="gpam-stage">
+    <!-- HEADER -->
+    <header id="top">
+      <div class="hleft">
+        <div class="brand"><img src="./assets/dl_wordmark.png" alt="DiggerLid" /></div>
+        <nav class="topnav">
+          <a href="index.html">Daily Ops</a>
+          <a href="daily.html">Pulse</a>
+          <a href="performance.html">Performance</a>
+          <a href="meta.html">Meta Ads</a>
+          <a href="gpam.html" class="active" aria-current="page">GPAM</a>
+          <a href="products.html">Products</a>
+          <a href="region.html">Region</a>
+          <a href="forecast.html">Forecast</a>
+        </nav>
+      </div>
+
+      <div class="daynav">
+        <div class="datebox">
+          <div class="d" id="winLabel">MONTH TO DATE</div>
+          <div class="dow" id="winDates">—</div>
+        </div>
+        <div class="seg small" id="winSeg" role="group" aria-label="Select period" title="Period ending on the last complete day, vs the same dates last year">
+          <button data-win="MTD" class="active">MTD</button>
+          <button data-win="LM">LAST MONTH</button>
+          <button data-win="QTD">QTD</button>
+          <button data-win="FYTD">FYTD</button>
+          <button data-win="12M">12M</button>
+        </div>
+      </div>
+
+      <div class="status">
+        <div class="freshness">
+          <div class="lbl" id="throughLbl">P&amp;L · through</div>
+          <div class="val" id="throughVal">—</div>
+          <div class="pend" id="throughPend"></div>
+        </div>
+        <div class="livepill" id="livePill" title="Data source status">
+          <span class="dot snap" id="liveDot"></span>
+          <span id="liveText">Snapshot</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- KPI STRIP: the layers, in order, ending at the bonus base -->
+    <section id="kpis"></section>
+
+    <!-- MAIN -->
+    <section id="gpMain">
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">The <span>Waterfall</span></div>
+          <div class="p-note" id="wfNote">gross sales → net revenue → gross profit → contribution → GPAM · then below the line to profit</div>
+        </div>
+        <div id="wfWrap"><canvas id="wfChart"></canvas></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">The <span>Year</span></div>
+          <div class="p-note" id="monthsNote">every month of the financial year · GPAM and its rate · vs the same month last year</div>
+        </div>
+        <div class="ptable" id="months"></div>
+      </div>
+    </section>
+
+    <!-- BOTTOM -->
+    <section id="gpBottom">
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Above and <span>Below the Line</span></div>
+          <div class="p-note" id="formNote">the formulation, with this period’s figures</div>
+        </div>
+        <div class="fform" id="fform"></div>
+        <div class="form2" id="form2"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Why GPAM <span>Moved</span></div>
+          <div class="p-note" id="bridgeNote">—</div>
+        </div>
+        <div class="bridge" id="bridge"></div>
+        <div class="p-note chartfoot" id="bridgeFoot"></div>
+      </div>
+    </section>
+
+    <footer id="foot">
+      <div id="footSource">—</div>
+      <div id="footNote">Read-only · GPAM is the bonus base · below-the-line costs excluded by design</div>
+    </footer>
+
+    <div class="err" id="errBox">
+      <div><h2>No data loaded</h2><p>Couldn’t find <code>data.js</code>.</p></div>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/animejs@4.0.0/lib/anime.iife.min.js"></script>
+<script src="./motion.js?v=1788991676"></script>
+<script src="./core.js?v=1788991676"></script>
+<script src="./forecast.js?v=1788991676"></script>
+<script src="./lib/gpam.js?v=1788991676"></script>
+<script src="./data.js?v=1788991676"></script>
+<script src="./prior_year.js?v=1788991676"></script>
+<script src="./gpam.js?v=1788991676"></script>
+</body>
+</html>
