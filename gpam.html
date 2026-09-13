@@ -38,7 +38,7 @@
         </div>
         <div class="seg small" id="winSeg" role="group" aria-label="Select period" title="Period ending on the last complete day, vs the same dates last year">
           <button data-win="MTD" class="active">MTD</button>
-          <button data-win="LM">LAST MONTH</button>
+          <button data-win="LM">LAST MO</button>
           <button data-win="QTD">QTD</button>
           <button data-win="FYTD">FYTD</button>
           <button data-win="12M">12M</button>
@@ -46,6 +46,10 @@
       </div>
 
       <div class="status">
+        <div class="seg small" id="cmpSeg" role="group" aria-label="Compare against" title="What every change on the page is measured against">
+          <button data-cmp="prev">PRIOR</button>
+          <button data-cmp="ly" class="active">LAST YR</button>
+        </div>
         <div class="freshness">
           <div class="lbl" id="throughLbl">P&amp;L · through</div>
           <div class="val" id="throughVal">—</div>

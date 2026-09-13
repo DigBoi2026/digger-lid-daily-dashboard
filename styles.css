@@ -30,7 +30,7 @@ body{
 header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:1cqw}
 .hleft{display:flex;align-items:center;gap:1cqw;min-width:0}
 .brand{display:flex;align-items:center;gap:1cqw}
-.brand img{height:4.4cqh;width:auto;display:block}
+.brand img{height:3.74cqh;width:auto;display:block}
 .brand .divider{width:1px;height:4.6cqh;background:var(--line)}
 .brand .titles h1{font-size:2.7cqh;font-weight:700;letter-spacing:.02em;line-height:1;text-transform:uppercase}
 .brand .titles .sub{font-size:1.35cqh;color:var(--muted);letter-spacing:.28em;text-transform:uppercase;margin-top:.5cqh}
@@ -942,3 +942,22 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 
 .gpline{color:var(--dl-white);font-weight:700;letter-spacing:.02em}
 .gpam-stage .kpi .k-sub{white-space:normal;line-height:1.3}
+
+/* the compare toggle sits in the status block on every page that has one */
+.status #cmpSeg.seg.small button{font-size:1.05cqh;padding:.45cqh .6cqw;letter-spacing:.05em}
+.status{gap:.7cqw}
+
+/* Daily Ops, Performance and GPAM carry the compare toggle in the status block: the
+   date box and freshness get a cap so eight tabs, a period stepper, five windows,
+   the toggle and the live pill all fit at 1440 */
+.ops-stage .datebox,.perf-stage .datebox,.gpam-stage .datebox{max-width:12.5cqw;min-width:0;overflow:hidden}
+.ops-stage .datebox .d,.perf-stage .datebox .d,.gpam-stage .datebox .d{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ops-stage .datebox .dow,.perf-stage .datebox .dow,.gpam-stage .datebox .dow{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ops-stage .status .freshness,.perf-stage .status .freshness,.gpam-stage .status .freshness{max-width:11cqw}
+.ops-stage .status .freshness .val,.perf-stage .status .freshness .val,.ops-stage .status .freshness .pend,.perf-stage .status .freshness .pend{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ops-stage .daynav,.perf-stage .daynav{gap:.45cqw}
+.ops-stage .daynav .seg.small button,.perf-stage .daynav .seg.small button{font-size:1.05cqh;padding:.45cqh .55cqw;letter-spacing:.04em}
+.status #cmpSeg.seg.small button{padding:.45cqh .5cqw}
+
+/* the live pill and compare toggle, a touch smaller so every header fits eight tabs */
+.livepill{font-size:1.05cqh;padding:.55cqh .8cqw;letter-spacing:.1em}

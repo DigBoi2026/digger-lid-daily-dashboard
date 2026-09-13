@@ -16,7 +16,7 @@ const REFRESH_MINUTES = 30;
    creative line yet. $0 until the business says otherwise; the page states it. */
 const OVERHEAD_PER_DAY = 0;
 
-const S = { win: 'MTD', live: 'snap', right: 'bridge' };
+const S = { win: 'MTD', live: 'snap', right: 'bridge', cmp: 'ly' };
 let DATA = window.DL_DATA || null;
 const PRIOR = window.DL_PRIOR || null;
 let CHART = null;
@@ -56,7 +56,7 @@ function anchorOf(list) {
 function render() {
   if (!DATA) { document.getElementById('errBox').classList.add('show'); return; }
   const list = rows(); const anchor = anchorOf(list); if (!anchor) return;
-  const rg = G.period(S.win, anchor);
+  const rg = G.period(S.win, anchor, S.cmp);
   const cur = list.filter(r => G.inRange(r, rg) && !r.pending);
   const prevRows = list.filter(r => G.inRange(r, rg.prev));
   const cov = G.coverage(list, rg.prev);
@@ -79,10 +79,11 @@ function render() {
 
 function renderHeader({ list, anchor, rg, cov }) {
   document.querySelectorAll('#winSeg button').forEach(b => b.classList.toggle('active', b.dataset.win === S.win));
+  document.querySelectorAll('#cmpSeg button').forEach(b => b.classList.toggle('active', b.dataset.cmp === S.cmp));
   document.getElementById('winLabel').textContent = rg.label.toUpperCase();
   const same = rg.start === rg.end;
   const span = same ? niceY(rg.start) : `${nice(rg.start)}–${nice(rg.end)} ${rg.end.slice(0, 4)}`;
-  document.getElementById('winDates').textContent = (span + (cov.ok ? ` · VS ${nice(rg.prev.start)}–${nice(rg.prev.end)} ${rg.prev.end.slice(0, 4)}` : ' · NO FULL PRIOR YEAR')).toUpperCase();
+  document.getElementById('winDates').textContent = (span + (cov.ok ? ` · VS ${nice(rg.prev.start)}–${nice(rg.prev.end)} ${rg.prev.end.slice(0, 4)}` : (rg.cmp === 'prev' ? ' · NO FULL PRIOR PERIOD' : ' · NO FULL PRIOR YEAR'))).toUpperCase();
   document.getElementById('throughVal').textContent = niceY(anchor);
   const last = list[list.length - 1];
   const pend = last && last.date > anchor ? `${nice(last.date)} ${pendingLabel(last) || 'pending'}` : 'all days complete';
@@ -94,7 +95,8 @@ function tile(lbl, val, sub, foot, cls) {
 }
 function renderKpis({ list, anchor, rg, L, P, cov, BM, fy }) {
   const el = document.getElementById('kpis');
-  const vs = cov.ok ? 'vs same dates last yr' : 'no full prior year';
+  const vsWhat = rg.cmp === 'prev' ? 'vs ' + rg.prev.label : 'vs same dates last yr';
+  const vs = cov.ok ? vsWhat : (rg.cmp === 'prev' ? 'no full prior period' : 'no full prior year');
   const bw = benchFor(BM, list, rg);
   /* Revenue → Gross margin % → Contribution margin % → GPAM $ → GPAM %.
      Scale then efficiency: a month can post more GPAM dollars on a worse
@@ -102,10 +104,10 @@ function renderKpis({ list, anchor, rg, L, P, cov, BM, fy }) {
   const flat = '<span class="delta flat">—</span>';
   el.innerHTML = [
     tile('Net revenue', money(L.netRevenue), `ex GST${L.returns ? ' · returns ' + money(L.returns) : ''} · ${L.days} days`, (P ? deltaEl(L.netRevenue, P.netRevenue) : flat) + `<span class="k-per">${vs}</span>`),
-    tile('Gross margin %', pct(L.gmPct), `gross profit <b>${money(L.grossProfit)}</b> · COGS ${money(L.cogs.total)}`, (P ? ptsEl(L.gmPct - P.gmPct) : flat) + `<span class="k-per">${P ? 'vs ' + pct(P.gmPct) + ' last yr' : vs}</span>`),
-    tile('Contribution margin %', pct(L.cmPct), `contribution <b>${money(L.cm)}</b> · after ads ${money(L.ads.total)} (${pct(L.adsPct)} of net rev · MER ${L.mer ? L.mer.toFixed(2) + '×' : '—'})`, (P ? ptsEl(L.cmPct - P.cmPct) : flat) + `<span class="k-per">${P ? 'vs ' + pct(P.cmPct) + ' last yr' : vs}</span>`),
-    tile('GPAM $ · ' + (rg.win === 'FYTD' ? rg.label : rg.label.toLowerCase()), money(L.gpam), `contribution − marketing overhead${L.overhead.total ? ' ' + money(L.overhead.total) : ' (no line in the sheet · $0)'}`, (P ? deltaEl(L.gpam, P.gpam) : flat) + `<span class="k-per">${P ? 'vs ' + money(P.gpam) + ' last yr' : vs}</span>`, (L.gpam < 0 ? 'bad ' : '') + 'accent'),
-    tile('GPAM %', pct(L.gpamPct), `GPAM ÷ net revenue · benchmark <b>${pct(bw.target)}</b>${bw.target != null && L.gpamPct != null ? ' · ' + ptsEl(L.gpamPct - bw.target) : ''}`, (P ? ptsEl(L.gpamPct - P.gpamPct) : flat) + `<span class="k-per">${P ? 'vs ' + pct(P.gpamPct) + ' last yr · ' : ''}${benchWord(L.gpamPct, bw)}</span>`, benchCls(L.gpamPct, bw) + ' accent'),
+    tile('Gross margin %', pct(L.gmPct), `gross profit <b>${money(L.grossProfit)}</b> · COGS ${money(L.cogs.total)}`, (P ? ptsEl(L.gmPct - P.gmPct) : flat) + `<span class="k-per">${P ? 'vs ' + pct(P.gmPct) + ' ' + (rg.cmp === 'prev' ? 'prior' : 'last yr') : vs}</span>`),
+    tile('Contribution margin %', pct(L.cmPct), `contribution <b>${money(L.cm)}</b> · after ads ${money(L.ads.total)} (${pct(L.adsPct)} of net rev · MER ${L.mer ? L.mer.toFixed(2) + '×' : '—'})`, (P ? ptsEl(L.cmPct - P.cmPct) : flat) + `<span class="k-per">${P ? 'vs ' + pct(P.cmPct) + ' ' + (rg.cmp === 'prev' ? 'prior' : 'last yr') : vs}</span>`),
+    tile('GPAM $ · ' + (rg.win === 'FYTD' ? rg.label : rg.label.toLowerCase()), money(L.gpam), `contribution − marketing overhead${L.overhead.total ? ' ' + money(L.overhead.total) : ' (no line in the sheet · $0)'}`, (P ? deltaEl(L.gpam, P.gpam) : flat) + `<span class="k-per">${P ? 'vs ' + money(P.gpam) + ' ' + (rg.cmp === 'prev' ? 'prior' : 'last yr') : vs}</span>`, (L.gpam < 0 ? 'bad ' : '') + 'accent'),
+    tile('GPAM %', pct(L.gpamPct), `GPAM ÷ net revenue · benchmark <b>${pct(bw.target)}</b>${bw.target != null && L.gpamPct != null ? ' · ' + ptsEl(L.gpamPct - bw.target) : ''}`, (P ? ptsEl(L.gpamPct - P.gpamPct) : flat) + `<span class="k-per">${P ? 'vs ' + pct(P.gpamPct) + (rg.cmp === 'prev' ? ' prior' : ' last yr') + ' · ' : ''}${benchWord(L.gpamPct, bw)}</span>`, benchCls(L.gpamPct, bw) + ' accent'),
     fy ? tile('GPAM $ · ' + fy.label, money(fy.total), `to date <b>${money(fy.actual)}</b> · forecast ${money(fy.fc)} to 30 Jun`, `<span class="delta flat">forecast</span><span class="k-per">floor ${money(fy.floor)} · target ${money(fy.total)} · stretch ${money(fy.stretch)}</span>`)
        : tile('GPAM $ · financial year', money(fyActual(list, anchor)), 'to date', '<span class="delta flat">no forecast engine</span>'),
   ].join('');
@@ -242,12 +244,12 @@ function renderForm({ L, rg }) {
 function renderBridge({ L, P, rg, cov }) {
   const el = document.getElementById('bridge'), note = document.getElementById('bridgeNote'), foot = document.getElementById('bridgeFoot');
   const B = P ? G.bridge(L, P) : null;
-  if (!B) { el.innerHTML = `<div class="empty">No full prior year for ${rg.label.toLowerCase()} — the 2025 book starts 1 July 2025, so the same dates last year are ${cov.n} of ${cov.expected} days. Comparisons appear once the window is at least 90% covered.</div>`; note.textContent = 'vs same dates last year'; foot.textContent = ''; return; }
+  if (!B) { el.innerHTML = `<div class="empty">No full ${rg.cmp === 'prev' ? 'prior period' : 'prior year'} for ${rg.label.toLowerCase()} — the books cover ${cov.n} of the ${cov.expected} days of ${rg.prev.label}. Comparisons appear once the window is at least 90% covered.</div>`; note.textContent = 'vs ' + rg.prev.label; foot.textContent = ''; return; }
   const maxAbs = Math.max(1, ...B.items.map(i => Math.abs(i.value)), Math.abs(B.delta));
   const row = (label, v, sub, cls) => { const w = Math.abs(v) / maxAbs * 50, neg = v < 0;
     return `<div class="pr ${neg ? 'neg' : 'pos'} ${cls || ''}" title="${esc(label + ': ' + money(v, false) + (sub ? ' · ' + sub : ''))}"><div class="pr-l">${esc(label)}<i>${esc(sub || '')}</i></div><div class="pr-t"><s></s><i style="left:${(neg ? 50 - w : 50).toFixed(1)}%;width:${w.toFixed(1)}%"></i></div><div class="pr-v">${(v >= 0 ? '+' : '') + money(v)}</div></div>`; };
   el.innerHTML = B.items.map(i => row(i.label, i.value, i.note)).join('') + row('Δ GPAM', B.delta, `${money(P.gpam)} → ${money(L.gpam)}`, 'tot');
-  note.textContent = `vs ${nice(rg.prev.start)}–${nice(rg.prev.end)} ${rg.prev.end.slice(0, 4)} · four effects that sum exactly`;
+  note.textContent = `vs ${rg.prev.label} · ${nice(rg.prev.start)}–${nice(rg.prev.end)} ${rg.prev.end.slice(0, 4)} · four effects that sum exactly`;
   const big = B.items.slice().sort((a, b) => Math.abs(b.value) - Math.abs(a.value))[0];
   foot.textContent = `Largest driver: ${big.label.toLowerCase()} (${(big.value >= 0 ? '+' : '') + money(big.value)}). Volume is last year’s GPAM rate on the change in net revenue; the three rates are applied to this year’s net revenue.`;
 }
@@ -289,6 +291,7 @@ async function tryLiveRefresh() {
 }
 function wire() {
   document.querySelectorAll('#winSeg button').forEach(b => b.onclick = () => { S.win = b.dataset.win; render(); });
+  document.querySelectorAll('#cmpSeg button').forEach(b => b.onclick = () => { S.cmp = b.dataset.cmp; render(); });
   document.querySelectorAll('#rightSeg button').forEach(b => b.onclick = () => { S.right = b.dataset.view; document.querySelectorAll('#rightSeg button').forEach(x => x.classList.toggle('active', x === b)); document.getElementById('rightTitle').innerHTML = S.right === 'bench' ? 'The <span>Benchmark</span>' : 'Why GPAM <span>Moved</span>'; render(); });
   window.addEventListener('resize', () => { clearTimeout(window._rz); window._rz = setTimeout(render, 200); });
 }

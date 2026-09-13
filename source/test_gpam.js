@@ -48,6 +48,12 @@ ok('period: QTD in September starts 1 July; in November 1 October; in February 1
 ok('period: FYTD starts 1 July and is labelled by the FY it ends in', (p => p.start === '2026-07-01' && p.label === 'FY27 to date')(G.period('FYTD', '2026-09-12')) && G.period('FYTD', '2026-03-01').start === '2025-07-01');
 ok('period: 12M is 365 days', G.expectedDays(G.period('12M', '2026-09-12')) === 365);
 ok('period: a named month is clipped to the anchor', (p => p.start === '2026-09-01' && p.end === '2026-09-12')(G.period('2026-09', '2026-09-12')));
+ok('period vs prior: MTD compares to the same days of the previous month', (p => p.prev.start === '2026-08-01' && p.prev.end === '2026-08-12' && p.cmp === 'prev')(G.period('MTD', '2026-09-12', 'prev')));
+ok('period vs prior: last month compares to the month before, whole', (p => p.prev.start === '2026-07-01' && p.prev.end === '2026-07-31')(G.period('LM', '2026-09-12', 'prev')));
+ok('period vs prior: QTD compares to the equal stretch before', (p => p.prev.end === '2026-06-30' && G.expectedDays(p.prev) === G.expectedDays(p))(G.period('QTD', '2026-09-12', 'prev')));
+ok('period vs prior: FYTD still means the previous FY', (p => p.prev.start === '2025-07-01' && p.prev.end === '2025-09-12')(G.period('FYTD', '2026-09-12', 'prev')));
+ok('period vs prior: 12M compares to the 12 months before', (p => G.expectedDays(p.prev) === 365 && p.prev.end === G.addDays(p.start, -1))(G.period('12M', '2026-09-12', 'prev')));
+ok('period default is last year and says so', G.period('MTD', '2026-09-12').cmp === 'ly' && /last year/.test(G.period('MTD', '2026-09-12').prev.label));
 ok('coverage: 90% rule', G.coverage(rows, { start: '2026-09-01', end: '2026-09-03' }).ok && !G.coverage(rows, { start: '2026-09-01', end: '2026-09-10' }).ok);
 ok('fyMonths: July to the anchor month', JSON.stringify(G.fyMonths('2026-09-12')) === JSON.stringify(['2026-07', '2026-08', '2026-09']) && G.fyMonths('2026-02-01').length === 8);
 

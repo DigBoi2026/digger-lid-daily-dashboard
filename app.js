@@ -31,13 +31,15 @@ const CONFIG = {
 
 // Shared math/utilities live in core.js (unit-tested by source/test_core.js).
 const { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline,
-        isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE, weeklyBuckets } = DLcore;
+        isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE, weeklyBuckets, sameDatesLastYear } = DLcore;
 
 /* ----------------------------- state ----------------------------------- */
 // Unified period selector: win ∈ {3,7,30,90,'YTD'} (trailing period ending yesterday); off = periods back.
 // 'YTD' is not a trailing 12 months: the sheet is a calendar-2026 workbook, so the
 // monthly roll-up only ever holds this year's months. The button says what it does.
-const S = { win:30, off:0, metric:'rev_spend', live:'snap' };
+const S = { win:30, off:0, metric:'rev_spend', live:'snap', cmp:'prev' };
+/* The 2025 book, for "vs last year": static, shipped as a file. */
+const PRIOR = window.DL_PRIOR || null;
 let DATA = window.DL_DATA || null;
 let charts = { wf:null, trend:null };
 
@@ -150,14 +152,25 @@ function ctx(){
   if(S.win==='YTD'){                                   // year-to-date — monthly granularity
     const list=DATA.monthly;
     const yr=ytdYear(list);
-    return {rec:aggregate(list), prev:null, series:list, prevSeries:null, gran:'month',
+    /* Last year's same months, when the comparison is "vs last year" and the
+       2025 book has them all; otherwise YTD has no comparison, as before. */
+    const maxM = Math.max(...list.map(m=>m.monthNum||0));
+    const lyM = (S.cmp==='ly' && PRIOR && PRIOR.monthly) ? PRIOR.monthly.filter(m=>m.monthNum<=maxM && m.revenue>0) : [];
+    const lyOk = lyM.length && lyM.length >= Math.ceil(list.length*0.9);
+    return {rec:aggregate(list), prev: lyOk?aggregate(lyM):null, series:list, prevSeries: lyOk?lyM:null, gran:'month',
       title:`${yr} year to date`, sub:`${list.length} month${list.length===1?'':'s'}`,
-      periodLabel:`${yr} YTD`, win:'YTD'};
+      periodLabel: S.cmp==='ly' ? (lyOk?`vs ${+yr-1} YTD`:'no full prior year') : `${yr} YTD`, win:'YTD'};
   }
   const P=S.win, wEnd=windowEnd(P), shifted=wEnd !== clampToYesterday();
   const sl=periodSlices(DATA.daily, wEnd, P, S.off);
   S.off=sl.off;                                          // reflect any clamping back into state
-  const cur=sl.cur, prevSeries=sl.prev;
+  const cur=sl.cur;
+  let prevSeries=sl.prev, periodLabel=`vs prior ${P}d`;
+  if(S.cmp==='ly'){
+    const ly = sameDatesLastYear(cur, PRIOR && PRIOR.daily);
+    prevSeries = ly.ok ? ly.rows : [];
+    periodLabel = ly.ok ? 'vs same dates last yr' : `no full prior year (${ly.covered} of ${ly.expected} days)`;
+  }
   const rec=aggregate(cur), prev=prevSeries.length?aggregate(prevSeries):null;
   /* A window of two months or more is drawn as its own weeks, not ninety bars:
      the same weekly buckets the Products page uses (DLcore.weeklyBuckets). The
@@ -167,7 +180,7 @@ function ctx(){
   const prevS = gran==='week' && prevSeries.length ? weeklyBuckets(prevSeries) : prevSeries;
   return {rec, prev, series, prevSeries:prevS, gran,
     title:fmtRange(cur[0].date,cur[cur.length-1].date),
-    sub:periodSub(P, cur.length, S.off), periodLabel:`vs prior ${P}d`, win:P, shifted};
+    sub:periodSub(P, cur.length, S.off), periodLabel, win:P, shifted};
 }
 
 
@@ -203,6 +216,7 @@ function render(){
 }
 
 function renderHeader(c){
+  document.querySelectorAll('#cmpSeg button').forEach(b=>b.classList.toggle('active', b.dataset.cmp===S.cmp));
   document.getElementById('navDate').textContent=c.title;
   document.getElementById('navDow').textContent=c.sub;
   const thr=document.getElementById('throughVal');
@@ -590,6 +604,7 @@ function flashTip(anchor,text){
 
 /* ------------------------------ events -------------------------------- */
 function wire(){
+  document.querySelectorAll('#cmpSeg button').forEach(b=>b.onclick=()=>{ S.cmp=b.dataset.cmp; render(); });
   document.getElementById('prevBtn').onclick=()=>{ if(document.getElementById('prevBtn').disabled)return; S.off++; render(); };
   document.getElementById('nextBtn').onclick=()=>{ if(document.getElementById('nextBtn').disabled)return; S.off=Math.max(0,S.off-1); render(); };
   document.querySelectorAll('#chartTabs button').forEach(b=>b.onclick=()=>{

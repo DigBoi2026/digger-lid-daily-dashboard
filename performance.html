@@ -14,7 +14,7 @@
 </head>
 <body>
 <div id="stageWrap">
-  <div id="stage">
+  <div id="stage" class="perf-stage">
     <!-- HEADER -->
     <header id="top">
       <div class="hleft">
@@ -48,6 +48,10 @@
       </div>
 
       <div class="status">
+        <div class="seg small" id="cmpSeg" role="group" aria-label="Compare against" title="What every change on the page is measured against">
+          <button data-cmp="prev" class="active">PRIOR</button>
+          <button data-cmp="ly">LAST YR</button>
+        </div>
         <div class="freshness">
           <div class="lbl">Data through</div>
           <div class="val" id="throughVal">—</div>
@@ -129,6 +133,7 @@
 <script src="./motion.js?v=1788991676"></script>
 <script src="./core.js?v=1788991676"></script>
 <script src="./data.js?v=1788991676"></script>
+<script src="./prior_year.js?v=1788991676"></script>
 <script src="./performance.js?v=1788991676"></script>
 </body>
 </html>

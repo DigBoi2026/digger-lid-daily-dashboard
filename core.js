@@ -32,6 +32,18 @@ var DLcore = (function () {
   // Trailing period slices over a daily array. latest = index of the anchor day
   // (yesterday). off = how many whole periods back. CLAMPED so it can never
   // slice before the start of the data (this is what the bug fix centralises).
+  /* The same dates a year earlier, for a "vs last year" comparison. Prior rows
+     come from the 2025 book (prior_year.js), which has gaps (Feb–Apr 2025), so
+     coverage is reported and a window under 90% covered is not offered as a
+     comparison — a stub of last year is not last year. */
+  const yearBack = iso => { const t = new Date(iso + 'T00:00:00Z'); t.setUTCFullYear(t.getUTCFullYear() - 1); return t.toISOString().slice(0, 10); };
+  function sameDatesLastYear(cur, priorRows) {
+    const by = new Map(); (priorRows || []).forEach(r => { if (r && r.date && r.revenue > 0) by.set(r.date, r); });
+    const rows = []; (cur || []).forEach(d => { const r = d && d.date ? by.get(yearBack(d.date)) : null; if (r) rows.push(r); });
+    const expected = (cur || []).length;
+    return { rows, covered: rows.length, expected, ok: expected > 0 && rows.length >= Math.ceil(expected * 0.9) };
+  }
+
   function periodSlices(daily, latest, P, off) {
     const maxOff = Math.max(0, Math.floor(latest / P));
     const o = Math.min(Math.max(0, off || 0), maxOff);
@@ -252,7 +264,7 @@ var DLcore = (function () {
 
   return { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline,
            pendingOf, isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE,
-           windowBaselines, todayAEST, previousDayAEST, shopifyFill, AEST_TZ, weeklyBuckets };
+           windowBaselines, todayAEST, previousDayAEST, shopifyFill, AEST_TZ, weeklyBuckets , yearBack, sameDatesLastYear };
 })();
 
 if (typeof window !== 'undefined') window.DLcore = DLcore;                       // browser
