@@ -96,14 +96,18 @@ function renderKpis({ list, anchor, rg, L, P, cov, BM, fy }) {
   const el = document.getElementById('kpis');
   const vs = cov.ok ? 'vs same dates last yr' : 'no full prior year';
   const bw = benchFor(BM, list, rg);
+  /* Revenue → Gross margin % → Contribution margin % → GPAM $ → GPAM %.
+     Scale then efficiency: a month can post more GPAM dollars on a worse
+     GPAM %, and the two tiles side by side say which story it is. */
+  const flat = '<span class="delta flat">—</span>';
   el.innerHTML = [
-    tile('Net revenue', money(L.netRevenue), `ex GST${L.returns ? ' · returns ' + money(L.returns) : ''} · ${L.days} days`, (P ? deltaEl(L.netRevenue, P.netRevenue) : '<span class="delta flat">—</span>') + `<span class="k-per">${vs}</span>`),
-    tile('Gross profit', money(L.grossProfit), `margin <b>${pct(L.gmPct)}</b> · COGS ${money(L.cogs.total)}`, (P ? deltaEl(L.gmPct, P.gmPct) : '<span class="delta flat">—</span>') + `<span class="k-per">${P ? 'GM% vs ' + pct(P.gmPct) + ' last yr' : vs}</span>`),
-    tile('Advertising', money(L.ads.total), `<b>${pct(L.adsPct)}</b> of net revenue · MER ${L.mer ? L.mer.toFixed(2) + '×' : '—'}`, (P ? deltaEl(L.adsPct, P.adsPct, 'low') : '<span class="delta flat">—</span>') + `<span class="k-per">${P ? 'rate vs ' + pct(P.adsPct) + ' last yr' : vs}</span>`),
-    tile('Contribution', money(L.cm), `margin <b>${pct(L.cmPct)}</b> · after COGS and ads`, (P ? deltaEl(L.cm, P.cm) : '<span class="delta flat">—</span>') + `<span class="k-per">${vs}</span>`),
-    tile('GPAM · ' + (rg.win === 'FYTD' ? rg.label : rg.label.toLowerCase()), money(L.gpam), `<b>${pct(L.gpamPct)}</b> of net revenue · benchmark <b>${pct(bw.target)}</b>${bw.target != null && L.gpamPct != null ? ' · ' + ptsEl(L.gpamPct - bw.target) : ''}`, (P ? deltaEl(L.gpam, P.gpam) : '<span class="delta flat">—</span>') + `<span class="k-per">${P ? 'vs ' + money(P.gpam) + ' last yr' : vs} · ${benchWord(L.gpamPct, bw)}</span>`, benchCls(L.gpamPct, bw) + ' accent'),
-    fy ? tile('GPAM · ' + fy.label, money(fy.total), `to date <b>${money(fy.actual)}</b> · forecast ${money(fy.fc)} to 30 Jun`, `<span class="delta flat">forecast</span><span class="k-per">floor ${money(fy.floor)} · target ${money(fy.total)} · stretch ${money(fy.stretch)}</span>`)
-       : tile('GPAM · financial year', money(fyActual(list, anchor)), 'to date', '<span class="delta flat">no forecast engine</span>'),
+    tile('Net revenue', money(L.netRevenue), `ex GST${L.returns ? ' · returns ' + money(L.returns) : ''} · ${L.days} days`, (P ? deltaEl(L.netRevenue, P.netRevenue) : flat) + `<span class="k-per">${vs}</span>`),
+    tile('Gross margin %', pct(L.gmPct), `gross profit <b>${money(L.grossProfit)}</b> · COGS ${money(L.cogs.total)}`, (P ? ptsEl(L.gmPct - P.gmPct) : flat) + `<span class="k-per">${P ? 'vs ' + pct(P.gmPct) + ' last yr' : vs}</span>`),
+    tile('Contribution margin %', pct(L.cmPct), `contribution <b>${money(L.cm)}</b> · after ads ${money(L.ads.total)} (${pct(L.adsPct)} of net rev · MER ${L.mer ? L.mer.toFixed(2) + '×' : '—'})`, (P ? ptsEl(L.cmPct - P.cmPct) : flat) + `<span class="k-per">${P ? 'vs ' + pct(P.cmPct) + ' last yr' : vs}</span>`),
+    tile('GPAM $ · ' + (rg.win === 'FYTD' ? rg.label : rg.label.toLowerCase()), money(L.gpam), `contribution − marketing overhead${L.overhead.total ? ' ' + money(L.overhead.total) : ' (no line in the sheet · $0)'}`, (P ? deltaEl(L.gpam, P.gpam) : flat) + `<span class="k-per">${P ? 'vs ' + money(P.gpam) + ' last yr' : vs}</span>`, (L.gpam < 0 ? 'bad ' : '') + 'accent'),
+    tile('GPAM %', pct(L.gpamPct), `GPAM ÷ net revenue · benchmark <b>${pct(bw.target)}</b>${bw.target != null && L.gpamPct != null ? ' · ' + ptsEl(L.gpamPct - bw.target) : ''}`, (P ? ptsEl(L.gpamPct - P.gpamPct) : flat) + `<span class="k-per">${P ? 'vs ' + pct(P.gpamPct) + ' last yr · ' : ''}${benchWord(L.gpamPct, bw)}</span>`, benchCls(L.gpamPct, bw) + ' accent'),
+    fy ? tile('GPAM $ · ' + fy.label, money(fy.total), `to date <b>${money(fy.actual)}</b> · forecast ${money(fy.fc)} to 30 Jun`, `<span class="delta flat">forecast</span><span class="k-per">floor ${money(fy.floor)} · target ${money(fy.total)} · stretch ${money(fy.stretch)}</span>`)
+       : tile('GPAM $ · financial year', money(fyActual(list, anchor)), 'to date', '<span class="delta flat">no forecast engine</span>'),
   ].join('');
 }
 
@@ -169,7 +173,7 @@ function renderWaterfall({ L, rg }) {
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: i => { const s = steps[i.dataIndex]; return `${s.label}: ${money(s.value, false)}` + (L.netRevenue && s.key !== 'grossSales' ? ` · ${(s.value / L.netRevenue * 100).toFixed(1)}% of net revenue` : ''); } } } } },
     plugins: [labelPlugin],
   });
-  document.getElementById('wfNote').textContent = `${rg.label} · ${nice(rg.start)}–${nice(rg.end)} · each bar as a share of net revenue · grey is below the line, outside GPAM`;
+  document.getElementById('wfNote').innerHTML = `<b class="gpline">GPAM: ${money(L.gpam)} | ${pct(L.gpamPct)} of net revenue</b> · ${rg.label} · ${nice(rg.start)}–${nice(rg.end)} · grey is below the line, outside GPAM`;
 }
 
 /* ---- FY months ---- */

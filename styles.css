@@ -939,3 +939,6 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .sb.est .sb-t i{background:repeating-linear-gradient(45deg,rgba(245,235,25,.4),rgba(245,235,25,.4) 2px,transparent 2px,transparent 4px)}
 .sb-t u{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.7)}
 .sb-v{font-size:.95cqh;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;line-height:1}
+
+.gpline{color:var(--dl-white);font-weight:700;letter-spacing:.02em}
+.gpam-stage .kpi .k-sub{white-space:normal;line-height:1.3}
