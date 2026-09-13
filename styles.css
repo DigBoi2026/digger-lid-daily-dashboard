@@ -780,7 +780,7 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 
 /* ============ META ADS PAGE ============ */
 /* stage rows: header / kpis / main / bottom / foot */
-#stage.meta-stage{grid-template-rows:9cqh 17cqh minmax(0,1fr) 24cqh 2.8cqh}
+#stage.meta-stage{grid-template-rows:9cqh 17cqh minmax(0,1fr) 30cqh 2.8cqh}
 #mtMain{display:grid;grid-template-columns:8.6cqw 1.45fr 1fr;gap:1.1cqw;min-height:0}
 /* the stage rail: four tall buttons, one per funnel stage */
 .stagerail{display:flex;flex-direction:column;min-height:0;padding-left:.8cqw;padding-right:.8cqw}
@@ -798,7 +798,7 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .stbtn .st-v{font-size:1.15cqh;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .stbtn .st-v b{font-weight:700} .stbtn .st-v span{color:var(--muted)}
 .stagenote{flex:0 0 auto;margin-top:.5cqh;font-size:.95cqh;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#mtBottom{display:grid;grid-template-columns:1.1fr 1fr;gap:1.1cqw;min-height:0}
+#mtBottom{display:grid;grid-template-columns:1.35fr 1fr;gap:1.1cqw;min-height:0}
 .meta-stage .kpi.good{border-color:rgba(57,217,138,.5)} .meta-stage .kpi.warn{border-color:rgba(255,176,32,.55)} .meta-stage .kpi.bad{border-color:rgba(255,90,82,.6)}
 .meta-stage .kpi.bad .k-val{color:var(--bad)} .meta-stage .kpi.warn .k-val{color:var(--warn)} .meta-stage .kpi.good .k-val{color:var(--good)}
 .meta-stage .kpi .k-per{margin-left:.5cqw}
@@ -836,6 +836,13 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .hrow.alert .hnm b{color:var(--dl-white)} .hrow.alert .hnm small{display:block;color:var(--muted);font-size:1.05cqh;margin-top:.1cqh}
 .hrow.alert .hval{grid-column:3}
 .meta-stage .health{justify-content:flex-start;overflow-y:auto}
+/* the ad sets behind a fired rule */
+.hrow.alert .hads{grid-column:2/-1;margin-top:.35cqh;border-top:1px solid rgba(255,255,255,.06);padding-top:.25cqh}
+.had{display:flex;justify-content:space-between;align-items:baseline;gap:.8cqw;font-size:1.05cqh;line-height:1.3;padding:.12cqh 0}
+.had-n{color:var(--dl-white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 auto}
+.had-v{color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;flex:0 0 auto}
+.had-v b{color:var(--bad);font-weight:600}
+.had.more{color:var(--muted);font-style:italic;justify-content:flex-start}
 /* reference panel */
 .ptable .thead.mt2,.ptable .trow.mt2{grid-template-columns:1.3fr .9fr .7fr .55fr .6fr .6fr .65fr .7fr 2fr;gap:.5cqw}
 .ptable .trow.mt2{padding:.35cqh .6cqw} .ptable .trow.mt2 .num{font-size:1.25cqh} .ptable .trow.mt2 .pname{font-size:1.25cqh}

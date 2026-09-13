@@ -280,14 +280,50 @@ function renderAlerts(rows, rg){
       if(sc>=1) extra += ` · CPA above Kill ${sc} day${sc>1?'s':''} running`;
       if(sa>=3) extra += ` · Cost/ATC above Kill ${sa} days running`;
     }
-    items.push({ st:g.v.status, name:`${g.bench?g.bench.label:g.line} · ${stageLabel(g.stage)}`, rule:speak((g.v.rule||'')+extra), spend:g.roll.spend });
+    items.push({ st:g.v.status, name:`${g.bench?g.bench.label:g.line} · ${stageLabel(g.stage)}`, rule:speak((g.v.rule||'')+extra), spend:g.roll.spend, ads: offenders(g) });
   });
   items.sort((a,b)=>order[a.st]-order[b.st] || b.spend-a.spend);
-  document.getElementById('alertNote').textContent = `${items.filter(i=>i.st==='PAUSE').length} pause · ${items.filter(i=>i.st==='WATCH').length} watch · ${items.filter(i=>i.st==='SCALE').length} scale candidates` + (live()?'':' · snapshot: 90-day averages, not today');
-  wrap.innerHTML = items.length ? items.slice(0,8).map(i=>{
+  document.getElementById('alertNote').textContent = `${items.filter(i=>i.st==='PAUSE').length} pause · ${items.filter(i=>i.st==='WATCH').length} watch · ${items.filter(i=>i.st==='SCALE').length} scale candidates` + (live()?` · ad sets over ${money(AD_MIN)} that breach on their own`:' · snapshot: 90-day averages, not today');
+  wrap.innerHTML = items.length ? items.slice(0,10).map(i=>{
     const dot = i.st==='PAUSE'?'b':i.st==='WATCH'?'a':i.st==='SCALE'?'g':'';
-    return `<div class="hrow alert"><span class="hdot ${dot||'n'}"></span><span class="hnm"><b>${esc(i.name)}</b><small>${esc(i.rule)}</small></span><span class="hval">${chip(i.st)}</span></div>`;
+    const ads = i.ads ? `<div class="hads">${i.ads.list.slice(0,AD_SHOW).map(a=>
+        `<div class="had" title="${esc((a.campaign||'')+' · '+(a.adset||''))}"><span class="had-n">${esc(a.adset||a.campaign||'—')}</span><span class="had-v">${money(a.spend)} · ${numf(a.purchases)} purch · <b>${esc(a.why)}</b></span></div>`).join('')}${
+        i.ads.list.length>AD_SHOW ? `<div class="had more">+${i.ads.list.length-AD_SHOW} more over ${money(AD_MIN)}</div>` : ''}${
+        !i.ads.list.length ? `<div class="had more">${i.ads.n ? `${i.ads.n} ad set${i.ads.n>1?'s':''} over ${money(AD_MIN)}, none breaching on its own — the breach is the blend` : `no single ad set over ${money(AD_MIN)} in this window`}</div>` : ''}</div>` : '';
+    return `<div class="hrow alert"><span class="hdot ${dot||'n'}"></span><span class="hnm"><b>${esc(i.name)}</b><small>${esc(i.rule)}</small></span><span class="hval">${chip(i.st)}</span>${ads}</div>`;
   }).join('') : `<div class="hrow"><span class="hdot n"></span><span class="hnm" style="grid-column:2/-1">Nothing to act on in this window</span></div>`;
+}
+/* THE AD SETS BEHIND A RULE. A line × stage verdict is a blend; the money is
+   spent by ad sets, and the one to pause is the one breaching on its own. For
+   each fired rule, every ad set in the group that spent at least AD_MIN in the
+   window and breaches the same line — CPA above Kill for a PAUSE, cost per ATC
+   above its Kill for a WATCH, CPA above Target for an OPTIMISE — sorted by
+   spend. An ad set with spend and no purchases has no CPA, which is the worst
+   CPA there is, so it is listed first among equals. Snapshot rows carry no ad
+   set names, so the list is live-only. */
+const AD_MIN = 500, AD_SHOW = 6;
+function offenders(g){
+  if(!live() || !g.bench) return null;
+  const by={};
+  g.rows.forEach(r=>{ const k=(r.campaign||'')+'\u0001'+(r.adset||''); const x=by[k]||(by[k]={campaign:r.campaign, adset:r.adset, spend:0, purchases:0, atc:0, revenue:0}); x.spend+=r.spend||0; x.purchases+=r.purchases||0; x.atc+=r.atc||0; x.revenue+=r.revenue||0; });
+  const b=g.bench, tb=g.tier_b, st=g.v.status;
+  const big = Object.values(by).filter(a=>a.spend>=AD_MIN);
+  const list = big.map(a=>{
+    a.cpa = a.purchases ? a.spend/a.purchases : null; a.catc = a.atc ? a.spend/a.atc : null;
+    a.roas = a.spend ? a.revenue/a.spend : null;
+    /* A PAUSE fires on either leg of the framework's rule — CPA above Kill, or
+       ROAS under Kill ROAS — so an ad set breaches on whichever leg it fails. */
+    if(st==='PAUSE' && b.kill!=null){
+      const cpaBad = a.cpa==null || a.cpa>b.kill, roasBad = b.killRoasMeta && a.roas!=null && a.roas<b.killRoasMeta;
+      a.bad = cpaBad || roasBad;
+      a.why = a.cpa==null ? 'no purchases' : cpaBad ? `CPA ${d0(a.cpa)} > kill ${d0(b.kill)}` : `ROAS ${xr(a.roas)} < kill ${xr(b.killRoasMeta)}`; }
+    else if(st==='WATCH' && tb && tb.killCostPerAtc){ a.bad = a.catc==null || a.catc>tb.killCostPerAtc; a.why = a.catc==null ? 'no adds to cart' : `cost/ATC ${d2(a.catc)} > kill ${d0(tb.killCostPerAtc)}`; }
+    else if(st==='OPTIMISE' && b.target!=null){ a.bad = a.cpa==null || a.cpa>b.target; a.why = a.cpa==null ? 'no purchases' : `CPA ${d0(a.cpa)} > target ${d0(b.target)}`; }
+    else if(st==='OPTIMISE' && b.kill!=null){ a.bad = a.cpa==null || a.cpa>b.kill*0.85; a.why = a.cpa==null ? 'no purchases' : `CPA ${d0(a.cpa)} near kill ${d0(b.kill)}`; }
+    else a.bad=false;
+    return a;
+  }).filter(a=>a.bad).sort((x,y)=> (x.cpa==null)-(y.cpa==null) ? (x.cpa==null?-1:1) : y.spend-x.spend);
+  return { n: big.length, list };
 }
 function renderRef(){
   const wrap=document.getElementById('refWrap');
