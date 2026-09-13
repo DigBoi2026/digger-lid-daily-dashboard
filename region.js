@@ -4,7 +4,7 @@
    Geo data is monthly, so the period selector maps to whole months.
    ========================================================================= */
 let R = window.DL_REGION || null;
-const S = { win: 12, off: 0, stateMode: 'net', auMode: 'split' };     // win = months; default to the 12-month view
+const S = { win: 12, off: 0, stateMode: 'net', auMode: 'split', cmp: 'prev' };  // win = months; cmp = prior N months | same N months last year
 const COUNTRY_COL = {"Australia":'#f5eb19',"United States":'#5ec8ff',"New Zealand":'#39d98a',
   "United Kingdom":'#ff8a4a',"Canada":'#c98bff',"Other":'#7d7576'};
 let charts = { auIntl:null, stateTrend:null, nz:null };
@@ -28,23 +28,41 @@ const STATE_COL = {NSW:'#f5eb19',QLD:'#c98bff',VIC:'#5ec8ff',WA:'#ff8a4a',SA:'#3
 const sum = a => (a||[]).reduce((x,y)=>x+y,0);
 // cur / prev month-count slices over a monthly array
 function slices(arr, n){ const c=arr.slice(-n), p=arr.length>=2*n?arr.slice(-2*n,-n):null; return {cur:c, prev:p}; }
+/* The comparison basis. "prev" is the N months immediately before the current
+   window; "ly" is the same N months a year earlier — which needs the pull to
+   reach 24 months, so on the 12-month snapshot it returns prev=null and the page
+   says "no prior year in this pull" rather than comparing to a fragment. */
+function cmpSlices(arr, n, cmp){
+  const len=arr.length, cur=arr.slice(len-n);
+  let prev=null;
+  if(cmp==='ly'){ const e=len-12; if(e-n>=0) prev=arr.slice(e-n, e); }
+  else { if(len-2*n>=0) prev=arr.slice(len-2*n, len-n); }
+  return {cur, prev};
+}
+/* The charts and sparklines keep showing the most recent 12 months even when the
+   pull holds 24 — the extra year is there for the year-ago lookup, not to double
+   every bar. */
+const V=12;
+const tail = a => (a||[]).slice(-V);
+const vMonths = () => R.months.slice(-V);
 const netOf = m => m.net;
 
 /* ============================ RENDER ============================ */
+const cmpLabel = n => S.cmp==='ly'
+  ? (n===12 ? 'vs a year earlier' : `vs the same ${n} mo last year`)
+  : (n===12 ? 'vs the prior 12 mo' : `vs the prior ${n} mo`);
+const noCmpLabel = () => S.cmp==='ly' ? 'no full prior year in this pull' : 'no prior period in this pull';
+
 function render(){
   if(!R){ document.getElementById('errBox').classList.add('show'); return; }
   const n = Number(S.win) || 12;
   document.getElementById('winLabel').textContent = WLABEL[n] || `LAST ${n} MONTHS`;
   document.getElementById('throughVal').textContent = R.months[R.months.length-1];
   document.querySelectorAll('#winSeg button').forEach(b=>b.classList.toggle('active', parseInt(b.dataset.win,10)===n));
-  /* At 12 months there is no prior 12 months in the pull (slices() returns
-     prev=null below 2n), so no row can show a change — the note used to promise
-     "vs prior yr" over a list that had none. Sparklines are always the full 12
-     months regardless of the selector, which is deliberate for trend context but
-     was nowhere stated. */
+  document.querySelectorAll('#cmpSeg button').forEach(b=>b.classList.toggle('active', b.dataset.cmp===S.cmp));
+  const stTest=cmpSlices([0].concat(Array(R.months.length-1).fill(0)), n, S.cmp);
   document.getElementById('stateNote').textContent =
-    (n===12 ? 'net · share · no prior year in this pull' : `net · share · last ${n} mo vs prior ${n}`)
-    + ' · sparkline 12 mo';
+    (stTest.prev ? `net · share · ${cmpLabel(n)}` : `net · share · ${noCmpLabel()}`) + ' · sparkline 12 mo';
   renderKPIs(n); renderStates(n); renderAuIntl(); renderStateTrend(); renderNZ(); renderIntl();
   if(window.DLmotion) DLmotion.countUpAll();
 }
@@ -65,7 +83,7 @@ function footDelta(cur,prev,perLabel){
 function renderKPIs(n){
   const el=document.getElementById('kpis');
   const auN=R.au.monthly.map(netOf), auO=R.au.monthly.map(m=>m.orders), tot=R.totalMonthly, nz=R.nz.monthly.map(netOf), nzO=R.nz.monthly.map(m=>m.orders);
-  const au=slices(auN,n), to=slices(tot,n), nzs=slices(nz,n), auOr=slices(auO,n), nzOr=slices(nzO,n);
+  const au=cmpSlices(auN,n,S.cmp), to=cmpSlices(tot,n,S.cmp), nzs=cmpSlices(nz,n,S.cmp), auOr=cmpSlices(auO,n,S.cmp), nzOr=cmpSlices(nzO,n,S.cmp);
   /* International is total minus Australia, from two separate ShopifyQL queries.
      It has never gone negative (the smallest month is +$9.7k) but rounding or an
      attribution change between the two could make it so, and the sparkline below
@@ -76,12 +94,12 @@ function renderKPIs(n){
   const nzCur=sum(nzs.cur), nzPrev=nzs.prev?sum(nzs.prev):null;
   const auOrders=sum(auOr.cur), auAov=auOrders?auCur/auOrders:0;
   // top state over the period
-  const st=R.au.states.map(s=>({...s, cur:sum(slices(R.au.stateMonthly[s.abbr],n).cur)})).sort((a,b)=>b.cur-a.cur);
+  const st=R.au.states.map(s=>({...s, cur:sum(cmpSlices(R.au.stateMonthly[s.abbr],n,S.cmp).cur)})).sort((a,b)=>b.cur-a.cur);
   const top=st[0];
-  const perLbl=`vs prior ${n===12?'yr':n+' mo'}`;
+  const perLbl=cmpLabel(n);
   // 12-month monthly series for the KPI sparklines (trend context, independent of the selector)
   const intlMonthly=R.totalMonthly.map((t,i)=>Math.max(0,t-auN[i]));
-  const sparks={au:auN, intl:intlMonthly, nz, auOrders:auO};
+  const sparks={au:tail(auN), intl:tail(intlMonthly), nz:tail(nz), auOrders:tail(auO)};
   el.innerHTML=[
     kpiTile('Australia', money(auCur), `<b>${pct(totCur?auCur/totCur*100:0)}</b> of total`, footDelta(auCur,auPrev,perLbl), true, 'au'),
     kpiTile('International', money(intlCur), `<b>${pct(totCur?intlCur/totCur*100:0)}</b> of total`, footDelta(intlCur,intlPrev,perLbl), false, 'intl'),
@@ -90,7 +108,7 @@ function renderKPIs(n){
     kpiTile('AU Orders', numf(auOrders), `AOV <b>${money(auAov)}</b>`, footDelta(auOrders, auOr.prev?sum(auOr.prev):null, perLbl), false, 'auOrders'),
     // No "+": api/shopify.js returns every country with net sales above zero, so
     // this is the exact count, and the suffix read as "at least this many".
-    kpiTile('Countries', numf(R.countries.length), 'shipped to · 12 mo', '', false),
+    kpiTile('Countries', numf(R.countries.length), 'shipped to', '', false),
   ].join('');
   el.querySelectorAll('canvas.spark').forEach(cv=>sparkline(cv, sparks[cv.dataset.key], null));
 }
@@ -110,7 +128,7 @@ function drawSparks(wrap, seriesList){
 function renderStates(n){
   const wrap=document.getElementById('stateList');
   const list=R.au.states.map(s=>{
-    const sl=slices(R.au.stateMonthly[s.abbr],n);
+    const sl=cmpSlices(R.au.stateMonthly[s.abbr],n,S.cmp);
     return {...s, cur:sum(sl.cur), prev:sl.prev?sum(sl.prev):null};
   }).sort((a,b)=>b.cur-a.cur);
   const auTot=list.reduce((a,s)=>a+s.cur,0)||1, maxV=Math.max(...list.map(s=>s.cur),1);
@@ -119,9 +137,9 @@ function renderStates(n){
     const chg=(s.prev!=null&&s.prev>0)?(s.cur-s.prev)/s.prev*100:null;
     const chgTxt=chg==null?'':` <span class="${chg>=0?'g-t':'b-t'}">${chg>=0?'+':''}${chg.toFixed(0)}%</span>`;
     return geoRow({name:`${s.abbr} · ${s.name}`, net:money(s.cur), sub:`${pct(share)}${chgTxt}`,
-      col, barW:s.cur/maxV*100, title:`${s.name}: ${numf(s.orders)} orders · ${numf(s.items)} units (12 mo)`});
+      col, barW:s.cur/maxV*100, title:`${s.name}: ${numf(s.orders)} orders · ${numf(s.items)} units (24 mo)`});
   }).join('');
-  drawSparks(wrap, list.map(s=>R.au.stateMonthly[s.abbr]));
+  drawSparks(wrap, list.map(s=>tail(R.au.stateMonthly[s.abbr])));
 }
 
 // AU vs International — stacked area over 12 months. Toggle:
@@ -129,13 +147,13 @@ function renderStates(n){
 //  country → Australia + each top country (US/NZ/UK/CA/Other) stacked
 function renderAuIntl(){
   const byCountry = S.auMode==='country';
-  const labels=R.months, au=R.au.monthly.map(netOf);
+  const labels=vMonths(), au=tail(R.au.monthly.map(netOf)), totV=tail(R.totalMonthly);
   let series;   // [{label, data, col}] bottom→top
   if(byCountry){
     // clamp the odd refund month (e.g. UK May) to 0 — a stacked composition shouldn't go negative
-    series = Object.entries(R.countryMonthly).map(([c,arr])=>({label:c, data:arr.map(v=>Math.max(0,v)), col:COUNTRY_COL[c]||'#7d7576'}));
+    series = Object.entries(R.countryMonthly).map(([c,arr])=>({label:c, data:tail(arr).map(v=>Math.max(0,v)), col:COUNTRY_COL[c]||'#7d7576'}));
   } else {
-    const intl=R.totalMonthly.map((t,i)=>Math.max(0,t-au[i]));
+    const intl=totV.map((t,i)=>Math.max(0,t-au[i]));
     series=[{label:'Australia', data:au, col:'#f5eb19'},{label:'International', data:intl, col:'#5ec8ff'}];
   }
   document.getElementById('auIntlNote').textContent = byCountry ? 'net sales by country · 12 mo' : 'net sales · 12 mo';
@@ -146,7 +164,7 @@ function renderAuIntl(){
       scales:{x:{stacked:true, grid:{color:'rgba(255,255,255,0.05)'}, ticks:{color:'#9a9193', font:{size:9.5}}},
               y:{stacked:true, beginAtZero:true, min:0, grid:{color:'rgba(255,255,255,0.05)'}, ticks:{color:'#9a9193', font:{size:9.5}, callback:v=>v>=1000?'$'+(v/1000)+'K':'$'+v}}},
       plugins:{legend:{position:'bottom', labels:{color:'#c9c1c2', boxWidth:9, boxHeight:9, font:{size:byCountry?9:10}, padding:byCountry?6:8, usePointStyle:true}},
-        tooltip:{callbacks:{label:i=>{const t=R.totalMonthly[i.dataIndex]; return `${i.dataset.label}: ${money(i.raw)} (${pct(t?i.raw/t*100:0)})`;}}}}}};
+        tooltip:{callbacks:{label:i=>{const t=totV[i.dataIndex]; return `${i.dataset.label}: ${money(i.raw)} (${pct(t?i.raw/t*100:0)})`;}}}}}};
   if(charts.auIntl) charts.auIntl.destroy();
   charts.auIntl=new Chart(document.getElementById('auIntlChart'), cfg);
 }
@@ -155,16 +173,18 @@ function renderAuIntl(){
 // Toggle: net $ (lines) or % of total (share of AU that month, 100% stacked area).
 function renderStateTrend(){
   const share = S.stateMode==='share';
-  const totals=R.au.states.map(s=>({abbr:s.abbr, t:sum(R.au.stateMonthly[s.abbr])})).sort((a,b)=>b.t-a.t);
+  const totals=R.au.states.map(s=>({abbr:s.abbr, t:sum(tail(R.au.stateMonthly[s.abbr]))})).sort((a,b)=>b.t-a.t);
   const top=totals.slice(0,5).map(s=>s.abbr), rest=totals.slice(5).map(s=>s.abbr);
   const keys=top.concat(rest.length?['Other']:[]);
-  const auMonthTot=R.months.map((_,i)=>R.au.states.reduce((a,s)=>a+R.au.stateMonthly[s.abbr][i],0));
+  const SM={}; R.au.states.forEach(s=>SM[s.abbr]=tail(R.au.stateMonthly[s.abbr]));
+  const lbl=vMonths();
+  const auMonthTot=lbl.map((_,i)=>R.au.states.reduce((a,s)=>a+SM[s.abbr][i],0));
   const rawSeries=keys.map(k=> k==='Other'
-    ? R.months.map((_,i)=>rest.reduce((a,ab)=>a+R.au.stateMonthly[ab][i],0))
-    : R.au.stateMonthly[k]);
+    ? lbl.map((_,i)=>rest.reduce((a,ab)=>a+SM[ab][i],0))
+    : SM[k]);
   const series=rawSeries.map(arr=>arr.map((v,i)=> share ? (auMonthTot[i]? v/auMonthTot[i]*100 : 0) : v));
   document.getElementById('stateTrendNote').textContent = share ? '% of AU · 12 mo' : 'net sales · 12 mo';
-  const cfg={type:'line', data:{labels:R.months, datasets:keys.map((k,i)=>{
+  const cfg={type:'line', data:{labels:lbl, datasets:keys.map((k,i)=>{
       const col=STATE_COL[k]||'#7d7576';
       return {label:k, data:series[i], borderColor:col,
         backgroundColor: share ? col+'cc' : 'transparent', fill: share ? (i===0?'origin':'-1') : false,
@@ -181,22 +201,22 @@ function renderStateTrend(){
 
 // NZ spotlight — monthly bars + growth callouts
 function renderNZ(){
-  const nz=R.nz.monthly.map(netOf);
-  const cfg={type:'bar', data:{labels:R.months, datasets:[{data:nz,
-      backgroundColor:R.months.map((_,i)=>i===R.months.length-1?'#39d98a':'rgba(57,217,138,0.45)'),
+  const nz=tail(R.nz.monthly.map(netOf)), nzV=R.nz.monthly.slice(-V), lbl=vMonths();
+  const cfg={type:'bar', data:{labels:lbl, datasets:[{data:nz,
+      backgroundColor:lbl.map((_,i)=>i===lbl.length-1?'#39d98a':'rgba(57,217,138,0.45)'),
       borderColor:'#39d98a', borderWidth:1, borderRadius:3}]},
     options:{responsive:true, maintainAspectRatio:false, animation:{duration:600},
       scales:{x:{grid:{display:false}, ticks:{color:'#9a9193', font:{size:8.5}}},
               y:{beginAtZero:true, grid:{color:'rgba(255,255,255,0.05)'}, ticks:{color:'#9a9193', font:{size:9}, callback:v=>'$'+(v/1000)+'K'}}},
-      plugins:{legend:{display:false}, tooltip:{callbacks:{label:i=>`${money(i.raw)} · ${R.nz.monthly[i.dataIndex].orders} orders`}}}}};
+      plugins:{legend:{display:false}, tooltip:{callbacks:{label:i=>`${money(i.raw)} · ${nzV[i.dataIndex].orders} orders`}}}}};
   if(charts.nz) charts.nz.destroy();
   charts.nz=new Chart(document.getElementById('nzChart'), cfg);
   const tot12=sum(nz), last=nz[nz.length-1], prev=nz[nz.length-2];
   const mom=(prev!=null&&prev)?(last/prev-1)*100:null;
-  const intl12=sum(R.totalMonthly)-sum(R.au.monthly.map(netOf));
+  const intl12=sum(tail(R.totalMonthly))-sum(tail(R.au.monthly.map(netOf)));
   document.getElementById('nzStats').innerHTML=[
     ['12-mo net', money(tot12), `${pct(intl12?tot12/intl12*100:0)} of intl`],
-    ['Latest month', money(last), R.months[R.months.length-1]],
+    ['Latest month', money(last), vMonths()[V-1]],
     // `(mom>=0?'+':'')` treated null as >=0 and rendered "+—".
     ['MoM growth', mom==null?'—':(mom>=0?'+':'')+pct(mom,0), 'vs prior month'],
     ['Orders (12mo)', numf(sum(R.nz.monthly.map(m=>m.orders))), 'shipped to NZ'],
@@ -209,7 +229,7 @@ function renderNZ(){
 function renderIntl(){
   const wrap=document.getElementById('intlList');
   const rows=Object.entries(R.countryMonthly).filter(([c])=>c!=='Australia')
-    .map(([c,arr])=>({c, net:sum(arr), series:arr})).sort((a,b)=>b.net-a.net);
+    .map(([c,arr])=>({c, net:sum(tail(arr)), series:tail(arr)})).sort((a,b)=>b.net-a.net);
   const tot=rows.reduce((a,r)=>a+r.net,0)||1, maxV=Math.max(...rows.map(r=>r.net),1);
   wrap.innerHTML=rows.map(r=>{
     const col=COUNTRY_COL[r.c]||'#5ec8ff';
@@ -226,6 +246,7 @@ function wire(){
   document.querySelectorAll('#winSeg button').forEach(b=>b.onclick=()=>{
     S.win = parseInt(b.dataset.win,10); render();
   });
+  document.querySelectorAll('#cmpSeg button').forEach(b=>b.onclick=()=>{ S.cmp=b.dataset.cmp; render(); });
   document.querySelectorAll('#stateMode button').forEach(b=>b.onclick=()=>{
     S.stateMode=b.dataset.mode;
     document.querySelectorAll('#stateMode button').forEach(x=>x.classList.toggle('active',x===b));

@@ -178,6 +178,13 @@ function twelveMonths(today) {
   const months = Array.from({ length: 12 }, (_, i) => monthStart(today, -12 + i));
   return { since: iso(since), until: iso(until), labels: months.map(mLabel), isos: months.map(iso) };
 }
+// Two whole years of months, for the Region page's "vs last year" comparison:
+// the last N months need the same N months twelve back, so the pull reaches 24.
+function twentyFourMonths(today) {
+  const since = monthStart(today, -24), until = monthStart(today, 0);
+  const months = Array.from({ length: 24 }, (_, i) => monthStart(today, -24 + i));
+  return { since: iso(since), until: iso(until), labels: months.map(mLabel), isos: months.map(iso) };
+}
 
 /* ------------------------------- products ------------------------------- */
 async function buildProducts(today) {
@@ -581,12 +588,12 @@ async function buildProductsRecent(today) {
 
 /* -------------------------------- region -------------------------------- */
 async function buildRegion(today) {
-  const M = twelveMonths(today);
-  const yrSince = iso(addDays(today, -365)), yrUntil = iso(addDays(today, 1));
+  const M = twentyFourMonths(today);            // 24 months, so "vs last year" has a year to look back to
+  const N = M.labels.length;
 
   const [countryTot, stateTot, ctyMonth, stMonth] = await Promise.all([
-    shopifyql(`FROM sales SHOW net_sales GROUP BY shipping_country SINCE ${yrSince} UNTIL ${yrUntil} ORDER BY net_sales DESC`),
-    shopifyql(`FROM sales SHOW net_sales, orders, net_items_sold GROUP BY shipping_region WHERE shipping_country = 'Australia' SINCE ${yrSince} UNTIL ${yrUntil} ORDER BY net_sales DESC`),
+    shopifyql(`FROM sales SHOW net_sales GROUP BY shipping_country SINCE ${M.since} UNTIL ${M.until} ORDER BY net_sales DESC`),
+    shopifyql(`FROM sales SHOW net_sales, orders, net_items_sold GROUP BY shipping_region WHERE shipping_country = 'Australia' SINCE ${M.since} UNTIL ${M.until} ORDER BY net_sales DESC`),
     shopifyql(`FROM sales SHOW net_sales, orders GROUP BY shipping_country, month SINCE ${M.since} UNTIL ${M.until}`),
     shopifyql(`FROM sales SHOW net_sales GROUP BY shipping_region, month WHERE shipping_country = 'Australia' SINCE ${M.since} UNTIL ${M.until}`),
   ]);
@@ -600,7 +607,7 @@ async function buildRegion(today) {
     name: r.shipping_region, abbr: STATE_ABBR[r.shipping_region] || r.shipping_region,
     net: n2(r.net_sales), orders: +r.orders || 0, items: +r.net_items_sold || 0 }));
   const stateMonthly = {};
-  states.forEach(s => stateMonthly[s.abbr] = Array(12).fill(0));
+  states.forEach(s => stateMonthly[s.abbr] = Array(N).fill(0));
   stMonth.forEach(r => { const i = mIdx[r.month], ab = STATE_ABBR[r.shipping_region] || r.shipping_region;
     if (i != null && stateMonthly[ab]) stateMonthly[ab][i] = n2(stateMonthly[ab][i] + n2(r.net_sales)); });
   // reconcile state net to month sums (drops the UNTIL sliver — matches build_region.js)
@@ -608,8 +615,8 @@ async function buildRegion(today) {
 
   // country monthly (named + Other) and totals
   const named = ['Australia', 'United States', 'New Zealand', 'United Kingdom', 'Canada'];
-  const cm = {}; named.forEach(c => cm[c] = Array(12).fill(0));
-  const totalMonthly = Array(12).fill(0);
+  const cm = {}; named.forEach(c => cm[c] = Array(N).fill(0));
+  const totalMonthly = Array(N).fill(0);
   const auMonthly = M.isos.map(() => ({ net: 0, orders: 0 })), nzMonthly = M.isos.map(() => ({ net: 0, orders: 0 }));
   ctyMonth.forEach(r => { const i = mIdx[r.month]; if (i == null) return; const net = n2(r.net_sales);
     totalMonthly[i] = n2(totalMonthly[i] + net);
@@ -619,7 +626,7 @@ async function buildRegion(today) {
   });
   cm['Other'] = totalMonthly.map((t, i) => Math.max(0, n2(t - named.reduce((a, c) => a + cm[c][i], 0))));
 
-  return { meta: { source: 'Shopify · ShopifyQL (shipping geo)', currency: 'AUD', asOf: iso(today), window: '12 months', live: true },
+  return { meta: { source: 'Shopify · ShopifyQL (shipping geo)', currency: 'AUD', asOf: iso(today), window: '24 months', live: true },
     months: M.labels, totalMonthly, countries,
     au: { states, monthly: auMonthly, stateMonthly }, nz: { monthly: nzMonthly }, countryMonthly: cm };
 }

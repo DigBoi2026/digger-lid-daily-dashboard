@@ -961,3 +961,11 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 
 /* the live pill and compare toggle, a touch smaller so every header fits eight tabs */
 .livepill{font-size:1.05cqh;padding:.55cqh .8cqw;letter-spacing:.1em}
+
+/* Region carries the compare toggle too; tighten the header for eight tabs + toggle */
+.region-stage .datebox{max-width:13cqw;min-width:0;overflow:hidden}
+.region-stage .datebox .d,.region-stage .datebox .dow{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.region-stage .status .freshness{max-width:11cqw}
+.region-stage .status .freshness .val{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.region-stage .daynav .seg.small button{font-size:1.05cqh;padding:.45cqh .55cqw;letter-spacing:.04em}
+.region-stage .topnav a{padding-left:.5cqw;padding-right:.5cqw}
