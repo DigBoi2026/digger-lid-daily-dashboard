@@ -16,7 +16,7 @@ const REFRESH_MINUTES = 30;
    creative line yet. $0 until the business says otherwise; the page states it. */
 const OVERHEAD_PER_DAY = 0;
 
-const S = { win: 'MTD', live: 'snap' };
+const S = { win: 'MTD', live: 'snap', right: 'bridge' };
 let DATA = window.DL_DATA || null;
 const PRIOR = window.DL_PRIOR || null;
 let CHART = null;
@@ -62,14 +62,15 @@ function render() {
   const cov = G.coverage(list, rg.prev);
   const L = G.layers(cur, { overheadPerDay: OVERHEAD_PER_DAY });
   const P = cov.ok ? G.layers(prevRows, { overheadPerDay: OVERHEAD_PER_DAY }) : null;
-  const ctx = { list, anchor, rg, L, P, cov };
+  const BM = G.benchmark(list, anchor, { overheadPerDay: OVERHEAD_PER_DAY });
+  const ctx = { list, anchor, rg, L, P, cov, BM, fy: fyForecast(list, anchor) };
   const safe = (n, fn) => { try { fn(); } catch (e) { console.error('gpam: ' + n + ' failed', e); } };
   safe('header', () => renderHeader(ctx));
   safe('kpis', () => renderKpis(ctx));
   safe('waterfall', () => renderWaterfall(ctx));
   safe('months', () => renderMonths(ctx));
   safe('form', () => renderForm(ctx));
-  safe('bridge', () => renderBridge(ctx));
+  safe('right', () => S.right === 'bench' ? renderBench(ctx) : renderBridge(ctx));
   document.getElementById('footSource').textContent =
     `P&L sheet · ${L.days} complete day${L.days === 1 ? '' : 's'} · through ${niceY(anchor)} · ${S.live === 'live' ? 'live' : 'snapshot'}` +
     (PRIOR ? ' · 2025 book for last year' : '');
@@ -91,20 +92,31 @@ function renderHeader({ list, anchor, rg, cov }) {
 function tile(lbl, val, sub, foot, cls) {
   return `<div class="kpi ${cls || ''}"><div class="k-head"><div class="k-lbl">${lbl}</div><div class="k-val">${val}</div><div class="k-sub">${sub || ''}</div></div><div class="k-foot">${foot || ''}</div></div>`;
 }
-function renderKpis({ list, anchor, rg, L, P, cov }) {
+function renderKpis({ list, anchor, rg, L, P, cov, BM, fy }) {
   const el = document.getElementById('kpis');
   const vs = cov.ok ? 'vs same dates last yr' : 'no full prior year';
-  const fy = fyForecast(list, anchor, rg);
+  const bw = benchFor(BM, list, rg);
   el.innerHTML = [
     tile('Net revenue', money(L.netRevenue), `ex GST${L.returns ? ' · returns ' + money(L.returns) : ''} · ${L.days} days`, (P ? deltaEl(L.netRevenue, P.netRevenue) : '<span class="delta flat">—</span>') + `<span class="k-per">${vs}</span>`),
     tile('Gross profit', money(L.grossProfit), `margin <b>${pct(L.gmPct)}</b> · COGS ${money(L.cogs.total)}`, (P ? deltaEl(L.gmPct, P.gmPct) : '<span class="delta flat">—</span>') + `<span class="k-per">${P ? 'GM% vs ' + pct(P.gmPct) + ' last yr' : vs}</span>`),
     tile('Advertising', money(L.ads.total), `<b>${pct(L.adsPct)}</b> of net revenue · MER ${L.mer ? L.mer.toFixed(2) + '×' : '—'}`, (P ? deltaEl(L.adsPct, P.adsPct, 'low') : '<span class="delta flat">—</span>') + `<span class="k-per">${P ? 'rate vs ' + pct(P.adsPct) + ' last yr' : vs}</span>`),
     tile('Contribution', money(L.cm), `margin <b>${pct(L.cmPct)}</b> · after COGS and ads`, (P ? deltaEl(L.cm, P.cm) : '<span class="delta flat">—</span>') + `<span class="k-per">${vs}</span>`),
-    tile('GPAM · ' + (rg.win === 'FYTD' ? rg.label : rg.label.toLowerCase()), money(L.gpam), `<b>${pct(L.gpamPct)}</b> of net revenue${L.overhead.total ? ' · after ' + money(L.overhead.total) + ' mkt overhead' : ' · no mkt overhead line'}`, (P ? deltaEl(L.gpam, P.gpam) : '<span class="delta flat">—</span>') + `<span class="k-per">${P ? 'vs ' + money(P.gpam) + ' last yr' : vs}</span>`, L.gpam < 0 ? 'bad accent' : 'accent'),
-    fy ? tile('GPAM · ' + fy.label, money(fy.total), `to date <b>${money(fy.actual)}</b> · forecast ${money(fy.fc)} to 30 Jun`, `<span class="delta flat">forecast</span><span class="k-per">realistic scenario · ${fy.horizon} days ahead · not a commitment</span>`)
+    tile('GPAM · ' + (rg.win === 'FYTD' ? rg.label : rg.label.toLowerCase()), money(L.gpam), `<b>${pct(L.gpamPct)}</b> of net revenue · benchmark <b>${pct(bw.target)}</b>${bw.target != null && L.gpamPct != null ? ' · ' + ptsEl(L.gpamPct - bw.target) : ''}`, (P ? deltaEl(L.gpam, P.gpam) : '<span class="delta flat">—</span>') + `<span class="k-per">${P ? 'vs ' + money(P.gpam) + ' last yr' : vs} · ${benchWord(L.gpamPct, bw)}</span>`, benchCls(L.gpamPct, bw) + ' accent'),
+    fy ? tile('GPAM · ' + fy.label, money(fy.total), `to date <b>${money(fy.actual)}</b> · forecast ${money(fy.fc)} to 30 Jun`, `<span class="delta flat">forecast</span><span class="k-per">floor ${money(fy.floor)} · target ${money(fy.total)} · stretch ${money(fy.stretch)}</span>`)
        : tile('GPAM · financial year', money(fyActual(list, anchor)), 'to date', '<span class="delta flat">no forecast engine</span>'),
   ].join('');
 }
+
+/* The window's benchmark: each month's seasonal rate weighted by the net
+   revenue the window actually took in that month. */
+function benchFor(BM, list, rg) {
+  const by = {};
+  list.filter(r => G.inRange(r, rg) && !r.pending).forEach(r => { const m = +r.date.slice(5, 7); by[m] = (by[m] || 0) + ((+r.revExGst || 0) - (+r.returns || 0)); });
+  return BM.forWindow(Object.keys(by).map(m => ({ month: +m, netRevenue: by[m] })));
+}
+const ptsEl = d => `<span class="delta ${d > 0.05 ? 'up' : d < -0.05 ? 'down' : 'flat'}">${d > 0 ? '+' : ''}${d.toFixed(1)} pts</span>`;
+const benchCls = (v, bw) => v == null || bw.target == null ? '' : v < bw.floor ? 'bad' : v >= bw.stretch ? 'good' : v >= bw.target ? 'good' : 'warn';
+const benchWord = (v, bw) => v == null || bw.target == null ? '' : v < bw.floor ? 'below floor ' + pct(bw.floor) : v >= bw.stretch ? 'at stretch ' + pct(bw.stretch) : v >= bw.target ? 'above target' : 'between floor and target';
 
 /* FY to date actual plus the realistic forecast to 30 June, on the same
    layers: each forecast day's revenue × contribution rate less its ad spend
@@ -113,7 +125,7 @@ function fyActual(list, anchor) {
   const fy = G.period('FYTD', anchor);
   return G.layers(list.filter(r => G.inRange(r, fy) && !r.pending), { overheadPerDay: OVERHEAD_PER_DAY }).gpam;
 }
-function fyForecast(list, anchor, rg) {
+function fyForecast(list, anchor) {
   if (!F) return null;
   const fy = G.period('FYTD', anchor);
   const end = `${fy.fyStartYear + 1}-06-30`;
@@ -121,11 +133,14 @@ function fyForecast(list, anchor, rg) {
   if (horizon < 1) return null;
   let mods = [];
   try { const years = new Set(list.map(r => r.date.slice(0, 4))); years.add(String(+anchor.slice(0, 4) + 1)); mods = F.salePeriodModifiers(list, { years: [...years].sort() }); } catch (e) { mods = []; }
-  let p; try { p = F.projectPnl({ rows: list, from: anchor, horizon, scenario: 'realistic', modifiers: mods }); } catch (e) { return null; }
-  if (!p || !p.pnl) return null;
-  const fc = p.days.reduce((a, d) => a + d.revenue * p.pnl.contribRate - (d.adSpend || 0), 0) - OVERHEAD_PER_DAY * horizon;
+  const run = sc => { try { const p = F.projectPnl({ rows: list, from: anchor, horizon, scenario: sc, modifiers: mods }); if (!p || !p.pnl) return null;
+    const byM = {}; p.days.forEach(d => { const x = byM[d.month] || (byM[d.month] = { rev: 0, gpam: 0 }); x.rev += d.revenue / (1 + (1 - p.pnl.exGstRate) / p.pnl.exGstRate); x.gpam += d.revenue * p.pnl.contribRate - (d.adSpend || 0) - OVERHEAD_PER_DAY; });
+    return { total: p.days.reduce((a, d) => a + d.revenue * p.pnl.contribRate - (d.adSpend || 0), 0) - OVERHEAD_PER_DAY * horizon, byM }; } catch (e) { return null; } };
+  const real = run('realistic'); if (!real) return null;
+  const pess = run('pessimistic'), opt = run('optimistic');
   const actual = fyActual(list, anchor);
-  return { label: `FY${String(fy.fyStartYear + 1).slice(2)}`, actual, fc, total: actual + fc, horizon };
+  return { label: `FY${String(fy.fyStartYear + 1).slice(2)}`, actual, fc: real.total, total: actual + real.total, horizon,
+           floor: pess ? actual + pess.total : null, stretch: opt ? actual + opt.total : null, byM: real.byM };
 }
 
 /* ---- waterfall ---- */
@@ -158,10 +173,10 @@ function renderWaterfall({ L, rg }) {
 }
 
 /* ---- FY months ---- */
-function renderMonths({ list, anchor }) {
+function renderMonths({ list, anchor, BM }) {
   const wrap = document.getElementById('months');
   const months = G.fyMonths(anchor);
-  let html = `<div class="thead gp"><div>Month</div><div class="num">Net rev</div><div class="num">GM%</div><div class="num">Ads%</div><div class="num">CM%</div><div class="num">GPAM</div><div class="num">GPAM%</div><div class="num">vs LY</div></div>`;
+  let html = `<div class="thead gp"><div>Month</div><div class="num">Net rev</div><div class="num">GM%</div><div class="num">Ads%</div><div class="num">GPAM</div><div class="num">GPAM%</div><div class="num">Bench</div><div class="num">vs bench</div><div class="num">vs LY</div></div>`;
   let tot = [];
   months.forEach(ym => {
     const rg = G.period(ym, anchor);
@@ -169,25 +184,29 @@ function renderMonths({ list, anchor }) {
     const L = G.layers(cur, { overheadPerDay: OVERHEAD_PER_DAY }); tot = tot.concat(cur);
     const cov = G.coverage(list, rg.prev);
     const P = cov.ok ? G.layers(list.filter(r => G.inRange(r, rg.prev)), { overheadPerDay: OVERHEAD_PER_DAY }) : null;
-    const partial = rg.end === anchor && +anchor.slice(8, 10) < G.expectedDays({ start: rg.start, end: `${ym}-28` }) + 1 ? true : false;
     const isCur = ym === anchor.slice(0, 7);
+    const bm = BM.forMonth(+ym.slice(5, 7));
     html += `<div class="trow gp${isCur ? ' cur' : ''}" title="${esc(MONTH_ABBR[+ym.slice(5, 7) - 1] + ' ' + ym.slice(0, 4) + ': ' + L.days + ' days · net revenue ' + money(L.netRevenue, false) + ' · GPAM ' + money(L.gpam, false) + (P ? ' · last year ' + money(P.gpam, false) : ''))}">
       <div class="pname">${MONTH_ABBR[+ym.slice(5, 7) - 1]} <small>${ym.slice(2, 4)}${isCur ? ' · ' + L.days + 'd' : ''}</small></div>
-      <div class="num">${money(L.netRevenue)}</div><div class="num">${pct(L.gmPct, 0)}</div><div class="num">${pct(L.adsPct, 0)}</div><div class="num">${pct(L.cmPct, 0)}</div>
-      <div class="num ${L.gpam < 0 ? 'neg' : 'pos'}">${money(L.gpam)}</div><div class="num">${pct(L.gpamPct, 0)}</div>
+      <div class="num">${money(L.netRevenue)}</div><div class="num">${pct(L.gmPct, 0)}</div><div class="num">${pct(L.adsPct, 0)}</div>
+      <div class="num ${L.gpam < 0 ? 'neg' : 'pos'}">${money(L.gpam)}</div><div class="num">${pct(L.gpamPct, 1)}</div>
+      <div class="num bench" title="${esc('seasonal benchmark for ' + MONTH_ABBR[+ym.slice(5, 7) - 1] + ': ' + (bm.observed ? 'mean of ' + bm.n + ' observed ' + MONTH_ABBR[+ym.slice(5, 7) - 1] + (bm.n > 1 ? 's' : '') : 'no prior ' + MONTH_ABBR[+ym.slice(5, 7) - 1] + ' · target rate') + ' · floor ' + pct(bm.floor) + ' · stretch ' + pct(bm.stretch))}">${pct(bm.target, 1)}${bm.observed ? '' : '<sup>*</sup>'}</div>
+      <div class="num">${L.gpamPct != null && bm.target != null ? ptsEl(L.gpamPct - bm.target) : '—'}</div>
       <div class="num">${P ? deltaEl(L.gpam, P.gpam) : '<span class="delta flat">—</span>'}</div></div>`;
   });
   if (tot.length) {
     const T = G.layers(tot, { overheadPerDay: OVERHEAD_PER_DAY });
     const fy = G.period('FYTD', anchor); const cov = G.coverage(list, fy.prev);
     const P = cov.ok ? G.layers(list.filter(r => G.inRange(r, fy.prev)), { overheadPerDay: OVERHEAD_PER_DAY }) : null;
+    const bw = benchFor(BM, list, fy);
     html += `<div class="trow gp tot"><div class="pname">${fy.label.toUpperCase()}</div>
-      <div class="num">${money(T.netRevenue)}</div><div class="num">${pct(T.gmPct, 0)}</div><div class="num">${pct(T.adsPct, 0)}</div><div class="num">${pct(T.cmPct, 0)}</div>
-      <div class="num ${T.gpam < 0 ? 'neg' : 'pos'}">${money(T.gpam)}</div><div class="num">${pct(T.gpamPct, 0)}</div>
+      <div class="num">${money(T.netRevenue)}</div><div class="num">${pct(T.gmPct, 0)}</div><div class="num">${pct(T.adsPct, 0)}</div>
+      <div class="num ${T.gpam < 0 ? 'neg' : 'pos'}">${money(T.gpam)}</div><div class="num">${pct(T.gpamPct, 1)}</div>
+      <div class="num bench">${pct(bw.target, 1)}</div><div class="num">${T.gpamPct != null && bw.target != null ? ptsEl(T.gpamPct - bw.target) : '—'}</div>
       <div class="num">${P ? deltaEl(T.gpam, P.gpam) : '<span class="delta flat">—</span>'}</div></div>`;
   }
   wrap.innerHTML = html;
-  document.getElementById('monthsNote').textContent = `financial year from 1 July · each month vs the same dates last year · the current month is to ${nice(anchor)}`;
+  document.getElementById('monthsNote').textContent = `FY from 1 July · bench = the seasonal GPAM rate for that month, floor ${pct(BM.ladder.floor)} → stretch ${pct(BM.ladder.stretch)} around it · * no prior year for that month`;
 }
 
 /* ---- the formulation ---- */
@@ -229,6 +248,27 @@ function renderBridge({ L, P, rg, cov }) {
   foot.textContent = `Largest driver: ${big.label.toLowerCase()} (${(big.value >= 0 ? '+' : '') + money(big.value)}). Volume is last year’s GPAM rate on the change in net revenue; the three rates are applied to this year’s net revenue.`;
 }
 
+/* ---- the benchmark, explained ---- */
+function renderBench({ BM, fy, L, rg }) {
+  const el = document.getElementById('bridge'), note = document.getElementById('bridgeNote'), foot = document.getElementById('bridgeFoot');
+  const lad = BM.ladder, r = BM.rates;
+  const fyM = fy ? Object.keys(fy.byM) : [];
+  const rung = (k, v, sub, cls) => `<div class="rung ${cls}"><div class="rg-k">${k}</div><div class="rg-v">${pct(v)}</div><div class="rg-s">${sub}</div></div>`;
+  const ladder = `<div class="ladder">
+    ${rung('Floor', lad.floor, `25th percentile of ${BM.n} complete months${fy && fy.floor != null ? ' · FY ' + money(fy.floor) : ''}`, 'floor')}
+    ${rung('Target', lad.target, `${BM.t12 ? 'trailing 12 months · ' + money(BM.t12.gpam) + ' on ' + money(BM.t12.netRevenue) : 'all months'}${fy ? ' · FY ' + money(fy.total) : ''}`, 'target')}
+    ${rung('Stretch', lad.stretch, `target + (target − floor)${fy && fy.stretch != null ? ' · FY ' + money(fy.stretch) : ''}`, 'stretch')}
+  </div>`;
+  const maxR = Math.max(...Object.values(BM.seasonal).map(x => x.rate || 0), lad.stretch || 0, 1);
+  const bars = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6].map(m => { const sx = BM.seasonal[m]; const w = Math.max(1.5, (sx.rate || 0) / maxR * 100);
+    const tgt = lad.target != null ? Math.min(100, lad.target / maxR * 100) : null;
+    return `<div class="sb${sx.observed ? '' : ' est'}" title="${esc(MONTH_ABBR[m - 1] + ': ' + (sx.observed ? pct(sx.rate) + ' mean of ' + sx.years.join(', ') : 'no prior ' + MONTH_ABBR[m - 1] + ' — target rate used'))}"><span class="sb-l">${MONTH_ABBR[m - 1]}</span><span class="sb-t"><i style="width:${w.toFixed(1)}%"></i>${tgt != null ? `<u style="left:${tgt.toFixed(1)}%"></u>` : ''}</span><span class="sb-v">${pct(sx.rate, 1)}${sx.observed ? '' : '*'}</span></div>`; }).join('');
+  el.innerHTML = ladder + `<div class="sbwrap"><div class="sbhead">Seasonal shape <small>mean GPAM rate by calendar month · line = target</small></div>${bars}</div>`;
+  note.textContent = `set on ${BM.n} complete months, ${BM.first ? MONTH_ABBR[+BM.first.slice(5, 7) - 1] + ' ' + BM.first.slice(0, 4) : ''} → ${BM.last ? MONTH_ABBR[+BM.last.slice(5, 7) - 1] + ' ' + BM.last.slice(0, 4) : ''}`;
+  foot.textContent = `Complete months ran ${pct(r.min)} to ${pct(r.max)} (median ${pct(r.median)}). The target is what the business actually converts, over a full year of seasons; the floor is a rate beaten three months in four. FY figures apply the forecast's three scenarios.`;
+  document.getElementById('rightTitle').innerHTML = 'The <span>Benchmark</span>';
+}
+
 /* ---- live ---- */
 function setLive(state) { S.live = state; const dot = document.getElementById('liveDot'), txt = document.getElementById('liveText');
   dot.className = 'dot ' + (state === 'live' ? 'live' : state === 'loading' ? 'loading' : 'snap'); txt.textContent = state === 'live' ? 'Live sheet' : state === 'loading' ? 'Syncing…' : 'Snapshot'; }
@@ -245,6 +285,7 @@ async function tryLiveRefresh() {
 }
 function wire() {
   document.querySelectorAll('#winSeg button').forEach(b => b.onclick = () => { S.win = b.dataset.win; render(); });
+  document.querySelectorAll('#rightSeg button').forEach(b => b.onclick = () => { S.right = b.dataset.view; document.querySelectorAll('#rightSeg button').forEach(x => x.classList.toggle('active', x === b)); document.getElementById('rightTitle').innerHTML = S.right === 'bench' ? 'The <span>Benchmark</span>' : 'Why GPAM <span>Moved</span>'; render(); });
   window.addEventListener('resize', () => { clearTimeout(window._rz); window._rz = setTimeout(render, 200); });
 }
 (function init() {

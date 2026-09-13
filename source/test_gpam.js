@@ -51,5 +51,21 @@ ok('period: a named month is clipped to the anchor', (p => p.start === '2026-09-
 ok('coverage: 90% rule', G.coverage(rows, { start: '2026-09-01', end: '2026-09-03' }).ok && !G.coverage(rows, { start: '2026-09-01', end: '2026-09-10' }).ok);
 ok('fyMonths: July to the anchor month', JSON.stringify(G.fyMonths('2026-09-12')) === JSON.stringify(['2026-07', '2026-08', '2026-09']) && G.fyMonths('2026-02-01').length === 8);
 
+// ---- benchmark: 14 synthetic complete months, GPAM% stepping 10..23, plus a partial month
+const mk = (ym, gpamPct, days) => { const out = []; for (let d = 1; d <= days; d++) { const iso = `${ym}-${String(d).padStart(2, '0')}`; const nr = 1000; const ads = nr * (0.55 - gpamPct / 100); out.push(day(iso, { revenue: 1100, revExGst: nr, totalVC: 450, prodCost: 450, shipCost: 0, packaging: 0, txnFees: 0, merchFees: 0, totalAds: ads, metaTotal: ads, profit: nr - 450 - ads - 170 })); } return out; };
+const months = [['2025-07', 10, 31], ['2025-08', 12, 31], ['2025-09', 13, 30], ['2025-10', 14, 31], ['2025-11', 22, 30], ['2025-12', 15, 31], ['2026-01', 16, 31], ['2026-02', 17, 28], ['2026-03', 18, 31], ['2026-04', 19, 30], ['2026-05', 20, 31], ['2026-06', 23, 30], ['2026-07', 11, 31], ['2026-08', 21, 31]];
+let brows = []; months.forEach(([ym, g, n]) => brows = brows.concat(mk(ym, g, n))); brows = brows.concat(mk('2026-09', 30, 8));
+const Bm = G.benchmark(brows, '2026-09-08');
+ok('benchmark: counts only complete months', Bm.n === 14 && Bm.first === '2025-07' && Bm.last === '2026-08', [Bm.n, Bm.first, Bm.last]);
+ok('benchmark: target is the trailing-12-month rate', Bm.t12 && near(Bm.ladder.target, Bm.t12.gpamPct) && Bm.ladder.target > 16 && Bm.ladder.target < 19, Bm.ladder);
+ok('benchmark: floor is the 25th percentile of complete months', near(Bm.ladder.floor, Bm.rates.p25) && Bm.rates.p25 > 12 && Bm.rates.p25 < 15, Bm.rates);
+ok('benchmark: stretch mirrors the floor around target', near(Bm.ladder.stretch, 2 * Bm.ladder.target - Bm.ladder.floor));
+ok('benchmark: seasonal July is the mean of both Julys', near(Bm.seasonal[7].rate, 10.5) && Bm.seasonal[7].n === 2, Bm.seasonal[7]);
+ok('benchmark: a never-observed month falls back to target', (() => { const B2 = G.benchmark(brows.filter(r => !r.date.startsWith('2025-11')), '2026-09-08'); return !B2.seasonal[11].observed && near(B2.seasonal[11].rate, B2.ladder.target); })());
+ok('benchmark: forMonth carries the offsets', (() => { const f = Bm.forMonth(11); return near(f.target, 22) && near(f.target - f.floor, Bm.ladder.target - Bm.ladder.floor); })(), Bm.forMonth(11));
+ok('benchmark: forWindow is revenue-weighted', near(Bm.forWindow([{ month: 7, netRevenue: 100 }, { month: 11, netRevenue: 300 }]).target, (10.5 * 100 + 22 * 300) / 400));
+ok('benchmark: rates min/max span the months', near(Bm.rates.min, 10) && near(Bm.rates.max, 23));
+ok('benchmark: with under a year it falls back to the all-months rate', (() => { const B3 = G.benchmark(brows.filter(r => r.date >= '2026-03-01'), '2026-09-08'); return B3.t12 === null && B3.ladder.target != null; })());
+
 console.log(`gpam: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

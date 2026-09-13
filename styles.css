@@ -885,7 +885,8 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 #wfWrap{flex:1;min-height:0;position:relative}
 #wfWrap canvas{position:absolute;inset:0;width:100%!important;height:100%!important}
 /* FY months */
-.ptable .thead.gp,.ptable .trow.gp{grid-template-columns:1.2fr 1fr .65fr .65fr .65fr 1fr .7fr .9fr;gap:.5cqw}
+.ptable .thead.gp,.ptable .trow.gp{grid-template-columns:1.1fr .95fr .6fr .6fr .95fr .75fr .75fr .95fr .9fr;gap:.45cqw}
+.ptable .trow.gp .num.bench{color:var(--muted)} .ptable .trow.gp .num.bench sup{color:var(--warn);font-size:.7em}
 .ptable .trow.gp{padding:.42cqh .6cqw}
 .ptable .trow.gp .pname{font-size:1.3cqh} .ptable .trow.gp .pname small{color:var(--muted);font-weight:400;margin-left:.2cqw}
 .ptable .trow.gp .num{font-size:1.3cqh} .ptable .trow.gp .num.pos{color:var(--good)} .ptable .trow.gp .num.neg{color:var(--bad)}
@@ -920,3 +921,21 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 /* eight tabs now (GPAM joined): a little tighter everywhere so the header fits at 1440 */
 .topnav a{padding-left:.5cqw;padding-right:.5cqw;gap:.35cqw;font-size:1.1cqh}
 .topnav{gap:.15cqw}
+
+/* GPAM benchmark view */
+.ladder{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:.6cqw;flex:0 0 auto}
+.rung{background:var(--panel-2);border:1px solid var(--line);border-radius:.7cqh;padding:.5cqh .7cqw;min-width:0}
+.rung .rg-k{font-size:.95cqh;text-transform:uppercase;letter-spacing:.14em;color:var(--muted)}
+.rung .rg-v{font-size:2.2cqh;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.rung .rg-s{font-size:.9cqh;color:var(--muted);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rung.floor .rg-v{color:var(--bad)} .rung.target{border-color:#6b6209;background:linear-gradient(180deg,#3a3407,#2a2708)} .rung.target .rg-v{color:var(--dl-yellow)} .rung.stretch .rg-v{color:var(--good)}
+.sbwrap{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:space-evenly;margin-top:.5cqh;overflow:hidden}
+.sbhead{font-size:.95cqh;text-transform:uppercase;letter-spacing:.12em;color:var(--dl-yellow);font-family:var(--font-head);font-weight:700}
+.sbhead small{color:var(--muted);font-weight:400;letter-spacing:.04em;text-transform:none;margin-left:.4cqw}
+.sb{display:grid;grid-template-columns:2.4cqw 1fr 3.4cqw;align-items:center;gap:.5cqw}
+.sb-l{font-size:.95cqh;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;line-height:1}
+.sb-t{position:relative;height:1cqh;background:var(--panel-2);border-radius:.3cqh;overflow:hidden}
+.sb-t i{position:absolute;left:0;top:0;bottom:0;background:rgba(245,235,25,.55);border-radius:.3cqh}
+.sb.est .sb-t i{background:repeating-linear-gradient(45deg,rgba(245,235,25,.4),rgba(245,235,25,.4) 2px,transparent 2px,transparent 4px)}
+.sb-t u{position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,.7)}
+.sb-v{font-size:.95cqh;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;line-height:1}
