@@ -33,6 +33,7 @@ const extData = name => (EXT[name] && EXT[name].data) || null;
 let DATA = window.DL_DATA || null;
 const PRIOR = window.DL_PRIOR || null;
 let CHART = null;
+let CHART2 = null;   // the Forecast vs Actual hindcast chart
 /* Accuracy is measured on the series that is actually on screen. Reusing
    revenue's backtest under another lens would put a measured-looking ±13%
    against a series that was never tested: the returning-customer count runs
@@ -691,6 +692,10 @@ function renderChart(p, ctx) {
       },
     },
   });
+
+  /* the pulsing "today" marker sits on the last actual point — where the solid
+     line ends and the forecast begins. */
+  placeDot('todayDot', CHART, hist.length - 1, actual[actual.length - 1]);
 
   document.getElementById('chartSpan').textContent =
     'Map · ' + isoToNice(hist[0].date) + ' → ' + isoToNice(p.days[p.days.length - 1].date);
@@ -1421,6 +1426,159 @@ function uncorrectedLevel(p) {
 
 /* ------------------------------------------------------------------ render */
 
+/* ------------------------------------------------ pulsing "today" marker */
+
+/* An HTML dot over the chart canvas at a data point, so it can pulse in CSS —
+   a Chart.js point cannot animate on its own. Repositioned on every render, so
+   it follows a resize. */
+function placeDot(dotId, chart, idx, yVal) {
+  const dot = document.getElementById(dotId);
+  if (!dot) return;
+  if (!chart || !chart.scales || !chart.scales.x || idx == null || yVal == null || isNaN(yVal)) { dot.hidden = true; return; }
+  try {
+    const x = chart.scales.x.getPixelForValue(idx), y = chart.scales.y.getPixelForValue(yVal);
+    if (x == null || y == null || isNaN(x) || isNaN(y)) { dot.hidden = true; return; }
+    dot.style.left = x + 'px'; dot.style.top = y + 'px'; dot.hidden = false;
+  } catch (e) { dot.hidden = true; }
+}
+
+/* ------------------------------------------------- forecast vs actual */
+
+/* Rewind H days, forecast forward from ONLY what was known then, and lay the
+   actual outcome over it. The honest test of a forecast is the one it cannot
+   see coming, so the past is truncated at the origin and the model re-fits on
+   that alone — sale periods included. */
+function hindcast(H) {
+  const list = rows();
+  const anchor = anchorOf(list);
+  if (!anchor) return null;
+  const origin = F.addDays(anchor, -H);
+  const past = list.filter(r => r.date <= origin);
+  if (past.length < 90) return null;                 // too little history to have forecast from here
+  let mods = [];
+  try {
+    const yrs = new Set(past.map(r => r.date.slice(0, 4))); yrs.add(String(+origin.slice(0, 4) + 1));
+    mods = F.salePeriodModifiers(past, { years: [...yrs].sort(), overrides: S.saleEdit, modifiers: userMods() })
+      .filter(m => S.saleOff.indexOf(m.key) === -1);
+  } catch (e) { mods = []; }
+  const proj = {};
+  ['pessimistic', 'realistic', 'optimistic'].forEach(sc => {
+    try { proj[sc] = F.projectPnl({ rows: past, from: origin, horizon: H, scenario: sc, modifiers: mods, observedCeiling: F.observedCeiling(past) }); } catch (e) { proj[sc] = null; }
+  });
+  const p = proj[S.scen] || proj.realistic;
+  if (!p) return null;
+  const byDate = new Map(list.map(r => [r.date, r]));
+  const days = p.days.map((d, i) => {
+    const a = byDate.get(d.date);
+    return { date: d.date, fc: d.revenue,
+             actual: (a && a.revenue > 0 && !a.pending) ? a.revenue : null,
+             lo: proj.pessimistic && proj.pessimistic.days[i] ? proj.pessimistic.days[i].revenue : null,
+             hi: proj.optimistic && proj.optimistic.days[i] ? proj.optimistic.days[i].revenue : null };
+  });
+  const have = days.filter(d => d.actual != null);
+  const fcTot = have.reduce((a, d) => a + d.fc, 0), acTot = have.reduce((a, d) => a + d.actual, 0);
+  const bias = acTot ? (fcTot - acTot) / acTot * 100 : null;         // signed: + = over-forecast
+  const mape = have.length ? have.reduce((a, d) => a + Math.abs(d.fc - d.actual) / d.actual, 0) / have.length * 100 : null;
+  const inBand = have.filter(d => d.lo != null && d.hi != null && d.actual >= Math.min(d.lo, d.hi) && d.actual <= Math.max(d.lo, d.hi)).length;
+  return { origin, anchor, H, p, proj, days, have, fcTot, acTot, bias, mape, inBand, mods, byDate };
+}
+
+/* Bucket the hindcast days into weeks for the side panel — daily forecast-vs-
+   actual is too noisy to read a verdict from, the week is the unit a person
+   judges "were we close" on. */
+function haWeeks(days) {
+  const out = [];
+  for (let i = 0; i < days.length; i += 7) {
+    const w = days.slice(i, i + 7).filter(d => d.actual != null);
+    if (!w.length) continue;
+    const fc = w.reduce((a, d) => a + d.fc, 0), ac = w.reduce((a, d) => a + d.actual, 0);
+    out.push({ from: w[0].date, to: w[w.length - 1].date, days: w.length, fc, ac, err: ac ? (fc - ac) / ac * 100 : null });
+  }
+  return out;
+}
+
+function renderVsActual(ctx) {
+  const H = S.hor === 'EOY' ? 90 : S.hor;
+  const el = document.getElementById('kpis');
+  const h = hindcast(H);
+  if (!h || !h.have.length) {
+    el.innerHTML = '<div class="kpi"><div class="k-head"><div class="k-lbl">Not enough history</div><div class="k-val">—</div><div class="k-sub">need ' + H + ' complete days after an origin the model can forecast from</div></div></div>';
+    document.getElementById('vaRows').innerHTML = '';
+    document.getElementById('vaVerdict').textContent = '—';
+    document.getElementById('vaNote').textContent = '—';
+    if (CHART2) { CHART2.destroy(); CHART2 = null; }
+    return;
+  }
+  const covered = h.have.length, missing = h.days.length - covered;
+  /* the verdict, in plain words */
+  const absErr = h.mape;
+  const word = absErr == null ? '—' : absErr < 8 ? 'On the money' : absErr < 15 ? 'Close' : absErr < 25 ? 'In the right area' : 'Wide of it';
+  const dir = h.bias == null ? '' : Math.abs(h.bias) < 2 ? '' : h.bias > 0 ? ' · we over-forecast' : ' · we under-forecast';
+  const cls = absErr == null ? '' : absErr < 8 ? 'good' : absErr < 15 ? 'good' : absErr < 25 ? 'warn' : 'bad';
+
+  el.innerHTML = [
+    tileVA('Forecast', money(h.fcTot, true), 'made on <b>' + niceFull(h.origin) + '</b>', S.scen + ' scenario', 'accent'),
+    tileVA('Actual', money(h.acTot, true), covered + ' day' + (covered === 1 ? '' : 's') + ' since' + (missing ? ' · ' + missing + ' not yet complete' : ''), 'what really happened'),
+    tileVA('Error', (absErr == null ? '—' : absErr.toFixed(0) + '%'), 'average daily miss', (h.bias == null ? '' : (h.bias > 0 ? '+' : '') + h.bias.toFixed(0) + '% on the total' + dir), cls),
+    tileVA('In range', h.have.length ? Math.round(h.inBand / h.have.length * 100) + '%' : '—', 'of days inside pessimistic–optimistic', h.inBand + ' of ' + h.have.length + ' days', h.have.length && h.inBand / h.have.length >= 0.6 ? 'good' : 'warn'),
+  ].join('');
+
+  /* the chart: actual (solid) vs realistic forecast (dashed), scenario band */
+  renderVAChart(h);
+
+  document.getElementById('vaVerdict').innerHTML = '<b class="va-word ' + cls + '">' + word + '</b>' + dir + ' · ' + (absErr == null ? '' : 'averaged ' + absErr.toFixed(0) + '% a day');
+  document.getElementById('vaNote').textContent = 'forecast made on ' + niceFull(h.origin) + ', vs the ' + covered + ' days since';
+
+  const weeks = haWeeks(h.days);
+  document.getElementById('vaRows').innerHTML = weeks.length ? weeks.map(w => {
+    const good = w.err == null ? 'flat' : Math.abs(w.err) < 10 ? 'up' : Math.abs(w.err) < 20 ? 'flat' : 'down';
+    return '<div class="va-row"><div class="va-wk">' + isoToNice(w.from) + '–' + isoToNice(w.to) + '<small>' + w.days + 'd</small></div>' +
+      '<div class="va-nums"><span class="va-fc">fc ' + money(w.fc, true) + '</span><span class="va-ac">act ' + money(w.ac, true) + '</span></div>' +
+      '<div class="va-err ' + good + '">' + (w.err == null ? '—' : (w.err > 0 ? '+' : '') + w.err.toFixed(0) + '%') + '</div></div>';
+  }).join('') : '<div class="empty">No complete weeks in the window yet.</div>';
+}
+const tileVA = (lbl, val, sub, foot, cls) => '<div class="kpi ' + (cls || '') + '"><div class="k-head"><div class="k-lbl">' + lbl + '</div><div class="k-val">' + val + '</div><div class="k-sub">' + (sub || '') + '</div></div><div class="k-foot">' + (foot || '') + '</div></div>';
+
+function renderVAChart(h) {
+  const cv = document.getElementById('vaChart'), wrap = document.getElementById('vaWrap');
+  if (!cv || !wrap || !wrap.clientHeight || typeof Chart === 'undefined') return;
+  const originRev = (h.byDate.get(h.origin) || {}).revenue || null;
+  const dates = [h.origin].concat(h.days.map(d => d.date));
+  const SM = 7;
+  const act = smooth([originRev].concat(h.days.map(d => d.actual)), SM);
+  const fc = smooth([originRev].concat(h.days.map(d => d.fc)), SM);
+  const lo = smooth([originRev].concat(h.days.map(d => d.lo)), SM);
+  const hi = smooth([originRev].concat(h.days.map(d => d.hi)), SM);
+  const Y = 'rgba(245,235,25,';
+  const ds = [
+    { label: 'Pessimistic', data: lo, borderColor: Y + '0.4)', borderWidth: 1.2, pointRadius: 0, tension: .3, fill: '+1', backgroundColor: Y + '0.10)' },
+    { label: 'Optimistic', data: hi, borderColor: Y + '0.4)', borderWidth: 1.2, pointRadius: 0, tension: .3, fill: false },
+    { label: 'Forecast', data: fc, borderColor: Y + '0.95)', borderDash: [6, 4], borderWidth: 2.4, pointRadius: 0, tension: .3, fill: false },
+    { label: 'Actual', data: act, borderColor: 'rgba(57,217,138,0.95)', borderWidth: 2.6, pointRadius: 0, tension: .3, fill: false },
+  ];
+  if (CHART2) CHART2.destroy();
+  const grid = 'rgba(255,255,255,0.06)', tick = 'rgba(179,171,172,0.8)';
+  CHART2 = new Chart(cv.getContext('2d'), {
+    type: 'line', data: { labels: dates, datasets: ds },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { filter: i => i.dataset.label !== 'Pessimistic' && i.dataset.label !== 'Optimistic',
+          callbacks: { title: it => niceFull(it[0].label), label: i => i.dataset.label + ': ' + money(i.parsed.y, true) + '/day' } },
+      },
+      scales: {
+        x: { grid: { color: grid }, ticks: { color: tick, maxTicksLimit: 10, callback(v) { const d = this.getLabelForValue(v); return d ? isoToNice(d) : ''; } } },
+        y: { grid: { color: grid }, ticks: { color: tick, callback: v => money(v, true) }, beginAtZero: true },
+      },
+    },
+  });
+  document.getElementById('vaKey').innerHTML =
+    '<span class="k va-act">Actual</span><span class="k real">Forecast</span><span class="k fan">Scenario range</span>';
+  placeDot('vaOriginDot', CHART2, 0, originRev);
+}
+
 function render() {
   if (!DATA) return;
   refreshSalePeriods();
@@ -1479,6 +1637,8 @@ function render() {
     safe('timeline', () => renderTimeline(pv, ctx));
     safe('trends', () => renderTrends(pv, ctx));
     safe('profit', () => renderProfit(p, ctx));
+  } else if (S.view === 'vsactual') {
+    safe('vsactual', () => renderVsActual(ctx));
   } else {
     safe('notes', () => renderNotes(p));
   }
@@ -1575,8 +1735,18 @@ async function tryLiveRefresh() {
    three rows and gives the explanation the whole middle. */
 function setView(v) {
   S.view = v;
-  document.getElementById('stage').classList.toggle('view-explain', v === 'explain');
+  const st = document.getElementById('stage');
+  st.classList.toggle('view-explain', v === 'explain');
+  st.classList.toggle('view-vsactual', v === 'vsactual');
   document.getElementById('explain').hidden = v !== 'explain';
+  document.getElementById('vsactual').hidden = v !== 'vsactual';
+  document.getElementById('main').hidden = v !== 'map';
+  /* The horizon selector means "how far ahead" on the map and "how far back" in
+     the vs-actual view; "to year end" has no meaning as a lookback, so it is
+     disabled there. */
+  const eoy = document.querySelector('#horSeg button[data-hor="EOY"]');
+  if (eoy) { eoy.disabled = v === 'vsactual'; if (v === 'vsactual' && S.hor === 'EOY') { S.hor = 90; document.querySelectorAll('#horSeg button').forEach(b => b.classList.toggle('active', b.dataset.hor === '90')); } }
+  const todayDot = document.getElementById('todayDot'); if (todayDot && v !== 'map') todayDot.hidden = true;
   document.querySelectorAll('#viewSeg button').forEach(x =>
     x.classList.toggle('active', x.dataset.view === v));
 }

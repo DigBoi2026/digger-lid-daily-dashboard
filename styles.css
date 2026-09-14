@@ -969,3 +969,38 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .region-stage .status .freshness .val{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .region-stage .daynav .seg.small button{font-size:1.05cqh;padding:.45cqh .55cqw;letter-spacing:.04em}
 .region-stage .topnav a{padding-left:.5cqw;padding-right:.5cqw}
+
+/* ---- Forecast · pulsing "today" marker + Forecast vs Actual view ---------- */
+.today-dot{position:absolute;transform:translate(-50%,-50%);z-index:6;pointer-events:none}
+.today-dot i{display:block;width:1.1cqh;height:1.1cqh;border-radius:50%;background:var(--dl-yellow);
+  box-shadow:0 0 0 0 rgba(245,235,25,.55);animation:todaypulse 1.7s ease-out infinite}
+.today-dot b{position:absolute;left:50%;bottom:calc(100% + .5cqh);transform:translateX(-50%);
+  font-size:.85cqh;letter-spacing:.14em;font-weight:700;color:var(--dl-yellow);white-space:nowrap;
+  background:rgba(10,8,9,.72);padding:.12cqh .45cqw;border-radius:.3cqh}
+.today-dot.origin i{background:var(--good);box-shadow:0 0 0 0 rgba(57,217,138,.55);animation-name:originpulse}
+.today-dot.origin b{color:var(--good)}
+@keyframes todaypulse{0%{box-shadow:0 0 0 0 rgba(245,235,25,.5)}70%{box-shadow:0 0 0 1.7cqh rgba(245,235,25,0)}100%{box-shadow:0 0 0 0 rgba(245,235,25,0)}}
+@keyframes originpulse{0%{box-shadow:0 0 0 0 rgba(57,217,138,.5)}70%{box-shadow:0 0 0 1.7cqh rgba(57,217,138,0)}100%{box-shadow:0 0 0 0 rgba(57,217,138,0)}}
+/* the timeline "now" line gets a pulsing head too */
+.tl-now::after{content:"";position:absolute;left:-.5cqh;top:-.2cqh;width:1.1cqh;height:1.1cqh;border-radius:50%;
+  background:var(--dl-yellow);box-shadow:0 0 0 0 rgba(245,235,25,.55);animation:todaypulse 1.7s ease-out infinite}
+
+.view-vsactual #main,.view-vsactual #railL,.view-vsactual #railR{display:none}
+#vsactual{display:none}
+.view-vsactual #vsactual{display:grid;grid-template-columns:1.7fr 1fr;gap:.9cqw;min-height:0}
+.va-chart,.va-side{min-height:0;display:flex;flex-direction:column}
+#vaWrap{flex:1;min-height:0;position:relative}
+#vaWrap canvas{position:absolute;inset:0}
+.va-chart .chartkey{margin:.2cqh 0 .3cqh}
+.va-rows{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:.4cqh;scrollbar-gutter:stable}
+.va-row{flex:0 0 auto;display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:.7cqw;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:.6cqh;padding:.42cqh .7cqw}
+.va-wk{font-size:1.2cqh;color:var(--dl-white);white-space:nowrap} .va-wk small{color:var(--muted);margin-left:.3cqw;font-size:1cqh}
+.va-nums{display:flex;flex-direction:column;text-align:right;font-size:1.05cqh;font-variant-numeric:tabular-nums;line-height:1.2}
+.va-nums .va-fc{color:var(--dl-yellow)} .va-nums .va-ac{color:var(--good)}
+.va-err{font-size:1.4cqh;font-weight:700;text-align:right;min-width:3.6cqw;font-variant-numeric:tabular-nums}
+.va-err.up{color:var(--good)} .va-err.flat{color:var(--warn)} .va-err.down{color:var(--bad)}
+.va-side .p-note .va-word,#vaVerdict .va-word{font-family:var(--font-head);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+.va-word.good{color:var(--good)} .va-word.warn{color:var(--warn)} .va-word.bad{color:var(--bad)}
+.va-rows .empty{font-size:1.1cqh;color:var(--muted);padding:.8cqh .6cqw;border:1px dashed var(--line);border-radius:.6cqh}
+.chartkey .k.va-act::before{border-top-style:solid;border-color:rgba(57,217,138,.95)}

@@ -36,6 +36,7 @@
              a click away rather than buried behind an icon. -->
         <div class="seg small" id="viewSeg" role="group" aria-label="Select view">
           <button data-view="map" class="active">THE MAP</button>
+          <button data-view="vsactual">FORECAST vs ACTUAL</button>
           <button data-view="explain">HOW IT WORKS</button>
         </div>
         <div class="seg small" id="horSeg" role="group" aria-label="Select horizon" title="How far ahead to forecast">
@@ -110,7 +111,7 @@
             </div>
           </div>
         </div>
-        <div id="chartWrap"><canvas id="fcChart"></canvas></div>
+        <div id="chartWrap"><canvas id="fcChart"></canvas><div class="today-dot" id="todayDot" hidden><i></i><b>TODAY</b></div></div>
         <!-- Aligned to the chart's own x-axis, so a month, the multiplier applied
              to it and the event already inside its index all sit under the days
              they belong to. A key row on top says what each lane is. -->
@@ -133,6 +134,28 @@
             <div class="p-note" id="dowNote">—</div></div>
           <div class="minibars" id="dowBars"></div>
         </div>
+      </div>
+    </section>
+
+    <!-- ============ VIEW — FORECAST vs ACTUAL ============ -->
+    <!-- Rewind to a day in the past, forecast forward from only what was known
+         then, and lay the actual outcome over it. Answers "what did we forecast,
+         and were we right?" for the days that have since happened. -->
+    <section id="vsactual" hidden>
+      <div class="panel va-chart">
+        <div class="p-head">
+          <div class="p-title">Forecast <span>vs Actual</span></div>
+          <div class="chartkey" id="vaKey"></div>
+          <div class="p-note" id="vaNote">—</div>
+        </div>
+        <div id="vaWrap"><canvas id="vaChart"></canvas><div class="today-dot origin" id="vaOriginDot" hidden><i></i><b>FORECAST FROM</b></div></div>
+      </div>
+      <div class="panel va-side">
+        <div class="p-head">
+          <div class="p-title">Were we <span>Right?</span></div>
+          <div class="p-note" id="vaVerdict">—</div>
+        </div>
+        <div class="va-rows" id="vaRows"></div>
       </div>
     </section>
 
