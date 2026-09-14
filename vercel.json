@@ -9,7 +9,8 @@
       "includeFiles": "prior_year.js"
     },
     "api/shopify.js": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": "data/history/**"
     },
     "api/pulse.js": {
       "maxDuration": 30

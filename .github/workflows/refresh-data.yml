@@ -1,0 +1,52 @@
+# Saves the immutable history so the live routes don't re-pull two years of
+# Shopify data on every cache miss — the thing that exhausts the rate-limit
+# bucket. Once a day it pulls the full history, commits data/history/*.json, and
+# the routes serve those snapshots with zero Shopify queries until the next run.
+#
+# A GitHub Action, not Vercel Cron: Cron on Hobby fires once a day and a bad
+# `crons` block can take the site down, whereas this is isolated and emails the
+# owner on failure. It needs the same Shopify credentials the site uses, as repo
+# secrets (Settings → Secrets and variables → Actions):
+#   SHOPIFY_STORE, and either SHOPIFY_TOKEN or SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET
+#   SHOPIFY_API_VERSION (optional)
+name: refresh-data
+
+on:
+  schedule:
+    - cron: '20 18 * * *'      # 04:20 AEST daily, well clear of trading hours
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Rebuild snapshots
+        env:
+          SHOPIFY_STORE: ${{ secrets.SHOPIFY_STORE }}
+          SHOPIFY_TOKEN: ${{ secrets.SHOPIFY_TOKEN }}
+          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          SHOPIFY_API_VERSION: ${{ secrets.SHOPIFY_API_VERSION }}
+        run: node source/build_history.js
+      - name: Commit any changes
+        run: |
+          git config user.name "digboi-data-bot"
+          git config user.email "bot@diggerlid.com"
+          git add data/history
+          if git diff --cached --quiet; then
+            echo "No snapshot changes."
+          else
+            git commit -m "chore(data): refresh history snapshots"
+            git push
+          fi

@@ -1,0 +1,4 @@
+Committed data snapshots live here, written by source/build_history.js
+(run daily by .github/workflows/refresh-data.yml). Each holds the immutable
+history for one heavy Shopify dataset so the live route can serve it without
+re-querying Shopify. See lib/history_cache.js.

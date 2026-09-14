@@ -34,6 +34,7 @@
 // version when you name a dead one, so a stale default silently moves target
 // every quarter. Pin a live one; supported until 2027-07.
 const API_VERSION = process.env.SHOPIFY_API_VERSION || '2026-07';
+const HC = require('../lib/history_cache.js');   // committed history snapshots (serve without re-querying)
 const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const KEYS = {covers:'Machine Covers',grease:'Grease',screens:'DiggerShield Screens',drawbar:'Draw Bar Covers',
   shipping:'Shipping Protection',phone:'Phone Cradles',wipes:'Digger Wipes',mobile:'Mobile Protection',
@@ -291,7 +292,12 @@ async function buildProducts(today) {
    own Country 2/3/4 blocks are the source that would tie, and they are empty on
    every day of every month; when they are filled this route stops being the
    place this comes from. */
-async function buildGeo(today) {
+async function buildGeo(today, opts) {
+  opts = opts || {};
+  /* Serve the committed snapshot (zero Shopify queries) when it is current; the
+     daily build job keeps it within a day of yesterday. opts.full forces a live
+     pull and is what that job uses to rebuild the snapshot. */
+  if (!opts.full) { const snap = HC.load('geo'); if (snap && HC.isFresh(snap, today)) return HC.served(snap); }
   const since = iso(addDays(today, -730));
   const until = iso(addDays(today, 1));
   const one = q => paced(q);
@@ -418,7 +424,12 @@ async function buildCustomers(today) {
    is the sparse unbounded grid the country lens already learnt to avoid.
    Sequenced for the rate limit. */
 const PRODUCT_LENS_TOP = 6;
-async function buildProductsDaily(today) {
+async function buildProductsDaily(today, opts) {
+  opts = opts || {};
+  /* Serve the committed snapshot (zero Shopify queries) when it is current; the
+     daily build job keeps it within a day of yesterday. opts.full forces a live
+     pull and is what that job uses to rebuild the snapshot. */
+  if (!opts.full) { const snap = HC.load('productsDaily'); if (snap && HC.isFresh(snap, today)) return HC.served(snap); }
   const since = iso(addDays(today, -730));
   const until = iso(addDays(today, 1));
   const yrSince = iso(addDays(today, -365));
@@ -587,7 +598,12 @@ async function buildProductsRecent(today) {
 }
 
 /* -------------------------------- region -------------------------------- */
-async function buildRegion(today) {
+async function buildRegion(today, opts) {
+  opts = opts || {};
+  /* Serve the committed snapshot (zero Shopify queries) when it is current; the
+     daily build job keeps it within a day of yesterday. opts.full forces a live
+     pull and is what that job uses to rebuild the snapshot. */
+  if (!opts.full) { const snap = HC.load('region'); if (snap && HC.isFresh(snap, today)) return HC.served(snap); }
   const M = twentyFourMonths(today);            // 24 months, so "vs last year" has a year to look back to
   const N = M.labels.length;
 
