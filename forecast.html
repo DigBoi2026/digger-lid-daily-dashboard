@@ -109,6 +109,12 @@
               <button data-lens="countries">COUNTRIES</button>
               <button data-lens="products">PRODUCTS</button>
             </div>
+            <!-- Only for the products lens: show the top sellers, or group them
+                 into Portable Protection / Covers / Consumables. -->
+            <div class="seg small" id="pgroupSeg" role="group" aria-label="Group products" title="Show the top products, or group them by category" hidden>
+              <button data-pg="product" class="active">BY PRODUCT</button>
+              <button data-pg="category">BY CATEGORY</button>
+            </div>
           </div>
         </div>
         <div id="chartWrap"><canvas id="fcChart"></canvas><div class="today-dot" id="todayDot" hidden><i></i><b>TODAY</b></div></div>

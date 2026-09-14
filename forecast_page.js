@@ -23,7 +23,7 @@ const EDIT_KEY = 'dl_forecast_sale_edit';     // and lifts they have re-sized
 
 const S = { scen: 'realistic', hor: 90, live: 'snap',
             mods: [], saleOff: [], saleEdit: {}, sale: [], ceiling: null,
-            notesMode: 'simple', view: 'map', lens: 'total' };
+            notesMode: 'simple', view: 'map', lens: 'total', pgroup: 'product' };
 /* Shopify-backed series, fetched only when a lens that needs them is selected.
    Keyed by dataset name: geo (AU/NZ/rest), customers (new/returning),
    productsDaily (top products). Each is { state: idle|loading|ready|failed, data }. */
@@ -250,6 +250,23 @@ const LENSES = {
     build(list, ext) {
       if (!ext || !ext.daily || !ext.products) return null;
       const mk = key => F.asMetric(ext.daily, key);
+      /* BY CATEGORY: the top sellers grouped into Portable Protection, Covers
+         and Consumables (summed day by day), with the long tail in Everything
+         else. No extra data pull — the same top-product daily series, added up
+         by the bucket each product's title falls in. */
+      if (S.pgroup === 'category') {
+        const CATS = [['portable', 'Portable Protection'], ['covers', 'Covers'], ['consum', 'Consumables']];
+        const members = { portable: [], covers: [], consum: [], other: ['other'] };
+        (ext.products || []).forEach(pr => { (members[superKey(pr.title)] || members.other).push(pr.key); });
+        const sumKeys = keys => F.asMetric(ext.daily, r => keys.reduce((a, k) => a + (+r[k] || 0), 0));
+        const sizeOf = keys => (ext.totals ? keys.reduce((a, k) => a + (+ext.totals[k] || 0), 0) : 0);
+        const built = CATS.filter(([k]) => members[k].length)
+          .map(([k, label]) => ({ id: k, name: label, rows: sumKeys(members[k]), _size: sizeOf(members[k]) }));
+        built.push({ id: 'other', name: 'Everything else', rows: sumKeys(members.other), _size: sizeOf(members.other) });
+        built.sort((a, b) => b._size - a._size);
+        if (built[0]) built[0].primary = true;
+        return built;
+      }
       const out = ext.products.map((pr, i) => ({ id: pr.key, name: pr.title, rows: mk(pr.key), primary: i === 0 }));
       out.push({ id: 'other', name: 'Everything else', rows: mk('other') });
       return out;
@@ -257,6 +274,17 @@ const LENSES = {
   },
 };
 
+/* A product title -> one of three buyer-facing categories. Consumables is
+   tried first (a "Grease Coupler" is a consumable, not a cover), then the
+   portable kit, then the machine covers; anything else — merch, package
+   protection — falls to Everything else. */
+function superKey(title) {
+  const t = String(title || '').toLowerCase();
+  if (/grease|kajo|coupler|wipe|paste|hammer/.test(t)) return 'consum';
+  if (/\bmat\b|hauler|luggage|shield|screen|earthmover/.test(t)) return 'portable';
+  if (/cover|enclosure|draw ?bar|caddy|quicky|hydraulic|cap ?set|topless|cradle|magnet/.test(t)) return 'covers';
+  return 'other';
+}
 const lens = () => LENSES[S.lens] || LENSES.total;
 
 /* Shopify is only asked for when a lens that needs it is actually selected:
@@ -427,7 +455,7 @@ function renderKpisLens(p, ctx) {
           : (err ? err + ' measured error' : 'no prior year') };
   });
   tiles.push({ lbl: 'Combined · ' + label, val: fmt(tot),
-    sub: ctx.series.length + ' series · ' + esc(L.note),
+    sub: ctx.series.length + ' series · ' + esc(S.lens === 'products' && S.pgroup === 'category' ? 'grouped by category · top sellers summed, long tail in Everything else' : L.note),
     foot: L.ties ? 'ties to the board' : '<span class="delta down">does not tie to the board</span>' });
   /* The caveat gets a tile of its own rather than a footnote, because the tile
      row is the only part of this page a passing glance takes in. */
@@ -1654,7 +1682,7 @@ const horizonOf = (from, to) => Math.round((Date.parse(to + 'T00:00:00Z') - Date
    immediately and the band fills in behind it. */
 /* Keyed by lens — and for countries by whether Shopify has answered yet — so
    returning to a lens does not re-walk the whole book. */
-const btKey = () => { const L = lens(); return L.needs ? S.lens + ':' + extState(L.needs) : S.lens; };
+const btKey = () => { const L = lens(); const g = S.lens === 'products' ? ':' + S.pgroup : ''; return L.needs ? S.lens + g + ':' + extState(L.needs) : S.lens + g; };
 const btTotal = () => (BTS.total && BTS.total !== 'failed') ? BTS.total : null;
 
 /* One number goes in the cell, so it is the WORST series', named. An average
@@ -1765,9 +1793,15 @@ function wire() {
     if (e.key !== 'Escape') return;
     if (S.view !== 'map') { setView('map'); render(); }
   });
+  const syncPgroup = () => { const seg = document.getElementById('pgroupSeg'); if (seg) seg.hidden = S.lens !== 'products'; };
+  syncPgroup();
+  document.querySelectorAll('#pgroupSeg button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('#pgroupSeg button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active'); S.pgroup = b.dataset.pg; render(); measure();
+  });
   document.querySelectorAll('#lensSeg button').forEach(b => b.onclick = () => {
     document.querySelectorAll('#lensSeg button').forEach(x => x.classList.remove('active'));
-    b.classList.add('active'); S.lens = b.dataset.lens;
+    b.classList.add('active'); S.lens = b.dataset.lens; syncPgroup();
     render(); measure();
     if (lens().needs) ensureExt(lens().needs);
   });
