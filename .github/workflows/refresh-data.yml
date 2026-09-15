@@ -9,9 +9,11 @@
 #
 # Setup is ONE repo secret (Settings → Secrets and variables → Actions →
 # New repository secret):
-#   SHOPIFY_CLIENT_SECRET   the shpss_… from Dev Dashboard → DASHBOARD CONNECT
-# The store subdomain, client id and API version are non-secret and are set in
-# plain text in the job below, so there is nothing else to add.
+#   SHOPIFY_TOKEN   the shpat_… Admin API token — the same one the live site
+#                   carries in Vercel (client-credentials does not work here:
+#                   the app and store are in different Shopify organisations).
+# The store subdomain and API version are non-secret and are set in plain text
+# in the job below, so there is nothing else to add.
 name: refresh-data
 
 on:
@@ -36,14 +38,15 @@ jobs:
           node-version: '22'
       - name: Rebuild snapshots
         env:
-          # Store subdomain, client id and API version are non-secret (client id
-          # is "public by design", per CREDENTIALS.md), so they live here in
-          # plain sight. The ONLY secret the job needs is the client secret,
-          # which mints a short-lived token via the client-credentials grant.
+          # Store subdomain and API version are non-secret, so they live here in
+          # plain sight. The ONE secret the job needs is SHOPIFY_TOKEN — the same
+          # shpat_… Admin API token the live site uses. The client-credentials
+          # grant is NOT usable here: Shopify rejects it because the DASHBOARD
+          # CONNECT app and the store are in different organisations (HTTP 400),
+          # which is exactly why the site carries a pre-minted token.
           SHOPIFY_STORE: digger-lid
-          SHOPIFY_CLIENT_ID: '61976438e9a6e06e5b35a961eeb44619'
           SHOPIFY_API_VERSION: '2026-07'
-          SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
+          SHOPIFY_TOKEN: ${{ secrets.SHOPIFY_TOKEN }}
         run: node source/build_history.js
       - name: Commit any changes
         run: |
