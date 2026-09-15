@@ -5,10 +5,13 @@
 #
 # A GitHub Action, not Vercel Cron: Cron on Hobby fires once a day and a bad
 # `crons` block can take the site down, whereas this is isolated and emails the
-# owner on failure. It needs the same Shopify credentials the site uses, as repo
-# secrets (Settings → Secrets and variables → Actions):
-#   SHOPIFY_STORE, and either SHOPIFY_TOKEN or SHOPIFY_CLIENT_ID + SHOPIFY_CLIENT_SECRET
-#   SHOPIFY_API_VERSION (optional)
+# owner on failure.
+#
+# Setup is ONE repo secret (Settings → Secrets and variables → Actions →
+# New repository secret):
+#   SHOPIFY_CLIENT_SECRET   the shpss_… from Dev Dashboard → DASHBOARD CONNECT
+# The store subdomain, client id and API version are non-secret and are set in
+# plain text in the job below, so there is nothing else to add.
 name: refresh-data
 
 on:
@@ -33,11 +36,14 @@ jobs:
           node-version: '22'
       - name: Rebuild snapshots
         env:
-          SHOPIFY_STORE: ${{ secrets.SHOPIFY_STORE }}
-          SHOPIFY_TOKEN: ${{ secrets.SHOPIFY_TOKEN }}
-          SHOPIFY_CLIENT_ID: ${{ secrets.SHOPIFY_CLIENT_ID }}
+          # Store subdomain, client id and API version are non-secret (client id
+          # is "public by design", per CREDENTIALS.md), so they live here in
+          # plain sight. The ONLY secret the job needs is the client secret,
+          # which mints a short-lived token via the client-credentials grant.
+          SHOPIFY_STORE: digger-lid
+          SHOPIFY_CLIENT_ID: '61976438e9a6e06e5b35a961eeb44619'
+          SHOPIFY_API_VERSION: '2026-07'
           SHOPIFY_CLIENT_SECRET: ${{ secrets.SHOPIFY_CLIENT_SECRET }}
-          SHOPIFY_API_VERSION: ${{ secrets.SHOPIFY_API_VERSION }}
         run: node source/build_history.js
       - name: Commit any changes
         run: |
