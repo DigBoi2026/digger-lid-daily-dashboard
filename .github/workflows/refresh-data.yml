@@ -17,8 +17,11 @@
 name: refresh-data
 
 on:
-  schedule:
-    - cron: '20 18 * * *'      # 04:20 AEST daily, well clear of trading hours
+  # Daily schedule is PARKED until the SHOPIFY_TOKEN secret is added — without it
+  # every run fails and emails the owner. Re-enable by uncommenting the two lines
+  # below once the token is in place.
+  # schedule:
+  #   - cron: '20 18 * * *'    # 04:20 AEST daily, well clear of trading hours
   workflow_dispatch:
 
 permissions:
