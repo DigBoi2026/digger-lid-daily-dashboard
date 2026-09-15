@@ -191,7 +191,10 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 
 /* ============ DAILY PULSE PAGE ============ */
 /* stage rows: header / verdict / kpis / main / bottom / foot */
-#stage.pulse-stage{grid-template-rows:9cqh 7.5cqh 16.5cqh minmax(0,1fr) 21.5cqh 2.8cqh}
+#stage.pulse-stage{grid-template-rows:9cqh 7.5cqh 16.5cqh minmax(0,1fr) 31cqh 2.8cqh}
+/* Problem Signals is capped to about half its old height so the charts below get
+   the room; the rest of the signals stay one scroll away inside the list. */
+.pulse-stage .siglist{max-height:15.5cqh}
 .verdict{display:flex;align-items:center;gap:1.2cqw;background:var(--panel);border:1px solid var(--line);
   border-radius:1cqh;padding:.8cqh 1.4cqw}
 .verdict .v-dot{width:2.6cqh;height:2.6cqh;border-radius:50%;flex:none;box-shadow:0 0 1.6cqh currentColor}
@@ -917,6 +920,28 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .bridge .pr.tot{border-top:1px solid var(--line);padding-top:.4cqh} .bridge .pr.tot .pr-l{font-weight:700;color:var(--dl-yellow)}
 .bridge .empty{font-size:1.1cqh;color:var(--muted);line-height:1.4;padding:.8cqh .6cqw;border:1px dashed var(--line);border-radius:.6cqh}
 .gpam-stage .chartfoot{flex:0 0 auto;margin-top:.4cqh;font-size:1cqh;line-height:1.3}
+
+/* collapsible bottom panels — a caret in each title toggles the body */
+.collapser{background:none;border:0;color:var(--muted);cursor:pointer;font:inherit;font-size:1.1cqh;line-height:1;margin-right:.5cqw;padding:0;display:inline-block;transition:transform .15s}
+.collapser:hover{color:var(--dl-white)}
+.panel.collapsed .collapser{transform:rotate(-90deg)}
+.panel.collapsed{min-height:0;align-self:start}
+.panel.collapsed > :not(.p-head){display:none}
+.panel.collapsed .p-head{margin-bottom:0}
+
+/* element breakdown — the parts view of the right panel */
+.bridge.parts{justify-content:flex-start;overflow-y:auto;gap:.15cqh;padding-right:.3cqw}
+.bridge.parts .pr{grid-template-columns:10cqw 1fr auto;min-height:0}
+.bridge.parts .pr-l{text-transform:none;letter-spacing:0;font-size:1.05cqh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2}
+.bridge.parts .pr-t{height:1.1cqh}
+.bridge.parts .pr-v{font-size:1.1cqh}
+.bridge.parts .pr-v small{font-size:.82cqh;margin-top:0}
+.pr.cost .pr-t i{background:var(--muted)} .pr.cost .pr-v{color:var(--dl-white)}
+.pgrp{display:grid;grid-template-columns:1fr auto auto;align-items:baseline;gap:.6cqw;margin-top:.5cqh;padding-bottom:.15cqh;border-bottom:1px solid var(--line)}
+.pgrp:first-child{margin-top:0}
+.pgrp .pg-n{font-size:1.05cqh;text-transform:uppercase;letter-spacing:.1em;color:var(--dl-yellow);font-weight:700}
+.pgrp .pg-v{font-size:1.1cqh;font-weight:700;font-variant-numeric:tabular-nums}
+.pgrp .pg-s{font-size:.9cqh;color:var(--muted);min-width:3.4cqw;text-align:right}
 
 /* eight tabs now (GPAM joined): a little tighter everywhere so the header fits at 1440 */
 .topnav a{padding-left:.5cqw;padding-right:.5cqw;gap:.35cqw;font-size:1.1cqh}

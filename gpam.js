@@ -70,7 +70,7 @@ function render() {
   safe('waterfall', () => renderWaterfall(ctx));
   safe('months', () => renderMonths(ctx));
   safe('form', () => renderForm(ctx));
-  safe('right', () => S.right === 'bench' ? renderBench(ctx) : renderBridge(ctx));
+  safe('right', () => S.right === 'bench' ? renderBench(ctx) : S.right === 'parts' ? renderParts(ctx) : renderBridge(ctx));
   document.getElementById('footSource').textContent =
     `P&L sheet · ${L.days} complete day${L.days === 1 ? '' : 's'} · through ${niceY(anchor)} · ${S.live === 'live' ? 'live' : 'snapshot'}` +
     (PRIOR ? ' · 2025 book for last year' : '');
@@ -243,6 +243,8 @@ function renderForm({ L, rg }) {
 /* ---- bridge ---- */
 function renderBridge({ L, P, rg, cov }) {
   const el = document.getElementById('bridge'), note = document.getElementById('bridgeNote'), foot = document.getElementById('bridgeFoot');
+  el.className = 'bridge';
+  document.getElementById('rightTitleText').innerHTML = 'Why GPAM <span>Moved</span>';
   const B = P ? G.bridge(L, P) : null;
   if (!B) { el.innerHTML = `<div class="empty">No full ${rg.cmp === 'prev' ? 'prior period' : 'prior year'} for ${rg.label.toLowerCase()} — the books cover ${cov.n} of the ${cov.expected} days of ${rg.prev.label}. Comparisons appear once the window is at least 90% covered.</div>`; note.textContent = 'vs ' + rg.prev.label; foot.textContent = ''; return; }
   const maxAbs = Math.max(1, ...B.items.map(i => Math.abs(i.value)), Math.abs(B.delta));
@@ -252,6 +254,49 @@ function renderBridge({ L, P, rg, cov }) {
   note.textContent = `vs ${rg.prev.label} · ${nice(rg.prev.start)}–${nice(rg.prev.end)} ${rg.prev.end.slice(0, 4)} · four effects that sum exactly`;
   const big = B.items.slice().sort((a, b) => Math.abs(b.value) - Math.abs(a.value))[0];
   foot.textContent = `Largest driver: ${big.label.toLowerCase()} (${(big.value >= 0 ? '+' : '') + money(big.value)}). Volume is last year’s GPAM rate on the change in net revenue; the three rates are applied to this year’s net revenue.`;
+}
+
+/* ---- element breakdown: every waterfall element, split into its lines ----
+   The waterfall shows each element as one bar; this splits them — net revenue
+   into gross sales / GST / returns, and every cost element (COGS, advertising,
+   marketing overhead, below the line) into the individual lines that make it. */
+function renderParts({ L, rg }) {
+  const el = document.getElementById('bridge'), note = document.getElementById('bridgeNote'), foot = document.getElementById('bridgeFoot');
+  el.className = 'bridge parts';
+  document.getElementById('rightTitleText').innerHTML = 'Element <span>Breakdown</span>';
+  const NR = L.netRevenue || 0;
+  const part = (label, value, present) => ({ label, value, present: present !== false });
+  const cost = (layer, otherLabel) => layer.items.map(i => part(i.label, i.value, i.present))
+    .concat(layer.other ? [part(otherLabel, layer.other)] : []);
+  const groups = [
+    { label: 'Net revenue', total: L.netRevenue, kind: 'rev', parts: [
+        part('Gross sales (inc GST)', L.grossSales),
+        part('GST', -L.gst),
+        ...(L.returns ? [part('Returns', -L.returns)] : []),
+      ] },
+    { label: 'COGS', total: L.cogs.total, kind: 'cost', parts: cost(L.cogs, 'Other COGS') },
+    { label: 'Advertising', total: L.ads.total, kind: 'cost', parts: cost(L.ads, 'Other ad spend') },
+    { label: 'Marketing overhead', total: L.overhead.total, kind: 'cost', parts:
+        (L.overhead.inSheet ? L.overhead.items.map(i => part(i.label, i.value, i.present)) : [])
+          .concat(L.overhead.declared ? [part('Declared overhead', L.overhead.declared)] : []) },
+    { label: 'Below the line', total: L.btl.total, kind: 'cost', parts: cost(L.btl, 'Other') },
+  ];
+  const maxAbs = Math.max(1, ...groups.flatMap(g => g.parts.map(p => Math.abs(p.value))));
+  const shr = v => NR ? (v / NR * 100).toFixed(1) + '%' : '—';
+  const row = (p, kind) => {
+    const w = Math.abs(p.value) / maxAbs * 100;
+    const cls = kind === 'rev' ? (p.value < 0 ? 'neg' : 'pos') : 'cost';
+    return `<div class="pr ${cls}" title="${esc(p.label + ': ' + money(p.value, false) + ' · ' + shr(p.value) + ' of net revenue')}">
+      <div class="pr-l">${esc(p.label)}</div>
+      <div class="pr-t"><i style="left:0;width:${w.toFixed(1)}%"></i></div>
+      <div class="pr-v">${money(p.value)}<small>${shr(p.value)}</small></div></div>`;
+  };
+  el.innerHTML = groups.map(g => {
+    const rows = g.parts.filter(p => p.value || p.present).map(p => row(p, g.kind)).join('');
+    return `<div class="pgrp"><span class="pg-n">${esc(g.label)}</span><span class="pg-v">${money(g.total)}</span><span class="pg-s">${shr(g.total)}</span></div>${rows || '<div class="pr cost"><div class="pr-l" style="color:var(--muted)">no lines in the sheet</div><div class="pr-t"></div><div class="pr-v">—</div></div>'}`;
+  }).join('');
+  note.textContent = `${rg.label} · every waterfall element, split into its lines`;
+  foot.textContent = 'Each bar is that line as a share of net revenue; costs are shown at their size. Net revenue’s own lines — gross sales, GST, returns — build up to it.';
 }
 
 /* ---- the benchmark, explained ---- */
@@ -272,7 +317,8 @@ function renderBench({ BM, fy, L, rg }) {
   el.innerHTML = ladder + `<div class="sbwrap"><div class="sbhead">Seasonal shape <small>mean GPAM rate by calendar month · line = target</small></div>${bars}</div>`;
   note.textContent = `set on ${BM.n} complete months, ${BM.first ? MONTH_ABBR[+BM.first.slice(5, 7) - 1] + ' ' + BM.first.slice(0, 4) : ''} → ${BM.last ? MONTH_ABBR[+BM.last.slice(5, 7) - 1] + ' ' + BM.last.slice(0, 4) : ''}`;
   foot.textContent = `Complete months ran ${pct(r.min)} to ${pct(r.max)} (median ${pct(r.median)}). The target is what the business actually converts, over a full year of seasons; the floor is a rate beaten three months in four. FY figures apply the forecast's three scenarios.`;
-  document.getElementById('rightTitle').innerHTML = 'The <span>Benchmark</span>';
+  el.className = 'bridge';
+  document.getElementById('rightTitleText').innerHTML = 'The <span>Benchmark</span>';
 }
 
 /* ---- live ---- */
@@ -292,7 +338,13 @@ async function tryLiveRefresh() {
 function wire() {
   document.querySelectorAll('#winSeg button').forEach(b => b.onclick = () => { S.win = b.dataset.win; render(); });
   document.querySelectorAll('#cmpSeg button').forEach(b => b.onclick = () => { S.cmp = b.dataset.cmp; render(); });
-  document.querySelectorAll('#rightSeg button').forEach(b => b.onclick = () => { S.right = b.dataset.view; document.querySelectorAll('#rightSeg button').forEach(x => x.classList.toggle('active', x === b)); document.getElementById('rightTitle').innerHTML = S.right === 'bench' ? 'The <span>Benchmark</span>' : 'Why GPAM <span>Moved</span>'; render(); });
+  document.querySelectorAll('#rightSeg button').forEach(b => b.onclick = () => { S.right = b.dataset.view; document.querySelectorAll('#rightSeg button').forEach(x => x.classList.toggle('active', x === b)); render(); });
+  /* Collapse / expand the two bottom panels — a caret in each title. */
+  document.querySelectorAll('.collapser').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const panel = b.closest('.panel'), open = panel.classList.toggle('collapsed');
+    b.setAttribute('aria-expanded', open ? 'false' : 'true');
+  });
   window.addEventListener('resize', () => { clearTimeout(window._rz); window._rz = setTimeout(render, 200); });
 }
 (function init() {
