@@ -58,7 +58,9 @@ function render() {
   const list = rows(); const anchor = anchorOf(list); if (!anchor) return;
   const rg = G.period(S.win, anchor, S.cmp);
   const cur = list.filter(r => G.inRange(r, rg) && !r.pending);
-  const prevRows = list.filter(r => G.inRange(r, rg.prev));
+  /* Same filter as `cur` above: comparing a clean period against a dirty one
+     (revenue typed, costs not) flatters whichever side keeps the pending days. */
+  const prevRows = list.filter(r => G.inRange(r, rg.prev) && !r.pending);
   const cov = G.coverage(list, rg.prev);
   const L = G.layers(cur, { overheadPerDay: OVERHEAD_PER_DAY });
   const P = cov.ok ? G.layers(prevRows, { overheadPerDay: OVERHEAD_PER_DAY }) : null;
@@ -107,8 +109,8 @@ function renderKpis({ list, anchor, rg, L, P, cov, BM, fy }) {
     tile('Gross margin %', pct(L.gmPct), `gross profit <b>${money(L.grossProfit)}</b> · COGS ${money(L.cogs.total)}`, (P ? ptsEl(L.gmPct - P.gmPct) : flat) + `<span class="k-per">${P ? 'vs ' + pct(P.gmPct) + ' ' + (rg.cmp === 'prev' ? 'prior' : 'last yr') : vs}</span>`),
     tile('Contribution margin %', pct(L.cmPct), `contribution <b>${money(L.cm)}</b> · after ads ${money(L.ads.total)} (${pct(L.adsPct)} of net rev · MER ${L.mer ? L.mer.toFixed(2) + '×' : '—'})`, (P ? ptsEl(L.cmPct - P.cmPct) : flat) + `<span class="k-per">${P ? 'vs ' + pct(P.cmPct) + ' ' + (rg.cmp === 'prev' ? 'prior' : 'last yr') : vs}</span>`),
     tile('GPAM $ · ' + (rg.win === 'FYTD' ? rg.label : rg.label.toLowerCase()), money(L.gpam), `contribution − marketing overhead${L.overhead.total ? ' ' + money(L.overhead.total) : ' (no line in the sheet · $0)'}`, (P ? deltaEl(L.gpam, P.gpam) : flat) + `<span class="k-per">${P ? 'vs ' + money(P.gpam) + ' ' + (rg.cmp === 'prev' ? 'prior' : 'last yr') : vs}</span>`, (L.gpam < 0 ? 'bad ' : '') + 'accent'),
-    tile('GPAM %', pct(L.gpamPct), `GPAM ÷ net revenue · benchmark <b>${pct(bw.target)}</b>${bw.target != null && L.gpamPct != null ? ' · ' + ptsEl(L.gpamPct - bw.target) : ''}`, (P ? ptsEl(L.gpamPct - P.gpamPct) : flat) + `<span class="k-per">${P ? 'vs ' + pct(P.gpamPct) + (rg.cmp === 'prev' ? ' prior' : ' last yr') + ' · ' : ''}${benchWord(L.gpamPct, bw)}</span>`, benchCls(L.gpamPct, bw) + ' accent'),
-    fy ? tile('GPAM $ · ' + fy.label, money(fy.total), `to date <b>${money(fy.actual)}</b> · forecast ${money(fy.fc)} to 30 Jun`, `<span class="delta flat">forecast</span><span class="k-per">floor ${money(fy.floor)} · target ${money(fy.total)} · stretch ${money(fy.stretch)}</span>`)
+    tile('GPAM %', pct(L.gpamPct), `GPAM ÷ net revenue · seasonal benchmark <b>${pct(bw.target)}</b>${bw.target != null && L.gpamPct != null ? ' · ' + ptsEl(L.gpamPct - bw.target) : ''}`, (P ? ptsEl(L.gpamPct - P.gpamPct) : flat) + `<span class="k-per">${P ? 'vs ' + pct(P.gpamPct) + (rg.cmp === 'prev' ? ' prior' : ' last yr') + ' · ' : ''}${benchWord(L.gpamPct, bw)}</span>`, benchCls(L.gpamPct, bw) + ' accent'),
+    fy ? tile('GPAM $ · ' + fy.label, money(fy.total), `to date <b>${money(fy.actual)}</b> · forecast ${money(fy.fc)} to 30 Jun`, `<span class="delta flat">forecast</span><span class="k-per">low ${money(fy.floor)} · expected ${money(fy.total)} · high ${money(fy.stretch)}</span>`)
        : tile('GPAM $ · financial year', money(fyActual(list, anchor)), 'to date', '<span class="delta flat">no forecast engine</span>'),
   ].join('');
 }
@@ -121,7 +123,7 @@ function benchFor(BM, list, rg) {
   return BM.forWindow(Object.keys(by).map(m => ({ month: +m, netRevenue: by[m] })));
 }
 const ptsEl = d => `<span class="delta ${d > 0.05 ? 'up' : d < -0.05 ? 'down' : 'flat'}">${d > 0 ? '+' : ''}${d.toFixed(1)} pts</span>`;
-const benchCls = (v, bw) => v == null || bw.target == null ? '' : v < bw.floor ? 'bad' : v >= bw.stretch ? 'good' : v >= bw.target ? 'good' : 'warn';
+const benchCls = (v, bw) => v == null || bw.target == null ? '' : v < bw.floor ? 'bad' : v >= bw.target ? 'good' : 'warn';
 const benchWord = (v, bw) => v == null || bw.target == null ? '' : v < bw.floor ? 'below floor ' + pct(bw.floor) : v >= bw.stretch ? 'at stretch ' + pct(bw.stretch) : v >= bw.target ? 'above target' : 'between floor and target';
 
 /* FY to date actual plus the realistic forecast to 30 June, on the same
@@ -189,7 +191,7 @@ function renderMonths({ list, anchor, BM }) {
     const cur = list.filter(r => G.inRange(r, rg) && !r.pending); if (!cur.length) return;
     const L = G.layers(cur, { overheadPerDay: OVERHEAD_PER_DAY }); tot = tot.concat(cur);
     const cov = G.coverage(list, rg.prev);
-    const P = cov.ok ? G.layers(list.filter(r => G.inRange(r, rg.prev)), { overheadPerDay: OVERHEAD_PER_DAY }) : null;
+    const P = cov.ok ? G.layers(list.filter(r => G.inRange(r, rg.prev) && !r.pending), { overheadPerDay: OVERHEAD_PER_DAY }) : null;
     const isCur = ym === anchor.slice(0, 7);
     const bm = BM.forMonth(+ym.slice(5, 7));
     html += `<div class="trow gp${isCur ? ' cur' : ''}" title="${esc(MONTH_ABBR[+ym.slice(5, 7) - 1] + ' ' + ym.slice(0, 4) + ': ' + L.days + ' days · net revenue ' + money(L.netRevenue, false) + ' · GPAM ' + money(L.gpam, false) + (P ? ' · last year ' + money(P.gpam, false) : ''))}">
@@ -203,7 +205,7 @@ function renderMonths({ list, anchor, BM }) {
   if (tot.length) {
     const T = G.layers(tot, { overheadPerDay: OVERHEAD_PER_DAY });
     const fy = G.period('FYTD', anchor); const cov = G.coverage(list, fy.prev);
-    const P = cov.ok ? G.layers(list.filter(r => G.inRange(r, fy.prev)), { overheadPerDay: OVERHEAD_PER_DAY }) : null;
+    const P = cov.ok ? G.layers(list.filter(r => G.inRange(r, fy.prev) && !r.pending), { overheadPerDay: OVERHEAD_PER_DAY }) : null;
     const bw = benchFor(BM, list, fy);
     html += `<div class="trow gp tot"><div class="pname">${fy.label.toUpperCase()}</div>
       <div class="num">${money(T.netRevenue)}</div><div class="num">${pct(T.gmPct, 0)}</div><div class="num">${pct(T.adsPct, 0)}</div>
@@ -212,7 +214,11 @@ function renderMonths({ list, anchor, BM }) {
       <div class="num">${P ? deltaEl(T.gpam, P.gpam) : '<span class="delta flat">—</span>'}</div></div>`;
   }
   wrap.innerHTML = html;
-  document.getElementById('monthsNote').textContent = `FY from 1 July · bench = the seasonal GPAM rate for that month, floor ${pct(BM.ladder.floor)} → stretch ${pct(BM.ladder.stretch)} around it · * no prior year for that month`;
+  /* BENCH is the month's OWN seasonal rate; the all-month ladder is a different
+     number and used to be quoted here as if it were the same one. Name both. */
+  const band = BM.ladder.target != null && BM.ladder.floor != null ? (BM.ladder.target - BM.ladder.floor).toFixed(1) : '—';
+  document.getElementById('monthsNote').textContent =
+    `FY from 1 July · BENCH = that month's own seasonal GPAM rate, floor and stretch ±${band} pts around it · all-month ladder ${pct(BM.ladder.target)} (floor ${pct(BM.ladder.floor)} · stretch ${pct(BM.ladder.stretch)}) · * no prior year for that month`;
 }
 
 /* ---- the formulation ---- */
@@ -314,7 +320,7 @@ function renderBench({ BM, fy, L, rg }) {
   const bars = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6].map(m => { const sx = BM.seasonal[m]; const w = Math.max(1.5, (sx.rate || 0) / maxR * 100);
     const tgt = lad.target != null ? Math.min(100, lad.target / maxR * 100) : null;
     return `<div class="sb${sx.observed ? '' : ' est'}" title="${esc(MONTH_ABBR[m - 1] + ': ' + (sx.observed ? pct(sx.rate) + ' mean of ' + sx.years.join(', ') : 'no prior ' + MONTH_ABBR[m - 1] + ' — target rate used'))}"><span class="sb-l">${MONTH_ABBR[m - 1]}</span><span class="sb-t"><i style="width:${w.toFixed(1)}%"></i>${tgt != null ? `<u style="left:${tgt.toFixed(1)}%"></u>` : ''}</span><span class="sb-v">${pct(sx.rate, 1)}${sx.observed ? '' : '*'}</span></div>`; }).join('');
-  el.innerHTML = ladder + `<div class="sbwrap"><div class="sbhead">Seasonal shape <small>mean GPAM rate by calendar month · line = target</small></div>${bars}</div>`;
+  el.innerHTML = ladder + `<div class="sbwrap"><div class="sbhead">Seasonal shape <small>mean GPAM rate by calendar month · line = all-month target</small></div>${bars}</div>`;
   note.textContent = `set on ${BM.n} complete months, ${BM.first ? MONTH_ABBR[+BM.first.slice(5, 7) - 1] + ' ' + BM.first.slice(0, 4) : ''} → ${BM.last ? MONTH_ABBR[+BM.last.slice(5, 7) - 1] + ' ' + BM.last.slice(0, 4) : ''}`;
   foot.textContent = `Complete months ran ${pct(r.min)} to ${pct(r.max)} (median ${pct(r.median)}). The target is what the business actually converts, over a full year of seasons; the floor is a rate beaten three months in four. FY figures apply the forecast's three scenarios.`;
   el.className = 'bridge';

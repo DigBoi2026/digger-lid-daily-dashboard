@@ -10,6 +10,11 @@ const rows = [day('2026-09-01'), day('2026-09-02'), day('2026-09-03')];
 const L = G.layers(rows);
 ok('layers: net revenue = ex GST less returns', L.netRevenue === 3000 && L.gst === 300, [L.netRevenue, L.gst]);
 ok('layers: COGS uses the sheet total and lists six lines', L.cogs.total === 1260 && L.cogs.items.length === 6 && L.cogs.other === 0, L.cogs);
+/* MER must sit on the SAME revenue base as adsPct and every other rate on the
+   page. Net revenue 3000 over ad spend 750 is 4.0x; gross sales (3300, inc GST)
+   would read 4.4x — ~10% flattering, and inconsistent with the "% of net rev"
+   printed beside it. */
+ok('layers: MER is net revenue over ad spend, not gross sales', near(L.mer, 4) && !near(L.mer, 4.4), L.mer);
 ok('layers: gross profit and GM%', L.grossProfit === 1740 && near(L.gmPct, 58), [L.grossProfit, L.gmPct]);
 ok('layers: advertising total and %', L.ads.total === 750 && near(L.adsPct, 25), L.ads.total);
 ok('layers: contribution margin', L.cm === 990 && near(L.cmPct, 33), L.cm);
@@ -72,6 +77,14 @@ ok('benchmark: forMonth carries the offsets', (() => { const f = Bm.forMonth(11)
 ok('benchmark: forWindow is revenue-weighted', near(Bm.forWindow([{ month: 7, netRevenue: 100 }, { month: 11, netRevenue: 300 }]).target, (10.5 * 100 + 22 * 300) / 400));
 ok('benchmark: rates min/max span the months', near(Bm.rates.min, 10) && near(Bm.rates.max, 23));
 ok('benchmark: with under a year it falls back to the all-months rate', (() => { const B3 = G.benchmark(brows.filter(r => r.date >= '2026-03-01'), '2026-09-08'); return B3.t12 === null && B3.ladder.target != null; })());
+/* The floor is drawn from complete months, which exclude pending days. The
+   target must exclude them too, or one ladder is measured on two books: a day
+   with revenue typed and costs not would lift the target and nothing else. */
+ok('benchmark: a pending day moves neither the target nor the floor', (() => {
+  const dirty = brows.concat([day('2026-09-09', { revenue: 110000, revExGst: 100000, totalVC: 0, prodCost: 0, shipCost: 0, packaging: 0, txnFees: 0, merchFees: 0, totalAds: 0, metaTotal: 0, google: 0, tiktok: 0, pending: true })]);
+  const Bd = G.benchmark(dirty, '2026-09-09'), Bc = G.benchmark(brows, '2026-09-09');
+  return near(Bd.ladder.target, Bc.ladder.target) && near(Bd.ladder.floor, Bc.ladder.floor);
+})());
 
 console.log(`gpam: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
