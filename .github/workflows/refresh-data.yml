@@ -1,27 +1,27 @@
-# Saves the immutable history so the live routes don't re-pull two years of
-# Shopify data on every cache miss — the thing that exhausts the rate-limit
-# bucket. Once a day it pulls the full history, commits data/history/*.json, and
-# the routes serve those snapshots with zero Shopify queries until the next run.
+# Keeps the board's fallback data honest. Two independent jobs, because they need
+# different credentials and either is useful without the other:
 #
-# A GitHub Action, not Vercel Cron: Cron on Hobby fires once a day and a bad
-# `crons` block can take the site down, whereas this is isolated and emails the
-# owner on failure.
+#   snapshots  the committed fallbacks each page ships (region_data.js,
+#              pulse_data.js). Pulled from the DEPLOYED API, so the only secret
+#              is DASHBOARD_PASSWORD — the site gate. This is the job that fixes
+#              the real failure: source/build_region.js made no network call at
+#              all, so region_data.js froze on 2026-07-02 and stayed frozen for
+#              eighty-one days while every page rendered it as current.
 #
-# Setup is ONE repo secret (Settings → Secrets and variables → Actions →
-# New repository secret):
-#   SHOPIFY_TOKEN   the shpat_… Admin API token — the same one the live site
-#                   carries in Vercel (client-credentials does not work here:
-#                   the app and store are in different Shopify organisations).
-# The store subdomain and API version are non-secret and are set in plain text
-# in the job below, so there is nothing else to add.
+#   history    the immutable Shopify history the live routes serve instead of
+#              re-pulling two years on every cache miss. Needs SHOPIFY_TOKEN.
+#
+# Each job SKIPS cleanly when its secret is absent rather than failing, so adding
+# one secret gets you one working job instead of a red workflow.
+#
+# Secrets (Settings -> Secrets and variables -> Actions):
+#   DASHBOARD_PASSWORD   the current SITE_PASSWORD        -> snapshots job
+#   SHOPIFY_TOKEN        the shpat_... Admin API token    -> history job
 name: refresh-data
 
 on:
-  # Daily schedule is PARKED until the SHOPIFY_TOKEN secret is added — without it
-  # every run fails and emails the owner. Re-enable by uncommenting the two lines
-  # below once the token is in place.
-  # schedule:
-  #   - cron: '20 18 * * *'    # 04:20 AEST daily, well clear of trading hours
+  schedule:
+    - cron: '20 18 * * *'      # 04:20 AEST daily, well clear of trading hours
   workflow_dispatch:
 
 permissions:
@@ -32,32 +32,83 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  snapshots:
+    name: Refresh committed snapshots
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Rebuild snapshots
+
+      - name: Report freshness before
+        run: node source/check_snapshots.js || true
+
+      - name: Rebuild from the live API
+        id: build
         env:
-          # Store subdomain and API version are non-secret, so they live here in
-          # plain sight. The ONE secret the job needs is SHOPIFY_TOKEN — the same
-          # shpat_… Admin API token the live site uses. The client-credentials
+          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
+          DASHBOARD_USER: ${{ secrets.DASHBOARD_USER }}
+        run: |
+          if [ -z "${DASHBOARD_PASSWORD:-}" ]; then
+            echo "::notice title=snapshots skipped::DASHBOARD_PASSWORD is not set, so the committed snapshots cannot be refreshed."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          node source/build_snapshots.js
+
+      - name: Commit any changes
+        if: steps.build.outputs.skipped != 'true'
+        run: |
+          git config user.name "digboi-data-bot"
+          git config user.email "bot@diggerlid.com"
+          git add region_data.js pulse_data.js
+          if git diff --cached --quiet; then
+            echo "No snapshot changes."
+          else
+            git commit -m "chore(data): refresh committed snapshots"
+            git push
+          fi
+
+      # After the refresh this must pass. A snapshot still over budget here means
+      # the rebuild did not actually move it, which is the thing worth shouting about.
+      - name: Freshness gate
+        if: steps.build.outputs.skipped != 'true'
+        run: node source/check_snapshots.js
+
+  history:
+    name: Rebuild Shopify history cache
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Rebuild history
+        id: hist
+        env:
+          # Store subdomain and API version are non-secret. The client-credentials
           # grant is NOT usable here: Shopify rejects it because the DASHBOARD
           # CONNECT app and the store are in different organisations (HTTP 400),
-          # which is exactly why the site carries a pre-minted token.
+          # which is why a pre-minted token is the one that works.
           SHOPIFY_STORE: digger-lid
           SHOPIFY_API_VERSION: '2026-07'
           SHOPIFY_TOKEN: ${{ secrets.SHOPIFY_TOKEN }}
-        run: node source/build_history.js
+        run: |
+          if [ -z "${SHOPIFY_TOKEN:-}" ]; then
+            echo "::notice title=history skipped::SHOPIFY_TOKEN is not set, so the history cache cannot be rebuilt."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          node source/build_history.js
       - name: Commit any changes
+        if: steps.hist.outputs.skipped != 'true'
         run: |
           git config user.name "digboi-data-bot"
           git config user.email "bot@diggerlid.com"
           git add data/history
           if git diff --cached --quiet; then
-            echo "No snapshot changes."
+            echo "No history changes."
           else
             git commit -m "chore(data): refresh history snapshots"
             git push

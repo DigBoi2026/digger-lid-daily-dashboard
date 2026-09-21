@@ -348,6 +348,7 @@ async function tryLive(){
   G = mergeGrid(HIST, null);
   if(!G){ document.getElementById('errBox').classList.add('show'); return; }
   wire(); render(); setLive('snap');
+  DLcore.stampSnapshotAge(HIST && HIST.meta, null, 21);   // immutable history, topped up live — longer leash
   if(window.DLmotion) DLmotion.entrance();
   tryLive();
 })();

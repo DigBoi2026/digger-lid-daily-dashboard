@@ -541,6 +541,7 @@ function step(dir){ const i=allDays.indexOf(S.day)+dir;
   window.addEventListener('keydown',e=>{ if(e.key==='ArrowLeft')step(-1); if(e.key==='ArrowRight')step(1); });
   window.addEventListener('resize',()=>{clearTimeout(window._rz);window._rz=setTimeout(render,200);});
   render(); setLive('snap');
+  DLcore.stampSnapshotAge(PULSE && PULSE.meta);   // how old the committed pulse snapshot is
   if(window.DLmotion) DLmotion.entrance();
   tryLive();
   // Keep it current: re-pull every 20 min, and whenever the tab regains focus. tryLive

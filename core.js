@@ -262,9 +262,66 @@ var DLcore = (function () {
     return out;
   }
 
+  /* ---------------------------------------------------------- snapshot age
+
+     Every committed snapshot is a fallback the board shows when the live route
+     cannot be reached, and a fallback that cannot say how old it is will sit
+     there looking current. region_data.js did exactly that: a hard-coded
+     asOf of "2026-07-02" inside a builder with no network call at all, so it
+     froze for eighty-one days and nothing on the page, in the watchdog, or in
+     the build ever said a word.
+
+     One contract, used by the pages, the builder and the watchdog: read
+     meta.asOf (or meta.builtAt), say how old it is, and grade it. A snapshot
+     that declares meta.static is closed by design (last year's book) and is
+     never stale. */
+  const SNAP_BUDGET = { fresh: 2, aging: 7 };
+  /* `staleAfter` is how many days this PARTICULAR snapshot is allowed. A
+     products history the page tops up live earns a longer leash than a geo
+     fallback; passing it here keeps the chip on the page and the freshness gate
+     in CI reading from one number instead of quietly disagreeing. */
+  function snapshotAge(meta, now, staleAfter) {
+    const m = meta || {};
+    if (m.static === true) return { asOf: m.asOf || null, days: null, level: 'static', label: 'static by design' };
+    /* Snapshots name their build date four different ways; accept all of them
+       rather than let a file look ageless because it said builtOn. */
+    const raw = m.asOf || m.builtAt || m.builtOn || m.snapshotDate || m.extractedOn || m.generatedAt || null;
+    const asOf = raw ? String(raw).slice(0, 10) : null;
+    if (!asOf || !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) {
+      return { asOf: null, days: null, level: 'unknown', label: 'age not declared' };
+    }
+    const today = typeof now === 'string' ? now : todayAEST(now);
+    const days = Math.round((Date.parse(today + 'T00:00:00Z') - Date.parse(asOf + 'T00:00:00Z')) / 86400000);
+    const limit = Number.isFinite(staleAfter) ? staleAfter : SNAP_BUDGET.aging;
+    const level = days <= Math.min(SNAP_BUDGET.fresh, limit) ? 'fresh' : days <= limit ? 'aging' : 'stale';
+    const label = days <= 0 ? 'today' : days === 1 ? '1 day old' : days + ' days old';
+    return { asOf, days, level, label };
+  }
+
+  /* Put that age on the page, next to the live pill. Written as its own chip
+     rather than into #liveText because every page's setLive() rewrites that
+     text on each call and would wipe it. */
+  function stampSnapshotAge(meta, now, staleAfter) {
+    if (typeof document === 'undefined') return null;
+    const pill = document.getElementById('livePill'); if (!pill) return null;
+    let chip = pill.querySelector('.snapage');
+    /* null clears it — a page that reaches the live route is no longer on the
+       snapshot, so its age stops being the thing to say. */
+    if (!meta) { if (chip) chip.remove(); return null; }
+    const a = snapshotAge(meta, now, staleAfter);
+    if (a.level === 'fresh' || a.level === 'static') { if (chip) chip.remove(); return a; }
+    if (!chip) { chip = document.createElement('span'); chip.className = 'snapage'; pill.appendChild(chip); }
+    chip.className = 'snapage ' + a.level;
+    chip.textContent = a.level === 'unknown' ? '?' : a.label.replace(' days old', 'd').replace('1 day old', '1d');
+    chip.title = a.asOf ? `Fallback snapshot built ${a.asOf} — ${a.label}. The live route is what refreshes it.`
+                        : 'This snapshot does not declare when it was built.';
+    return a;
+  }
+
   return { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline,
            pendingOf, isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE,
-           windowBaselines, todayAEST, previousDayAEST, shopifyFill, AEST_TZ, weeklyBuckets , yearBack, sameDatesLastYear };
+           windowBaselines, todayAEST, previousDayAEST, shopifyFill, AEST_TZ, weeklyBuckets , yearBack, sameDatesLastYear,
+           snapshotAge, stampSnapshotAge, SNAP_BUDGET };
 })();
 
 if (typeof window !== 'undefined') window.DLcore = DLcore;                       // browser

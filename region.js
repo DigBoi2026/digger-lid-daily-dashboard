@@ -346,7 +346,7 @@ async function tryLive(){
   try{
     const r=await fetch('/api/shopify?dataset=region'); if(!r.ok) throw 0;
     const j=await r.json(); if(!j||j.error||!j.au||!j.countryMonthly) throw 0;
-    R=window.DL_REGION=j;
+    R=window.DL_REGION=j; DLcore.stampSnapshotAge(null);   // live now — age no longer the story
     document.getElementById('footSource').innerHTML=`Source: ${R.meta.source} · <b>${R.meta.currency}</b> · ${R.meta.window}`;
     render(); setLive('live');
   }catch(e){ setLive('snap'); }   // 404 locally / any error → embedded snapshot
@@ -365,6 +365,7 @@ async function tryGeo(){
   if(!R){ document.getElementById('errBox').classList.add('show'); return; }
   document.getElementById('footSource').innerHTML=`Source: ${R.meta.source} · <b>${R.meta.currency}</b> · ${R.meta.window}`;
   wire(); render(); setLive('snap');
+  DLcore.stampSnapshotAge(R.meta);   // say how old the fallback is, on the pill
   if(window.DLmotion) DLmotion.entrance();
   tryLive(); tryGeo();
 })();

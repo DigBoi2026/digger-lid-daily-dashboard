@@ -145,5 +145,36 @@ const daily = Array.from({ length: 181 }, (_, i) => ({ date: '2026-01-01', v: i 
   ok('...but a field present on one day sums', someF[0].fcRev === 500, someF[0].fcRev);
 })();
 
+/* ---- snapshot age -------------------------------------------------------
+   The committed fallbacks are the board's last line of defence, and one of them
+   (region_data.js) sat 81 days stale behind a hard-coded asOf while every page
+   rendered it as current. These pin the contract that makes that impossible. */
+const SA = (m, t) => C.snapshotAge(m, t);
+ok('snapshotAge: within budget is fresh', SA({ asOf: '2026-09-20' }, '2026-09-21').level === 'fresh');
+ok('snapshotAge: a few days on is aging', SA({ asOf: '2026-09-16' }, '2026-09-21').level === 'aging');
+ok('snapshotAge: past the budget is stale', SA({ asOf: '2026-07-02' }, '2026-09-21').level === 'stale');
+ok('snapshotAge: counts the days exactly', SA({ asOf: '2026-07-02' }, '2026-09-21').days === 81,
+   SA({ asOf: '2026-07-02' }, '2026-09-21').days);
+ok('snapshotAge: a snapshot that declares no date is unknown, not fresh',
+   SA({ source: 'x' }, '2026-09-21').level === 'unknown');
+ok('snapshotAge: junk in asOf is unknown, not NaN days',
+   SA({ asOf: 'sometime' }, '2026-09-21').level === 'unknown');
+ok('snapshotAge: static by design is never stale', SA({ static: true }, '2026-09-21').level === 'static');
+/* Snapshots name their build date four different ways; a file must not look
+   ageless merely because it said builtOn instead of asOf. */
+ok('snapshotAge: reads builtOn', SA({ builtOn: '2026-09-11' }, '2026-09-21').days === 10);
+ok('snapshotAge: reads builtAt', SA({ builtAt: '2026-09-11T03:00:00Z' }, '2026-09-21').days === 10);
+ok('snapshotAge: reads snapshotDate', SA({ snapshotDate: '2026-09-11' }, '2026-09-21').days === 10);
+ok('snapshotAge: asOf wins over the others', SA({ asOf: '2026-09-20', builtOn: '2026-01-01' }, '2026-09-21').days === 1);
+ok('snapshotAge: a snapshot from today reads today', SA({ asOf: '2026-09-21' }, '2026-09-21').label === 'today');
+/* A per-snapshot budget so the chip on the page and the gate in CI cannot
+   disagree: products_history is topped up live and earns 21 days. */
+ok('snapshotAge: a longer budget keeps a 10-day file out of stale',
+   C.snapshotAge({ builtOn: '2026-09-11' }, '2026-09-21', 21).level === 'aging');
+ok('snapshotAge: the default budget calls the same file stale',
+   C.snapshotAge({ builtOn: '2026-09-11' }, '2026-09-21').level === 'stale');
+ok('snapshotAge: past a custom budget is stale',
+   C.snapshotAge({ asOf: '2026-08-01' }, '2026-09-21', 21).level === 'stale');
+
 console.log(`\ncore.js: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

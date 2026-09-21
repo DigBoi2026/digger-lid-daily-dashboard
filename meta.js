@@ -391,6 +391,7 @@ async function tryLive(){
   document.querySelectorAll('#refSeg button').forEach(b=>b.onclick=()=>{ S.ref=b.dataset.ref; renderRef(); });
   window.addEventListener('resize',()=>{clearTimeout(window._rz);window._rz=setTimeout(render,200);});
   render(); setLive('snap');
+  DLcore.stampSnapshotAge(SNAP && SNAP.meta, null, 45);   // 90-day benchmark pull, not a daily figure
   if(window.DLmotion) DLmotion.entrance();
   tryLive();
 })();

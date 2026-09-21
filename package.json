@@ -8,7 +8,9 @@
     "deploy": "vercel --prod",
     "test": "node source/test_core.js && node source/test_data_filter.js && node source/test_api_data.js && node source/test_pending.js && node source/test_pace.js && node source/test_middleware.mjs && node source/test_ai_access.js && node source/test_ai_routes.js && node source/test_shopify_token.js && node source/test_forecast.js && node source/test_watchdog.js && node source/test_shopify_geo.js && node source/test_shopify_customers.js && node source/test_pulse.js && node source/test_meta.js && node source/test_meta_route.js && node source/test_gpam.js && node source/test_history_cache.js",
     "snapshot": "python3 source/build_data.py",
-    "export": "node source/export_forecast.js --out source/forecast_bundle.json && python3 source/export_forecast.py source/forecast_bundle.json DiggerLid_Forecast.xlsx"
+    "export": "node source/export_forecast.js --out source/forecast_bundle.json && python3 source/export_forecast.py source/forecast_bundle.json DiggerLid_Forecast.xlsx",
+    "snapshots": "node source/build_snapshots.js",
+    "snapshots:check": "node source/check_snapshots.js"
   },
   "dependencies": {
     "googleapis": "^144.0.0"
