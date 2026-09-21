@@ -160,8 +160,8 @@ curl -H "Authorization: Bearer $CRON_SECRET" \
 | Data | Source | Freshness | Notes |
 |---|---|---|---|
 | Daily P&L (Daily Ops, Performance) | `data.js` — Ecommerce Equation 7.1 sheet | **Snapshot** (Jan 1 – Jun 30 2026) | 181 daily rows + 6 monthly. Regenerate with `build_data.py`. |
-| Shopify product/category sales | `shopify_data.js` | **Snapshot** | 62 daily rows + rolling windows (3/7/30/90/12M) + 12-month monthly. 3-day window built by `build_win3.js`. |
-| Category × month net sales (trend chart) | `shopify_data.js` → `catMonthly` | **Snapshot** (Jul '25 – Jun '26) | Per-category monthly net sales. Regenerate with `build_cat_monthly.py`. |
+| Shopify product/category sales | `shopify_data.js` | **ORPHANED — not loaded** | No page includes this file and nothing reads `window.DL_SHOPIFY`; the Products page moved to `products_history.js`. `build_win3.js` and `build_cat_monthly.py` still write to it. Wire it up or delete it — `npm run snapshots:check` reports it every run. |
+| Category × month net sales (trend chart) | `shopify_data.js` → `catMonthly` | **ORPHANED — not loaded** | See above: the file is no longer included by any page. |
 | Live sheet pull (when deployed) | `api/data.js` (Vercel serverless) | Daily, up to yesterday | Merges into the embedded history so 90D/12M stay intact. |
 | Prior-year P&L (Forecast) | `prior_year.js` — Ecommerce Equation 6.0 workbook | **Static, by design** | 276 daily rows over 9 months of 2025. The year is closed, so there is nothing to refresh. Feb–Apr 2025 were never filled in and are absent rather than zeroed. Regenerate with `build_prior_year.py <2025.xlsx>`. |
 

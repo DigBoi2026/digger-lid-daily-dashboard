@@ -336,7 +336,95 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .ptable .share{font-size:1.1cqh;color:var(--muted);text-align:right}
 .mom.up{color:var(--good)} .mom.down{color:var(--bad)} .mom.flat{color:var(--muted)}
 
-@media (max-width:700px){ #stage{grid-template-rows:auto;height:auto;overflow:auto} }
+/* ============ NARROW / PHONE ============
+   This used to be one line — `#stage{height:auto}` — and it blanked the board.
+   #stage is `container-type:size`, which needs a DEFINITE height on both axes;
+   with height:auto the container collapsed to 29px, so every cqh unit on the
+   page resolved to 0 and the whole dashboard rendered as an empty strip. A
+   phone got a black screen.
+
+   So: keep a definite height (the stage scrolls inside itself), and stack the
+   section grids, which otherwise kept their desktop column counts and pushed
+   the board to ~713px of horizontal overflow in a 390px viewport. */
+@media (max-width:700px){
+  #stageWrap{position:static;padding:0;display:block}
+  #stage{
+    width:100%;
+    height:100svh;                 /* definite, so cqh resolves — do not use auto */
+    /* NOT a grid here. As a grid the sections are items stretched to their
+       track, and an `auto` track containing a grid whose own min-height is 0
+       resolved to 0px: #rgMain and #bottom were zero-height while the 213px
+       panels inside them overflowed and painted straight over the footer.
+       Block flow sizes each section to its content and the whole class of
+       track-sizing subtlety goes away. */
+    display:block;
+    overflow:auto;
+    border-radius:0;border-left:0;border-right:0;
+    padding:1.4cqh 3cqw;
+  }
+  #stage > * + *{margin-top:1.6cqh}
+  #stage > section{min-height:auto}
+  /* Every section grid goes to one column. */
+  #kpis,#main,#bottom,#plMain,#plBottom,#rgMain,#mtMain,#mtBottom,#gpMain,#gpBottom,
+  #p2main,#p2bottom,
+  .form2,.meta-grid,.nz-stats,.eq-foot,.ladder,.funnel,.rules{
+    grid-template-columns:1fr!important;
+    grid-template-rows:auto!important;
+  }
+  /* Panels stop fighting for a share of a height they no longer have. */
+  #stage section > .panel,#stage .pl-col > .panel{min-height:26cqh;flex:none}
+  .pl-col{gap:1.6cqh}
+  /* Charts need a real box once the rows are auto. */
+  #rgTrendWrap,#stateTrendWrap,#nzWrap,#ctxWrap,#wfWrap,#chartWrap,#mtChartWrap{min-height:30cqh}
+  /* A ten-column table cannot stack into one column and stay a table, so it
+     scrolls inside its own panel instead of widening the whole board — the meta
+     line board alone was pushing the stage to 459px. */
+  .ptable{overflow-x:auto}
+  /* Panel heads and the verdict bar are single flex lines by default; on a phone
+     they wrap instead of setting a floor under the page width. */
+  .p-head,.p-head-right,.verdict,.verdict .v-right{flex-wrap:wrap;row-gap:.5cqh}
+  /* Lists were capped to share a fixed row; on a scrolling page let them run. */
+  .catlist,.momlist,.bridge{max-height:none;overflow:visible}
+  /* The signals table is six fixed columns of figures; stacking it would stop it
+     being a table and squeezing it clipped the numbers, so it scrolls sideways
+     in its own panel like the other wide tables. */
+  .siglist{max-height:none;overflow-x:auto}
+  .sighead{overflow-x:auto}
+  /* The chart button row is the last single-line flex that sets a width floor. */
+  .chartbtns,.chartbtns .seg{flex-wrap:wrap;row-gap:.4cqh}
+  /* NOT .ptable — it keeps its horizontal scroll (set above). Listing it here
+     with `overflow:visible` is what silently cancelled that. */
+  .ptable{max-height:none}
+  .pulse-stage .siglist{max-height:none}
+  /* The header stacks rather than scrolling sideways. The brand+nav row is a
+     flex line that would otherwise hold its full desktop width (455px in a
+     390px viewport) and drag the whole stage sideways with it. */
+  header#top{grid-template-columns:1fr;row-gap:1cqh}
+  .hleft{flex-wrap:wrap;row-gap:.8cqh}
+  .topnav{flex-wrap:wrap}
+  .daynav,.status{flex-wrap:wrap}
+  /* These are capped to a share of a 16:9 stage; on a phone the cap is narrower
+     than the words and clips them. Let them size to their content. */
+  /* Grid and flex items default to a minimum size of their CONTENT, so one long
+     unbreakable item (a KPI tile, the brand+nav row) sets the column width and
+     drags the whole stage past the viewport — meta was 455px wide inside 390.
+     Letting them shrink is what actually contains the page. */
+  #stage > header,#stage > section,#stage > footer,
+  #stage section > *,.hleft,.daynav,.status,.kpi,.panel,
+  .panel > *,.ptable,.catlist,.momlist,.bridge,.form2{min-width:0}
+  /* The per-page caps are written as `.gpam-stage .status .freshness`, which
+     out-specifies a bare `.freshness`; hence the !important. */
+  .freshness,.daynav .datebox,.datebox,
+  .products-stage .daynav .datebox,.meta-stage .daynav .datebox,
+  .gpam-stage .daynav .datebox,.region-stage .datebox,
+  .ops-stage .datebox,.perf-stage .datebox,
+  .meta-stage .status .freshness,.gpam-stage .status .freshness,
+  .ops-stage .status .freshness,.perf-stage .status .freshness,
+  .region-stage .status .freshness,.products-stage .status .freshness{
+    max-width:none!important;min-width:0}
+  .freshness .val,.freshness .lbl,.freshness .pend,
+  .datebox .d,.datebox .dow{white-space:normal;overflow:visible;text-overflow:clip}
+}
 
 
 /* ---------------------------------------------------------------------------
