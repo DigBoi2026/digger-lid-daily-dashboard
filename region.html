@@ -81,6 +81,24 @@
         <div id="rgTrendWrap"><canvas id="auIntlChart"></canvas></div>
       </div>
 
+      <!-- Daily-backed, unlike everything else on this page: the shipping-geo
+           report is monthly, so this panel reads the DAILY country feed
+           (/api/shopify?dataset=geo) and is the only place a 7-day period is
+           honest. AU / NZ / International is all that feed splits into. -->
+      <div class="panel" id="momPanel">
+        <div class="p-head">
+          <div class="p-title">Weekly <span>Momentum</span></div>
+          <div class="p-head-right">
+            <div class="seg tiny" id="momSeg" role="group" aria-label="Momentum period">
+              <button data-days="7" class="active" aria-label="Last 7 days">7D</button>
+              <button data-days="28" aria-label="Last 28 days">28D</button>
+            </div>
+            <div class="p-note" id="momNote">daily feed</div>
+          </div>
+        </div>
+        <div class="momlist" id="momList"></div>
+      </div>
+
       <div class="panel">
         <div class="p-head">
           <div class="p-title">AU by <span>State</span></div>
@@ -118,7 +136,7 @@
       <div class="panel">
         <div class="p-head">
           <div class="p-title">International <span>Mix</span></div>
-          <div class="p-note">non-AU countries · 12 months</div>
+          <div class="p-note" id="intlNote">non-AU countries · net sales</div>
         </div>
         <div class="catlist" id="intlList"></div>
       </div>
@@ -126,7 +144,7 @@
 
     <footer id="foot">
       <div id="footSource">—</div>
-      <div id="footNote">Read-only · Shopify shipping geography</div>
+      <div id="footNote">Read-only · Shopify shipping geography · net sales by shipping address — does not tie to the P&amp;L (no GST, no cost by destination)</div>
     </footer>
 
     <div class="err" id="errBox">

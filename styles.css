@@ -239,7 +239,27 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .sigrow .sdelta{font-size:1.2cqh;font-weight:700;font-variant-numeric:tabular-nums}
 .sigrow .sdelta.dim{color:var(--muted);font-weight:400}
 /* region page */
-#rgMain{display:grid;grid-template-columns:1.5fr 1fr;gap:1.1cqw;min-height:0}
+/* three panels now: the AU/Intl trend, weekly momentum, then the state list */
+#rgMain{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:1.1cqw;min-height:0}
+
+/* Weekly momentum — diverging bars, centred on zero, one row per country. */
+.momlist{display:flex;flex-direction:column;justify-content:space-evenly;gap:.8cqh;flex:1;min-height:0;overflow-y:auto;padding:.4cqh 0}
+.momrow{display:grid;grid-template-columns:7.5cqw 1fr auto;align-items:center;gap:.55cqw}
+.momrow .mom-n{font-size:1.15cqh;font-weight:700;line-height:1.1;min-width:0}
+.momrow .mom-n i{display:block;font-style:normal;font-weight:400;font-size:.9cqh;color:var(--muted);
+  margin-top:.15cqh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.momrow .mom-t{position:relative;height:1.8cqh;background:var(--panel-2);border-radius:.3cqh;min-width:0;overflow:hidden}
+.momrow .mom-t s{position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,.35)}
+.momrow .mom-t i{position:absolute;top:.25cqh;bottom:.25cqh;border-radius:.25cqh;background:var(--muted)}
+.momrow.up .mom-t i{background:var(--good)} .momrow.down .mom-t i{background:var(--bad)}
+.momrow .mom-v{font-size:1.3cqh;font-weight:700;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;line-height:1}
+.momrow.up .mom-v{color:var(--good)} .momrow.down .mom-v{color:var(--bad)}
+.momrow .mom-v small{display:block;font-size:.88cqh;font-weight:400;color:var(--muted);margin-top:.15cqh}
+.momrow.tot{border-top:1px solid var(--line);padding-top:.6cqh}
+.momrow.tot .mom-n{color:var(--dl-yellow)}
+.momempty{font-size:1.05cqh;color:var(--muted);line-height:1.45;padding:.8cqh .7cqw;
+  border:1px dashed var(--line);border-radius:.6cqh}
+.momempty code{font-size:.95cqh;color:var(--dl-white)}
 /* geo row: name · sparkline · net+share, single line (state + international lists) */
 .catrow.rg3{grid-template-columns:1fr 8.5cqw auto;gap:.7cqw}
 .catrow.rg3 .rgspark{width:100%;height:2.5cqh;display:block;position:relative;z-index:1;opacity:.95}
