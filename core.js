@@ -283,6 +283,38 @@ var DLcore = (function () {
     ['region.html',      'Region'],
     ['forecast.html',    'Forecast'],
   ];
+  /* One vocabulary for every period button on the board.
+
+     The labels already carried their unit — "3D", "7D" — so the ambiguity was
+     never in front of the reader. What WAS inconsistent is the spelling of a
+     month: Region said "1 MO / 3 MO / 12 MO" and Products said "12M" for the
+     same concept, on the same board. Labels come from here now, so a page
+     supplies only the values its data can honestly support and cannot invent a
+     third spelling. */
+  const PERIOD_LABEL = {
+    '1': '1D', '3': '3D', '7': '7D', '14': '14D', '30': '30D', '60': '60D', '90': '90D',
+    MTD: 'MTD', LM: 'LAST MO', QTD: 'QTD', YTD: 'YTD', FYTD: 'FYTD', '12M': '12M',
+  };
+  /* Pages whose source data only ever arrives in whole months. Same digits, a
+     different unit, so they get their own map rather than a suffix hack. */
+  const PERIOD_LABEL_MONTHS = { '1': '1M', '3': '3M', '6': '6M', '12': '12M', '24': '24M' };
+  const PERIOD_TITLE = {
+    days: 'Trailing periods in days, ending on the last complete day',
+    months: 'Whole months — this data arrives in monthly buckets',
+  };
+  function labelPeriods(root) {
+    if (typeof document === 'undefined') return;
+    (root || document).querySelectorAll('.seg[data-period]').forEach(seg => {
+      const kind = seg.getAttribute('data-period') === 'months' ? 'months' : 'days';
+      const map = kind === 'months' ? PERIOD_LABEL_MONTHS : PERIOD_LABEL;
+      seg.querySelectorAll('button[data-win]').forEach(b => {
+        const label = map[b.getAttribute('data-win')];
+        if (label) b.textContent = label;
+      });
+      if (!seg.title) seg.title = PERIOD_TITLE[kind];
+    });
+  }
+
   const PILL_HTML = '<span class="dot snap" id="liveDot"></span><span id="liveText">Snapshot</span>';
   /* Pure, so the active-tab logic is unit-testable without a DOM. */
   function navHtml(path) {
@@ -297,6 +329,7 @@ var DLcore = (function () {
     const here = path || (typeof location !== 'undefined' ? location.pathname : 'index.html');
     const nav = document.querySelector('nav.topnav');
     if (nav && !nav.children.length) nav.innerHTML = navHtml(here);
+    labelPeriods();
     const pill = document.getElementById('livePill');
     if (pill && !pill.children.length) {
       pill.classList.add('livepill');
@@ -398,7 +431,7 @@ var DLcore = (function () {
            windowBaselines, todayAEST, previousDayAEST, shopifyFill, AEST_TZ, weeklyBuckets , yearBack, sameDatesLastYear,
            snapshotAge, stampSnapshotAge, SNAP_BUDGET,
            money, pct, pctSigned, numf, esc,
-           NAV, navHtml, mountShell };
+           NAV, navHtml, mountShell, labelPeriods, PERIOD_LABEL, PERIOD_LABEL_MONTHS };
 })();
 
 if (typeof window !== 'undefined') {

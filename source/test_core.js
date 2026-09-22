@@ -145,6 +145,21 @@ const daily = Array.from({ length: 181 }, (_, i) => ({ date: '2026-01-01', v: i 
   ok('...but a field present on one day sums', someF[0].fcRev === 500, someF[0].fcRev);
 })();
 
+/* ---- period vocabulary --------------------------------------------------
+   The labels always carried their unit; what differed was the SPELLING of a
+   month — Region said "12 MO", Products said "12M", same concept, same board.
+   The invariant worth pinning is that the two maps agree. */
+ok('period: a month is spelled the same way in both maps',
+   C.PERIOD_LABEL['12M'] === C.PERIOD_LABEL_MONTHS['12'], [C.PERIOD_LABEL['12M'], C.PERIOD_LABEL_MONTHS['12']]);
+ok('period: days carry D', C.PERIOD_LABEL['3'] === '3D' && C.PERIOD_LABEL['90'] === '90D');
+ok('period: the same digits under a monthly source carry M',
+   C.PERIOD_LABEL_MONTHS['3'] === '3M', C.PERIOD_LABEL_MONTHS['3']);
+ok('period: 3D and 3M are never the same string', C.PERIOD_LABEL['3'] !== C.PERIOD_LABEL_MONTHS['3']);
+ok('period: named periods pass through unchanged',
+   C.PERIOD_LABEL.MTD === 'MTD' && C.PERIOD_LABEL.FYTD === 'FYTD' && C.PERIOD_LABEL.YTD === 'YTD');
+ok('period: no label is a bare number', Object.values(C.PERIOD_LABEL).concat(Object.values(C.PERIOD_LABEL_MONTHS))
+   .every(v => !/^\d+$/.test(v)));
+
 /* ---- page shell ---------------------------------------------------------
    The nav was byte-identical in all eight page files, so a renamed tab meant
    eight edits. One list now, and the active tab comes from the path. */
