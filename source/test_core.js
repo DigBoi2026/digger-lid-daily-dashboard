@@ -145,6 +145,20 @@ const daily = Array.from({ length: 181 }, (_, i) => ({ date: '2026-01-01', v: i 
   ok('...but a field present on one day sums', someF[0].fcRev === 500, someF[0].fcRev);
 })();
 
+/* ---- page shell ---------------------------------------------------------
+   The nav was byte-identical in all eight page files, so a renamed tab meant
+   eight edits. One list now, and the active tab comes from the path. */
+ok('navHtml: renders every page once', (C.navHtml('/region.html').match(/<a /g) || []).length === C.NAV.length);
+ok('navHtml: marks exactly one tab active',
+   (C.navHtml('/gpam.html').match(/class="active"/g) || []).length === 1);
+ok('navHtml: marks the right one', /href="gpam.html" class="active"/.test(C.navHtml('/gpam.html')));
+ok('navHtml: the site root is Daily Ops', /href="index.html" class="active"/.test(C.navHtml('/')));
+ok('navHtml: a query string does not break the match',
+   /href="region.html" class="active"/.test(C.navHtml('/region.html?v=2')));
+ok('navHtml: an unknown path marks nothing active rather than guessing',
+   (C.navHtml('/nope.html').match(/class="active"/g) || []) .length === 0);
+ok('navHtml: sets aria-current on the active tab', /aria-current="page"/.test(C.navHtml('/meta.html')));
+
 /* ---- formatters ---------------------------------------------------------
    One implementation for eight pages. The negative case is the reason: four
    pages built the compact string from the signed number and rendered "$-1.2K",

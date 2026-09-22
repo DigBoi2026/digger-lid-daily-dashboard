@@ -262,6 +262,49 @@ var DLcore = (function () {
     return out;
   }
 
+  /* ---------------------------------------------------------- page shell
+
+     The nav and the live pill were byte-identical in all eight page files — 64
+     duplicated anchors — so adding a page or renaming a tab meant editing eight
+     files and trusting they stayed in step. They are rendered from here now.
+
+     core.js is loaded at the END of every body, so the header markup already
+     exists and this mounts synchronously, before the page script runs and calls
+     stampSnapshotAge(), which appends its own chip to the pill. Only an EMPTY
+     nav or pill is filled, so a page that still carries hand-written markup is
+     left exactly as it is. */
+  const NAV = [
+    ['index.html',       'Daily Ops'],
+    ['daily.html',       'Pulse'],
+    ['performance.html', 'Performance'],
+    ['meta.html',        'Meta Ads'],
+    ['gpam.html',        'GPAM'],
+    ['products.html',    'Products'],
+    ['region.html',      'Region'],
+    ['forecast.html',    'Forecast'],
+  ];
+  const PILL_HTML = '<span class="dot snap" id="liveDot"></span><span id="liveText">Snapshot</span>';
+  /* Pure, so the active-tab logic is unit-testable without a DOM. */
+  function navHtml(path) {
+    const here = (String(path || '').split('?')[0].split('/').pop() || 'index.html').toLowerCase();
+    return NAV.map(([href, label]) => {
+      const on = href.toLowerCase() === here;
+      return '<a href="' + href + '"' + (on ? ' class="active" aria-current="page"' : '') + '>' + label + '</a>';
+    }).join('');
+  }
+  function mountShell(path) {
+    if (typeof document === 'undefined') return;
+    const here = path || (typeof location !== 'undefined' ? location.pathname : 'index.html');
+    const nav = document.querySelector('nav.topnav');
+    if (nav && !nav.children.length) nav.innerHTML = navHtml(here);
+    const pill = document.getElementById('livePill');
+    if (pill && !pill.children.length) {
+      pill.classList.add('livepill');
+      if (!pill.title) pill.title = 'Data source status';
+      pill.innerHTML = PILL_HTML;
+    }
+  }
+
   /* ---------------------------------------------------------- formatting
 
      These four lived in all eight page scripts and had drifted apart, which is
@@ -354,8 +397,14 @@ var DLcore = (function () {
            pendingOf, isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE,
            windowBaselines, todayAEST, previousDayAEST, shopifyFill, AEST_TZ, weeklyBuckets , yearBack, sameDatesLastYear,
            snapshotAge, stampSnapshotAge, SNAP_BUDGET,
-           money, pct, pctSigned, numf, esc };
+           money, pct, pctSigned, numf, esc,
+           NAV, navHtml, mountShell };
 })();
 
-if (typeof window !== 'undefined') window.DLcore = DLcore;                       // browser
+if (typeof window !== 'undefined') {
+  window.DLcore = DLcore;                                                        // browser
+  /* Synchronous: core.js sits at the end of the body, so the header exists and
+     the page script has not run yet. */
+  DLcore.mountShell();
+}
 if (typeof module !== 'undefined' && module.exports) module.exports = DLcore;    // node (unit test)
