@@ -10,7 +10,14 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 N="${1:-$(date +%s)}"
-FILES=(index.html performance.html products.html region.html daily.html)
+# EVERY page, discovered rather than listed. The hardcoded list had fallen three
+# pages behind (forecast.html, gpam.html, meta.html were never bumped), so those
+# pages kept serving a stale core.js to any browser that had one cached — and
+# since the nav and live pill are now rendered BY core.js, a stale copy means a
+# page with no nav at all. A glob cannot drift when a page is added.
+shopt -s nullglob
+FILES=(*.html)
+if [ ${#FILES[@]} -eq 0 ]; then echo "No HTML files found next to bump.sh" >&2; exit 1; fi
 
 # `sed -i` takes a mandatory suffix argument on BSD/macOS and an optional one on
 # GNU/Linux, so `sed -i ''` works on a Mac and makes Linux read '' as the script.
