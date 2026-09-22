@@ -32,6 +32,11 @@ const CONFIG = {
 // Shared math/utilities live in core.js (unit-tested by source/test_core.js).
 const { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline,
         isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE, weeklyBuckets, sameDatesLastYear } = DLcore;
+/* Formatters come from core.js (one implementation, unit-tested). Each page
+   keeps only its own defaults. */
+const money = (n, c = false) => DLcore.money(n, c);
+const pct = (n, d = 1) => DLcore.pct(n, d);
+const numf = n => DLcore.numf(n);
 
 /* ----------------------------- state ----------------------------------- */
 // Unified period selector: win ∈ {3,7,30,90,'YTD'} (trailing period ending yesterday); off = periods back.
@@ -44,18 +49,6 @@ let DATA = window.DL_DATA || null;
 let charts = { wf:null, trend:null };
 
 /* --------------------------- formatters -------------------------------- */
-const money = (n, compact=false) => {
-  if (n==null || isNaN(n)) return '—';
-  if (compact){
-    const a=Math.abs(n);
-    if (a>=1e6) return '$'+(n/1e6).toFixed(2)+'M';
-    if (a>=1e3) return '$'+(n/1e3).toFixed(a>=1e4?0:1)+'K';
-    return '$'+Math.round(n);
-  }
-  return n.toLocaleString('en-AU',{style:'currency',currency:'AUD',maximumFractionDigits:0});
-};
-const pct = (n,d=1) => n==null||isNaN(n) ? '—' : n.toFixed(d)+'%';
-const numf = (n) => n==null||isNaN(n) ? '—' : Math.round(n).toLocaleString('en-AU');
 const xroas = (n) => n==null||isNaN(n) ? '—' : n.toFixed(2)+'x';
 
 function todayISO(){ const t=new Date(); t.setHours(0,0,0,0); return t.toISOString().slice(0,10); }

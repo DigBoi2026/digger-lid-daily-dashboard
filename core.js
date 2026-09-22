@@ -262,6 +262,38 @@ var DLcore = (function () {
     return out;
   }
 
+  /* ---------------------------------------------------------- formatting
+
+     These four lived in all eight page scripts and had drifted apart, which is
+     worse than duplication: the same number rendered differently depending on
+     which page you were looking at.
+
+       money   four pages built the compact string from the SIGNED number
+               ('$'+(n/1e3)), so a negative read "$-1.2K" — dollar sign before
+               the minus. Two pages did it correctly off the absolute value.
+               The correct one wins here.
+       pct     two genuinely different jobs wearing one name: a level ("20.2%")
+               and a signed delta ("+2.4%"). Kept apart as pct and pctSigned,
+               because merging them would silently change the forecast page.
+       esc     two variants; the null-safe one wins ("" rather than "null").
+
+     Each page keeps its own DEFAULT for compactness and decimals via a one-line
+     wrapper, so this change alters no page's output except the negative-sign
+     fix above. */
+  function money(n, compact = true) {
+    if (n == null || isNaN(n)) return '\u2014';
+    const a = Math.abs(n), s = n < 0 ? '-$' : '$';
+    if (!compact) return s + Math.round(a).toLocaleString('en-AU');
+    if (a >= 1e6) return s + (a / 1e6).toFixed(2) + 'M';
+    if (a >= 1e3) return s + (a / 1e3).toFixed(a >= 1e4 ? 0 : 1) + 'K';
+    return s + Math.round(a);
+  }
+  const pct = (n, d = 1) => n == null || isNaN(n) ? '\u2014' : n.toFixed(d) + '%';
+  const pctSigned = (n, d = 1) => n == null || isNaN(n) ? '\u2014' : (n > 0 ? '+' : '') + n.toFixed(d) + '%';
+  const numf = n => n == null || isNaN(n) ? '\u2014' : Math.round(n).toLocaleString('en-AU');
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
   /* ---------------------------------------------------------- snapshot age
 
      Every committed snapshot is a fallback the board shows when the live route
@@ -321,7 +353,8 @@ var DLcore = (function () {
   return { MONTH_ABBR, isoToNice, fmtRange, rollingAvg, periodSlices, aggregate, breakeven, sparkline,
            pendingOf, isPending, pendingMode, pendingLabel, SUPPRESS_ABOVE,
            windowBaselines, todayAEST, previousDayAEST, shopifyFill, AEST_TZ, weeklyBuckets , yearBack, sameDatesLastYear,
-           snapshotAge, stampSnapshotAge, SNAP_BUDGET };
+           snapshotAge, stampSnapshotAge, SNAP_BUDGET,
+           money, pct, pctSigned, numf, esc };
 })();
 
 if (typeof window !== 'undefined') window.DLcore = DLcore;                       // browser

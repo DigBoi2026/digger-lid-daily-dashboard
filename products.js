@@ -26,17 +26,17 @@ let G = null;                                            // the merged grid: {da
 let KEYS = (HIST && HIST.meta && HIST.meta.keys) || {};
 const S = { win: '30', cmp: 'prev', trendMode: 'net' }; // win ∈ {'1','3','7','30','90','MTD','FYTD','12M'}; cmp ∈ {prev, ly}
 const { sparkline } = DLcore;
+/* Formatters come from core.js (one implementation, unit-tested). Each page
+   keeps only its own defaults. */
+const money = (n, c = true) => DLcore.money(n, c);
+const pct = (n, d = 0) => DLcore.pct(n, d);
+const numf = n => DLcore.numf(n);
 let charts = { trend: null };
 const CATCOLORS = {covers:'#f5eb19',grease:'#c98bff',screens:'#5ec8ff',drawbar:'#ff8a4a',
   phone:'#39d98a',shipping:'#ffb020',wipes:'#e0607a',mobile:'#2dd4bf',merch:'#b3abac',other:'#7d7576'};
 const PALETTE=['#f5eb19','#c98bff','#ff8a4a','#39d98a','#5ec8ff','#f8f163','#ffb020','#9a9193','#e0607a','#6b6209'];
 
 /* ---- formatters ---- */
-const money=(n,c=true)=>{ if(n==null||isNaN(n))return '—';
-  if(c){const a=Math.abs(n); if(a>=1e6)return '$'+(n/1e6).toFixed(2)+'M'; if(a>=1e3)return '$'+(n/1e3).toFixed(a>=1e4?0:1)+'K'; return '$'+Math.round(n);}
-  return n.toLocaleString('en-AU',{style:'currency',currency:'AUD',maximumFractionDigits:0}); };
-const numf=n=>n==null||isNaN(n)?'—':Math.round(n).toLocaleString('en-AU');
-const pct=(n,d=0)=>n==null||isNaN(n)?'—':n.toFixed(d)+'%';
 const MONTH=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const nice=iso=>{const[,m,d]=iso.split('-').map(Number);return d+' '+MONTH[m-1];};
 const addDays=(iso,n)=>{const d=new Date(iso+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10);};

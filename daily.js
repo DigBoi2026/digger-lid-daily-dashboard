@@ -11,6 +11,10 @@
      OK     otherwise      LOW = volume too small to judge that day
    ========================================================================= */
 
+/* Formatters come from core.js (one implementation, unit-tested). Each page
+   keeps only its own defaults. */
+const money = (n, c = true) => DLcore.money(n, c);
+const numf = n => DLcore.numf(n);
 const SHEET = window.DL_DATA || null;
 const PULSE = window.DL_PULSE || null;
 let RECENT = null;                     // Shopify's last three weeks, for the days the sheet has not reached
@@ -20,10 +24,6 @@ let charts = { ctx: null };
 const S = { day: null, win: 1, ctxMetric: 'revenue' };
 
 /* ---------- formatters ---------- */
-const money=(n,c=true)=>{ if(n==null||isNaN(n))return '—';
-  if(c){const a=Math.abs(n); if(a>=1e6)return '$'+(n/1e6).toFixed(2)+'M'; if(a>=1e3)return '$'+(n/1e3).toFixed(a>=1e4?0:1)+'K'; return '$'+Math.round(n);}
-  return n.toLocaleString('en-AU',{style:'currency',currency:'AUD',maximumFractionDigits:0}); };
-const numf=n=>n==null||isNaN(n)?'—':Math.round(n).toLocaleString('en-AU');
 const pctf=(n,d=1)=>n==null||isNaN(n)?'—':n.toFixed(d)+'%';
 const per1k=n=>n==null||isNaN(n)?'—':n.toFixed(1)+'/1k';
 const MONTH=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];

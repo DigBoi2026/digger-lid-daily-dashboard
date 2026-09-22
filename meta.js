@@ -15,6 +15,12 @@
    haircut: Meta shows blended CPA; the targets are calibrated to new-customer
    CPA, which the P&L puts 30–40% higher.
    ========================================================================= */
+/* Formatters come from core.js (one implementation, unit-tested). Each page
+   keeps only its own defaults. */
+const money = (n, c = true) => DLcore.money(n, c);
+const pct = (n, d = 1) => DLcore.pct(n, d);
+const numf = n => DLcore.numf(n);
+const esc = s => DLcore.esc(s);
 const SNAP = window.DL_META_SNAPSHOT || null;
 const SHEET = window.DL_DATA || null;
 const B = DLmeta.deriveAll();
@@ -35,18 +41,12 @@ const liveRows = () => live() ? LIVE.rows.filter(inStage) : [];
 let charts = { mt: null };
 
 /* ---- formatters ---- */
-const money=(n,c=true)=>{ if(n==null||isNaN(n))return '—';
-  if(c){const a=Math.abs(n); if(a>=1e6)return '$'+(n/1e6).toFixed(2)+'M'; if(a>=1e3)return '$'+(n/1e3).toFixed(a>=1e4?0:1)+'K'; return '$'+Math.round(n);}
-  return n.toLocaleString('en-AU',{style:'currency',currency:'AUD',maximumFractionDigits:0}); };
 const d0=n=>n==null||isNaN(n)?'—':'$'+Math.round(n).toLocaleString('en-AU');
 const d2=n=>n==null||isNaN(n)?'—':'$'+n.toFixed(2);
-const numf=n=>n==null||isNaN(n)?'—':Math.round(n).toLocaleString('en-AU');
-const pct=(n,d=1)=>n==null||isNaN(n)?'—':n.toFixed(d)+'%';
 const xr=n=>n==null||isNaN(n)?'—':n.toFixed(2)+'×';
 const MONTH=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const nice=iso=>{const[,m,d]=iso.split('-').map(Number);return d+' '+MONTH[m-1];};
 const addDays=(iso,n)=>{const d=new Date(iso+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10);};
-const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 /* ---- data ---- */
 const live = () => !!(LIVE && LIVE.configured && LIVE.rows && LIVE.rows.length);

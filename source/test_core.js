@@ -145,6 +145,31 @@ const daily = Array.from({ length: 181 }, (_, i) => ({ date: '2026-01-01', v: i 
   ok('...but a field present on one day sums', someF[0].fcRev === 500, someF[0].fcRev);
 })();
 
+/* ---- formatters ---------------------------------------------------------
+   One implementation for eight pages. The negative case is the reason: four
+   pages built the compact string from the signed number and rendered "$-1.2K",
+   dollar sign ahead of the minus. */
+ok('money: compact by default', C.money(3754321) === '$3.75M', C.money(3754321));
+ok('money: thousands keep a decimal under 10k', C.money(1234) === '$1.2K', C.money(1234));
+ok('money: and lose it above', C.money(13855) === '$14K', C.money(13855));
+ok('money: a negative puts the minus BEFORE the dollar', C.money(-1234) === '-$1.2K', C.money(-1234));
+ok('money: negative millions too', C.money(-3754321) === '-$3.75M', C.money(-3754321));
+ok('money: full form groups thousands', C.money(1234, false) === '$1,234', C.money(1234, false));
+ok('money: full form negative', C.money(-1234, false) === '-$1,234', C.money(-1234, false));
+ok('money: under a thousand', C.money(-699) === '-$699', C.money(-699));
+ok('money: nothing is an em dash, not NaN', C.money(null) === '\u2014' && C.money(NaN) === '\u2014');
+ok('pct: one decimal by default', C.pct(20.24) === '20.2%');
+ok('pct: decimals are settable', C.pct(20.24, 0) === '20%');
+ok('pct: a level carries no sign', C.pct(2.4) === '2.4%');
+/* pctSigned is a DIFFERENT job — a delta. Merging the two would have changed
+   every signed figure on the forecast page. */
+ok('pctSigned: a positive delta gets a plus', C.pctSigned(2.4) === '+2.4%');
+ok('pctSigned: a negative keeps its own minus', C.pctSigned(-2.4) === '-2.4%');
+ok('pctSigned: zero gets no plus', C.pctSigned(0) === '0.0%', C.pctSigned(0));
+ok('numf: groups thousands', C.numf(13855) === '13,855');
+ok('esc: escapes the four that matter', C.esc('<a href="x">&</a>') === '&lt;a href=&quot;x&quot;&gt;&amp;&lt;/a&gt;');
+ok('esc: null is empty, not the word null', C.esc(null) === '' && C.esc(undefined) === '');
+
 /* ---- snapshot age -------------------------------------------------------
    The committed fallbacks are the board's last line of defence, and one of them
    (region_data.js) sat 81 days stale behind a hard-coded asOf while every page

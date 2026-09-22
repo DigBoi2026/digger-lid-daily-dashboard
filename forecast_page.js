@@ -13,6 +13,12 @@
    that will be believed more than it deserves.
    ========================================================================= */
 const { MONTH_ABBR, isoToNice, pendingOf, pendingLabel } = DLcore;
+/* Formatters come from core.js (one implementation, unit-tested). Each page
+   keeps only its own defaults. */
+const money = (n, c = false) => DLcore.money(n, c);
+const pct = (n, d = 1) => DLcore.pctSigned(n, d);
+const numf = n => DLcore.numf(n);
+const esc = s => DLcore.esc(s);
 const F = window.DLforecast;
 
 const API_URL = '/api/data';
@@ -43,22 +49,11 @@ const BTS = {};                      // lens key -> folded backtest, or 'failed'
 let BT = null;                       // the current lens's, filled in after first paint
 
 /* ---- formatters ---- */
-const money = (n, c = false) => {
-  if (n == null || isNaN(n)) return '—';
-  if (c) { const a = Math.abs(n), s = n < 0 ? '-$' : '$';
-    if (a >= 1e6) return s + (a / 1e6).toFixed(2) + 'M';
-    if (a >= 1e3) return s + (a / 1e3).toFixed(a >= 1e4 ? 0 : 1) + 'K';
-    return s + Math.round(a); }
-  return n.toLocaleString('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 });
-};
-const pct = (n, d = 1) => n == null || isNaN(n) ? '—' : (n > 0 ? '+' : '') + n.toFixed(d) + '%';
 /* A plain count, for the lenses whose measure is orders rather than dollars.
    Was used before it existed, which the safe() wrapper turned into the New vs
    Returning lens quietly falling back to the Total tiles — a silent wrong
    answer, which is the failure mode this whole board is built to avoid. */
-const numf = n => n == null || isNaN(n) ? '—' : Math.round(n).toLocaleString('en-AU');
 const mult = n => n == null || isNaN(n) ? '—' : 'x' + n.toFixed(2);
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const yesterdayISO = () => { const t = new Date(); t.setDate(t.getDate() - 1); t.setHours(0, 0, 0, 0); return t.toISOString().slice(0, 10); };
 const niceFull = iso => { const [y, m, d] = iso.split('-').map(Number); return d + ' ' + MONTH_ABBR[m - 1] + ' ' + y; };
 const monthLabel = ym => MONTH_ABBR[+ym.slice(5, 7) - 1] + " '" + ym.slice(2, 4);

@@ -15,12 +15,12 @@ const COUNTRY_COL = {"Australia":'#f5eb19',"United States":'#5ec8ff',"New Zealan
   "United Kingdom":'#ff8a4a',"Canada":'#c98bff',"Other":'#7d7576'};
 let charts = { auIntl:null, stateTrend:null, nz:null };
 const { sparkline } = DLcore;                             // shared, unit-tested sparkline
+/* Formatters come from core.js (one implementation, unit-tested). Each page
+   keeps only its own defaults. */
+const money = (n, c = true) => DLcore.money(n, c);
+const pct = (n, d = 0) => DLcore.pct(n, d);
+const numf = n => DLcore.numf(n);
 
-const money=(n,c=true)=>{ if(n==null||isNaN(n))return '—';
-  if(c){const a=Math.abs(n); if(a>=1e6)return '$'+(n/1e6).toFixed(2)+'M'; if(a>=1e3)return '$'+(n/1e3).toFixed(a>=1e4?0:1)+'K'; return '$'+Math.round(n);}
-  return n.toLocaleString('en-AU',{style:'currency',currency:'AUD',maximumFractionDigits:0}); };
-const numf=n=>n==null||isNaN(n)?'—':Math.round(n).toLocaleString('en-AU');
-const pct=(n,d=0)=>n==null||isNaN(n)?'—':n.toFixed(d)+'%';
 
 /* S.win IS a month count on this page. It used to be a day count mapped onto
    months by MREG = {3:1, 7:1, 30:1, 90:3, '12M':12}, which collapsed 3D, 7D and

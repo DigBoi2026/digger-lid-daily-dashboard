@@ -7,6 +7,11 @@
    so nobody mistakes GPAM for profit — and profit ties to the sheet.
    ========================================================================= */
 const { MONTH_ABBR, isoToNice, pendingOf, pendingLabel } = DLcore;
+/* Formatters come from core.js (one implementation, unit-tested). Each page
+   keeps only its own defaults. */
+const money = (n, c = true) => DLcore.money(n, c);
+const pct = (n, d = 1) => DLcore.pct(n, d);
+const esc = s => DLcore.esc(s);
 const G = window.DLgpam;
 const F = window.DLforecast || null;
 const API_URL = '/api/data';
@@ -22,11 +27,6 @@ const PRIOR = window.DL_PRIOR || null;
 let CHART = null;
 
 /* ---- formatters ---- */
-const money = (n, c) => { if (n == null || isNaN(n)) return '—'; const a = Math.abs(n), s = n < 0 ? '-$' : '$';
-  if (c === false) return s + Math.round(a).toLocaleString('en-AU');
-  if (a >= 1e6) return s + (a / 1e6).toFixed(2) + 'M'; if (a >= 1e3) return s + (a / 1e3).toFixed(a >= 1e4 ? 0 : 1) + 'K'; return s + Math.round(a); };
-const pct = (n, d = 1) => n == null || isNaN(n) ? '—' : n.toFixed(d) + '%';
-const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const nice = iso => isoToNice(iso);
 const niceY = iso => isoToNice(iso) + ' ' + iso.slice(0, 4);
 const deltaEl = (cur, prev, good = 'high') => {
