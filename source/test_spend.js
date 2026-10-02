@@ -64,7 +64,10 @@ ok('economics: an empty window is null, not a zero-filled record', L.economics([
 const days = [];
 for (let i = 0; i < 38; i++) {
   const d = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
-  days.push(day(d, { totalAds: 200 + i * 10, metaTotal: 200 + i * 10, revenue: 900 + i * 45 }));
+  /* Profit varies with the row: a fixture whose profit is the same every day has
+     no variance for a profit fit to find, and ols correctly returns null for it. */
+  const ads = 200 + i * 10;
+  days.push(day(d, { totalAds: ads, metaTotal: ads, revenue: 900 + i * 45, profit: 400 - ads + i * 6 }));
 }
 const weeks = core.weeklyBuckets(days);
 ok('wholeWeeks: the trailing stub is not a week', weeks.length === 6 && L.wholeWeeks(weeks).length === 5,
@@ -76,6 +79,26 @@ ok('link: the weekly fit uses whole weeks only', lk.weekly.n === 5, lk.weekly &&
 ok('link: the daily fit uses every day', lk.daily.n === 38, lk.daily && lk.daily.n);
 ok('link: elasticity is withheld under the minimum number of weeks',
    lk.elastic === null && lk.minElastic === L.MIN_ELASTIC, lk.elastic);
+/* A four-week window has four weekly points and no weekly elasticity, which is
+   exactly when the short windows need one. Measured on days instead. */
+ok('link: a window too short for a weekly elasticity still has a daily one',
+   lk.elasticDay !== null && lk.elasticDay.n === 38 && lk.minElasticDays === L.MIN_ELASTIC_DAYS,
+   lk.elasticDay && lk.elasticDay.n);
+ok('link: profit is fitted in both units', lk.profit !== null && lk.profitDay !== null && lk.profitDay.n === 38,
+   lk.profitDay && lk.profitDay.n);
+
+/* A day that sold on no recorded ad spend is the shape of a perfect
+   correlation and has no logarithm. It must not reach any fit. */
+const withZero = days.concat([day('2026-02-07', { totalAds: 0, metaTotal: 0, revenue: 11000 })]);
+const lkz = L.link(withZero, core.weeklyBuckets(withZero));
+ok('link: a zero-spend day is counted and excluded, not silently kept',
+   lkz.days === 38 && lkz.noSpendDays === 1, [lkz.days, lkz.noSpendDays]);
+ok('link: and it does not reach the daily fit',
+   lkz.daily.n === 38 && Math.abs(lkz.daily.slope - lk.daily.slope) < 1e-9,
+   [lkz.daily.n, lkz.daily.slope, lk.daily.slope]);
+ok('link: economics still counts its revenue \u2014 the sale happened',
+   L.economics(withZero).revenue === L.economics(days).revenue + 11000,
+   [L.economics(withZero).revenue, L.economics(days).revenue]);
 
 /* Enough weeks for an elasticity, built so revenue is exactly spend^0.5 — a
    textbook diminishing return the fit has to recover. */
@@ -111,15 +134,25 @@ ok('lagProfile: a two-day delayed response peaks at +2',
 
 /* --------------------------------------------------------------- bands ---- */
 ok('bands: fewer than the minimum weeks yields no bands at all', L.bands(core.weeklyBuckets(days)) === null);
-ok('bandCount: steps down with the window rather than splitting twelve weeks five ways',
+/* The same window, counted in days, is exactly what the short periods are for:
+   five weeks is five points and no bands, 38 days is four bands of nine. */
+const bd = L.bands(days, 'day');
+ok('bands: the same window cut by day where it could not be cut by week',
+   bd && bd.unit === 'day' && bd.units === 38 && bd.q === 4, bd && [bd.unit, bd.units, bd.q]);
+ok('bands: a day band reports per-day figures, not per-week ones',
+   near(bd.bands[0].spendPer, bd.bands[0].ads / bd.bands[0].n) && bd.bands[0].unit === 'day',
+   bd.bands[0]);
+ok('bandCount: steps down with the window rather than splitting twelve units five ways',
    L.bandCount(52) === 5 && L.bandCount(26) === 4 && L.bandCount(12) === 3 && L.bandCount(8) === 0,
    [L.bandCount(52), L.bandCount(26), L.bandCount(12), L.bandCount(8)]);
+ok('bandCount: the floor is the declared minimum', L.bandCount(L.MIN_BAND_UNITS) === 3 && L.bandCount(L.MIN_BAND_UNITS - 1) === 0);
 const b = L.bands(core.weeklyBuckets(long));
-ok('bands: twenty weeks cuts into four', b.q === 4 && b.bands.length === 4 && b.weeks === 20, b && [b.q, b.weeks]);
+ok('bands: twenty weeks cuts into four', b.q === 4 && b.bands.length === 4 && b.units === 20 && b.unit === 'week',
+   b && [b.q, b.units]);
 ok('bands: every week lands in exactly one band',
    b.bands.reduce((a, x) => a + x.n, 0) === 20, b.bands.map(x => x.n));
 ok('bands: ordered by spend, lowest first',
-   b.bands.every((x, i) => i === 0 || x.spendPerWeek > b.bands[i - 1].spendPerWeek), b.bands.map(x => Math.round(x.spendPerWeek)));
+   b.bands.every((x, i) => i === 0 || x.spendPer > b.bands[i - 1].spendPer), b.bands.map(x => Math.round(x.spendPer)));
 /* Pooled, not an average of the weeks' own ratios: a quiet week and a peak week
    must not count equally towards a band's MER. */
 const top = b.bands[b.bands.length - 1];

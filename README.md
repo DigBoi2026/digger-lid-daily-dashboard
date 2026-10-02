@@ -24,7 +24,10 @@ Most pages share a trailing-period selector — **3D · 7D · 30D · 90D · 12M*
 complete day, compared against the prior equal period; the `‹ ›` arrows step back one whole
 period at a time. Pages whose data arrives in a different unit say so in their own
 vocabulary: GPAM in named periods (MTD/QTD/FYTD), Region and Products in whole months,
-Spend ↔ Rev in whole weeks. The labels come from `PERIOD_LABEL`, `PERIOD_LABEL_MONTHS` and
+Spend ↔ Rev in whole weeks (**4W · 8W · 13W · 26W · 52W · ALL**, where the two shortest are
+drawn *day by day* — four weeks is four weekly points and no chart, but twenty-eight daily
+ones; the unit follows the window rather than being one more control to find, and the
+header says which). The labels come from `PERIOD_LABEL`, `PERIOD_LABEL_MONTHS` and
 `PERIOD_LABEL_WEEKS` in `core.js`, so a page can only use a spelling the board already has.
 
 ### A trap worth knowing about: the sheet's `mer` column is not MER
@@ -35,6 +38,15 @@ ratio** (26.7%), the reciprocal of the media efficiency ratio (3.75×). The colu
 `source/test_spend.js`, so if the sheet is ever renamed the test says so rather than the
 board quietly changing meaning. Nothing on Spend ↔ Rev reads `mer` as MER: `lib/spend.js`
 computes both from the raw sums and names them `adPct` and `mer`.
+
+One more thing that page trims: a day carrying revenue against **$0 of recorded ad spend**.
+The sheet's last row did exactly that — $10,905 of revenue on no spend while every
+neighbouring day ran about $5,000 — a cell nobody had typed into yet, which the pending
+flag misses because it holds a zero rather than a blank. On a 26-week window it moved MER
+by a hundredth; on a four-week one by 2.7%, and as the rightmost point of a daily chart it
+would have read "sales for nothing". It is trimmed off the end and named in the header and
+the read-out, never silently dropped, and its revenue still counts wherever the sale
+genuinely belongs.
 
 Break-even on that page comes from the profit identity the book actually satisfies —
 `profit = revExGst − totalVC − totalAds − totalFC`, exact to the cent over the last 90 days

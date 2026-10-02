@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300;400;500;700&family=League+Spartan:wght@400;700;900&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="./styles.css?v=1790918397" />
+<link rel="stylesheet" href="./styles.css?v=1790919564" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 </head>
 <body>
@@ -28,8 +28,13 @@
           <div class="dow" id="winDates">—</div>
         </div>
         <!-- Whole weeks, because a day of this link is mostly the day of the week.
-             Labels come from DLcore.PERIOD_LABEL_WEEKS. -->
-        <div class="seg small" id="winSeg" data-period="weeks" role="group" aria-label="Select period">
+             Labels come from DLcore.PERIOD_LABEL_WEEKS. The two shortest windows
+             are drawn day by day: four weeks is four weekly points and no chart,
+             but twenty-eight daily ones. -->
+        <div class="seg small" id="winSeg" data-period="weeks" role="group" aria-label="Select period"
+             title="Whole weeks. 4W and 8W are drawn day by day; 13W and longer pool into weeks.">
+          <button data-win="4" title="28 days, drawn day by day">4W</button>
+          <button data-win="8" title="56 days, drawn day by day">8W</button>
           <button data-win="13">13W</button>
           <button data-win="26" class="active">26W</button>
           <button data-win="52">52W</button>
@@ -104,6 +109,9 @@
           </div>
         </div>
         <div class="readout" id="readout"></div>
+        <!-- Outside #readout on purpose: the body scrolls when a window has more
+             to say, and a note that scrolls away with it is a note nobody reads. -->
+        <div class="p-note chartfoot" id="readFoot"></div>
       </div>
     </section>
 
@@ -120,11 +128,11 @@
 <div class="tip" id="tip"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/animejs@4.0.0/lib/anime.iife.min.js"></script>
-<script src="./motion.js?v=1790918397"></script>
-<script src="./core.js?v=1790918397"></script>
-<script src="./lib/spend.js?v=1790918397"></script>
-<script src="./data.js?v=1790918397"></script>
-<script src="./prior_year.js?v=1790918397"></script>
-<script src="./spend.js?v=1790918397"></script>
+<script src="./motion.js?v=1790919564"></script>
+<script src="./core.js?v=1790919564"></script>
+<script src="./lib/spend.js?v=1790919564"></script>
+<script src="./data.js?v=1790919564"></script>
+<script src="./prior_year.js?v=1790919564"></script>
+<script src="./spend.js?v=1790919564"></script>
 </body>
 </html>

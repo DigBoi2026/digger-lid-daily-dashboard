@@ -1164,7 +1164,10 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
    like the rest of the board, so it scales with the 16:9 stage rather than the
    viewport.
    ===================================================================== */
-#stage.spend-stage{grid-template-rows:9cqh 17cqh minmax(0,1fr) 29cqh 2.8cqh}
+/* The bottom row carries the read-out: five generated statements and a note
+   that stays put while they scroll. Sized so all six fit at 16:9 without the
+   last one sitting under the note. */
+#stage.spend-stage{grid-template-rows:9cqh 17cqh minmax(0,1fr) 30.5cqh 2.8cqh}
 #spMain{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:1.1cqw;min-height:0}
 #spBottom{display:grid;grid-template-columns:1.25fr 1fr;gap:1.1cqw;min-height:0}
 /* A Chart.js canvas inside a flex column will grow on every resize unless it is
@@ -1201,11 +1204,11 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
    the number of statements depends on how much history the window has. */
 .readout{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:.45cqh;
   scrollbar-gutter:stable;padding-right:.2cqw}
-.rdrow{flex:0 0 auto;display:grid;grid-template-columns:7.5cqw 1fr;gap:.8cqw;align-items:baseline;
-  background:var(--panel-2);border:1px solid var(--line);border-radius:.7cqh;padding:.5cqh .9cqw}
+.rdrow{flex:0 0 auto;display:grid;grid-template-columns:7cqw 1fr;gap:.7cqw;align-items:baseline;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:.7cqh;padding:.36cqh .8cqw}
 .rdrow .rd-b{font-size:1.9cqh;font-weight:700;font-variant-numeric:tabular-nums;color:var(--dl-yellow);
   line-height:1.05;text-align:right;white-space:nowrap}
-.rdrow .rd-t{font-size:1.08cqh;color:var(--muted);line-height:1.35}
+.rdrow .rd-t{font-size:1.04cqh;color:var(--muted);line-height:1.28}
 .rdrow .rd-t b{color:var(--dl-white);font-weight:700}
 .rdrow.empty .rd-b{color:var(--muted)}
 
