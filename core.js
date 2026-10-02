@@ -278,6 +278,7 @@ var DLcore = (function () {
     ['daily.html',       'Pulse'],
     ['performance.html', 'Performance'],
     ['meta.html',        'Meta Ads'],
+    ['spend.html',       'Spend \u2194 Rev'],
     ['gpam.html',        'GPAM'],
     ['products.html',    'Products'],
     ['region.html',      'Region'],
@@ -298,15 +299,23 @@ var DLcore = (function () {
   /* Pages whose source data only ever arrives in whole months. Same digits, a
      different unit, so they get their own map rather than a suffix hack. */
   const PERIOD_LABEL_MONTHS = { '1': '1M', '3': '3M', '6': '6M', '12': '12M', '24': '24M' };
+  /* Pages whose unit of observation is a whole WEEK. Spend vs Revenue reads the
+     link between two series, and a single day of it is mostly the day of the
+     week — pooling seven lifts the correlation from ~0.77 to ~0.90 without any
+     new information, so a day is not an observation on that page and its
+     buttons must not imply one. */
+  const PERIOD_LABEL_WEEKS = { '4': '4W', '8': '8W', '13': '13W', '26': '26W', '52': '52W', ALL: 'ALL' };
   const PERIOD_TITLE = {
     days: 'Trailing periods in days, ending on the last complete day',
     months: 'Whole months — this data arrives in monthly buckets',
+    weeks: 'Whole weeks — the unit this page measures in',
   };
   function labelPeriods(root) {
     if (typeof document === 'undefined') return;
     (root || document).querySelectorAll('.seg[data-period]').forEach(seg => {
-      const kind = seg.getAttribute('data-period') === 'months' ? 'months' : 'days';
-      const map = kind === 'months' ? PERIOD_LABEL_MONTHS : PERIOD_LABEL;
+      const want = seg.getAttribute('data-period');
+      const kind = want === 'months' ? 'months' : want === 'weeks' ? 'weeks' : 'days';
+      const map = kind === 'months' ? PERIOD_LABEL_MONTHS : kind === 'weeks' ? PERIOD_LABEL_WEEKS : PERIOD_LABEL;
       seg.querySelectorAll('button[data-win]').forEach(b => {
         const label = map[b.getAttribute('data-win')];
         if (label) b.textContent = label;
@@ -431,7 +440,7 @@ var DLcore = (function () {
            windowBaselines, todayAEST, previousDayAEST, shopifyFill, AEST_TZ, weeklyBuckets , yearBack, sameDatesLastYear,
            snapshotAge, stampSnapshotAge, SNAP_BUDGET,
            money, pct, pctSigned, numf, esc,
-           NAV, navHtml, mountShell, labelPeriods, PERIOD_LABEL, PERIOD_LABEL_MONTHS };
+           NAV, navHtml, mountShell, labelPeriods, PERIOD_LABEL, PERIOD_LABEL_MONTHS, PERIOD_LABEL_WEEKS };
 })();
 
 if (typeof window !== 'undefined') {

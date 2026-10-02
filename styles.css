@@ -28,9 +28,9 @@ body{
 }
 /* ============ HEADER ============ */
 header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:1cqw}
-.hleft{display:flex;align-items:center;gap:1cqw;min-width:0}
+.hleft{display:flex;align-items:center;gap:.6cqw;min-width:0}
 .brand{display:flex;align-items:center;gap:1cqw}
-.brand img{height:3.74cqh;width:auto;display:block}
+.brand img{height:3.1cqh;width:auto;display:block}
 .brand .divider{width:1px;height:4.6cqh;background:var(--line)}
 .brand .titles h1{font-size:2.7cqh;font-weight:700;letter-spacing:.02em;line-height:1;text-transform:uppercase}
 .brand .titles .sub{font-size:1.35cqh;color:var(--muted);letter-spacing:.28em;text-transform:uppercase;margin-top:.5cqh}
@@ -40,6 +40,16 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .topnav{display:flex;gap:.25cqw;justify-self:center;background:var(--panel);border:1px solid var(--line);border-radius:.8cqh;padding:.35cqh}
 .topnav a{display:flex;align-items:center;gap:.5cqw;text-decoration:none;color:var(--muted);white-space:nowrap;
   font-size:1.15cqh;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:.5cqh .65cqw;border-radius:.6cqh}
+/* NINE tabs (Spend vs Rev joined Meta Ads), and the nav shares a 9cqh header row
+   with the period selector and the freshness block. The sizing had drifted into
+   five per-page overrides and two later globals, each added when a tab was; they
+   are consolidated here so there is one place to look when the tenth arrives.
+
+   The binding constraint is GPAM, whose header gives .hleft the least room:
+   728px of 1600. At these values the nav measures 555px there, and the same
+   margin holds down to a 1280 stage. */
+.topnav a{padding-left:.32cqw;padding-right:.32cqw;gap:.3cqw;font-size:1.05cqh;letter-spacing:.035em}
+.topnav{gap:.1cqw;padding:.28cqh}
 .topnav a.active{background:var(--dl-yellow);color:var(--dl-black)}
 .topnav a:hover:not(.active){color:var(--dl-white)}
 
@@ -284,7 +294,6 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .products-stage .daynav .seg.small button{font-size:1.05cqh;padding:.45cqh .5cqw;letter-spacing:.04em}
 .products-stage .status{gap:.7cqw}
 .products-stage .status .seg.small button{font-size:1.05cqh;padding:.45cqh .6cqw;letter-spacing:.05em}
-.products-stage .topnav a{padding-left:.5cqw;padding-right:.5cqw}
 #p2bottom{display:grid;grid-template-columns:1.55fr 1fr;gap:1.1cqw;min-height:0}
 #p2donutWrap{flex:1;min-height:0;position:relative}
 #p2trendWrap{flex:1;min-height:0;position:relative}
@@ -366,7 +375,7 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
   #stage > section{min-height:auto}
   /* Every section grid goes to one column. */
   #kpis,#main,#bottom,#plMain,#plBottom,#rgMain,#mtMain,#mtBottom,#gpMain,#gpBottom,
-  #p2main,#p2bottom,
+  #p2main,#p2bottom,#spMain,#spBottom,
   .form2,.meta-grid,.nz-stats,.eq-foot,.ladder,.funnel,.rules{
     grid-template-columns:1fr!important;
     grid-template-rows:auto!important;
@@ -375,7 +384,15 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
   #stage section > .panel,#stage .pl-col > .panel{min-height:26cqh;flex:none}
   .pl-col{gap:1.6cqh}
   /* Charts need a real box once the rows are auto. */
-  #rgTrendWrap,#stateTrendWrap,#nzWrap,#ctxWrap,#wfWrap,#chartWrap,#mtChartWrap{min-height:30cqh}
+  #rgTrendWrap,#stateTrendWrap,#nzWrap,#ctxWrap,#wfWrap,#chartWrap,#mtChartWrap,
+  .spend-stage .cwrap{min-height:30cqh}
+  /* 7.5cqw is a tenth of the stage, which is a readable figure column at 16:9
+     and 29px on a phone. The read-out stacks its figure above its sentence
+     instead. */
+  .spend-stage .rdrow{grid-template-columns:1fr}
+  .spend-stage .rdrow .rd-b{text-align:left}
+  .spend-stage .erow{grid-template-columns:1fr auto;row-gap:.2cqh}
+  .spend-stage .erow .e-s{grid-column:1/-1;text-align:left}
   /* A ten-column table cannot stack into one column and stay a table, so it
      scrolls inside its own panel instead of widening the whole board — the meta
      line board alone was pushing the stage to 459px. */
@@ -384,7 +401,7 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
      they wrap instead of setting a floor under the page width. */
   .p-head,.p-head-right,.verdict,.verdict .v-right{flex-wrap:wrap;row-gap:.5cqh}
   /* Lists were capped to share a fixed row; on a scrolling page let them run. */
-  .catlist,.momlist,.bridge{max-height:none;overflow:visible}
+  .catlist,.momlist,.bridge,.readout,.elist{max-height:none;overflow:visible}
   /* The signals table is six fixed columns of figures; stacking it would stop it
      being a table and squeezing it clipped the numbers, so it scrolls sideways
      in its own panel like the other wide tables. */
@@ -411,7 +428,7 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
      Letting them shrink is what actually contains the page. */
   #stage > header,#stage > section,#stage > footer,
   #stage section > *,.hleft,.daynav,.status,.kpi,.panel,
-  .panel > *,.ptable,.catlist,.momlist,.bridge,.form2{min-width:0}
+  .panel > *,.ptable,.catlist,.momlist,.bridge,.form2,.readout,.rdrow,.elist,.erow{min-width:0}
   /* The per-page caps are written as `.gpam-stage .status .freshness`, which
      out-specifies a bare `.freshness`; hence the !important. */
   .freshness,.daynav .datebox,.datebox,
@@ -420,7 +437,8 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
   .ops-stage .datebox,.perf-stage .datebox,
   .meta-stage .status .freshness,.gpam-stage .status .freshness,
   .ops-stage .status .freshness,.perf-stage .status .freshness,
-  .region-stage .status .freshness,.products-stage .status .freshness{
+  .region-stage .status .freshness,.products-stage .status .freshness,
+  .spend-stage .daynav .datebox,.spend-stage .status .freshness{
     max-width:none!important;min-width:0}
   .freshness .val,.freshness .lbl,.freshness .pend,
   .datebox .d,.datebox .dow{white-space:normal;overflow:visible;text-overflow:clip}
@@ -977,8 +995,6 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 /* six period buttons now; tighter so the header still fits beside the nav */
 .meta-stage .daynav .seg.small button{font-size:1.05cqh;padding:.45cqh .55cqw;letter-spacing:.04em}
 .meta-stage .daynav .datebox{max-width:13cqw}
-.meta-stage .topnav a{padding-left:.55cqw;padding-right:.55cqw}
-.topnav a{padding-left:.6cqw;padding-right:.6cqw}
 
 /* ---- GPAM page ------------------------------------------------------------ */
 #stage.gpam-stage{grid-template-rows:9cqh 17cqh minmax(0,1fr) 31cqh 2.8cqh}
@@ -988,7 +1004,6 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .gpam-stage .daynav .seg.small button{font-size:1.05cqh;padding:.45cqh .6cqw;letter-spacing:.04em}
 .gpam-stage .status .freshness{max-width:14cqw}
 .gpam-stage .status .freshness .pend,.gpam-stage .status .freshness .val{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.gpam-stage .topnav a{padding-left:.5cqw;padding-right:.5cqw}
 .gpam-stage .kpi.bad .k-val{color:var(--bad)}
 .gpam-stage .kpi .k-per{margin-left:.5cqw}
 #gpMain{display:grid;grid-template-columns:1.25fr 1fr;gap:1.1cqw;min-height:0}
@@ -1059,9 +1074,6 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .pgrp .pg-v{font-size:1.1cqh;font-weight:700;font-variant-numeric:tabular-nums}
 .pgrp .pg-s{font-size:.9cqh;color:var(--muted);min-width:3.4cqw;text-align:right}
 
-/* eight tabs now (GPAM joined): a little tighter everywhere so the header fits at 1440 */
-.topnav a{padding-left:.5cqw;padding-right:.5cqw;gap:.35cqw;font-size:1.1cqh}
-.topnav{gap:.15cqw}
 
 /* GPAM benchmark view */
 .ladder{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:.6cqw;flex:0 0 auto}
@@ -1109,7 +1121,6 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .region-stage .status .freshness{max-width:11cqw}
 .region-stage .status .freshness .val{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .region-stage .daynav .seg.small button{font-size:1.05cqh;padding:.45cqh .55cqw;letter-spacing:.04em}
-.region-stage .topnav a{padding-left:.5cqw;padding-right:.5cqw}
 
 /* ---- Forecast · pulsing "today" marker + Forecast vs Actual view ---------- */
 .today-dot{position:absolute;transform:translate(-50%,-50%);z-index:6;pointer-events:none}
@@ -1145,3 +1156,81 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .va-word.good{color:var(--good)} .va-word.warn{color:var(--warn)} .va-word.bad{color:var(--bad)}
 .va-rows .empty{font-size:1.1cqh;color:var(--muted);padding:.8cqh .6cqw;border:1px dashed var(--line);border-radius:.6cqh}
 .chartkey .k.va-act::before{border-top-style:solid;border-color:rgba(57,217,138,.95)}
+
+/* =====================================================================
+   SPEND vs REVENUE PAGE
+   Five panels, three of them canvases, and the bottom-left table has to hold
+   seven columns in roughly half the stage width. Everything sized in cq units
+   like the rest of the board, so it scales with the 16:9 stage rather than the
+   viewport.
+   ===================================================================== */
+#stage.spend-stage{grid-template-rows:9cqh 17cqh minmax(0,1fr) 29cqh 2.8cqh}
+#spMain{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:1.1cqw;min-height:0}
+#spBottom{display:grid;grid-template-columns:1.25fr 1fr;gap:1.1cqw;min-height:0}
+/* A Chart.js canvas inside a flex column will grow on every resize unless it is
+   taken out of flow — the same absolute-inset wrapper the forecast page uses. */
+.spend-stage .cwrap{flex:1;min-height:0;position:relative}
+.spend-stage .cwrap canvas{position:absolute;inset:0}
+.spend-stage .chartfoot{flex:0 0 auto;margin-top:.45cqh;font-size:1cqh;line-height:1.35}
+.spend-stage #readTitle{white-space:nowrap}
+.spend-stage .chartfoot b{color:var(--dl-white)}
+.spend-stage .kpi.good{border-color:rgba(57,217,138,.5)}
+.spend-stage .kpi.warn{border-color:rgba(255,176,32,.55)}
+.spend-stage .kpi.bad{border-color:rgba(255,90,82,.6)}
+.spend-stage .kpi.good .k-val{color:var(--good)}
+.spend-stage .kpi.warn .k-val{color:var(--warn)}
+.spend-stage .kpi.bad .k-val{color:var(--bad)}
+.spend-stage .kpi .k-per{margin-left:.5cqw}
+
+/* Spend bands: band name + six numbers. The default .ptable track list is built
+   for a rank column this table does not have. */
+.spend-stage #bands .thead,.spend-stage #bands .trow{
+  grid-template-columns:1fr 3.4cqw 6.6cqw 7.2cqw 5cqw 6.6cqw 5cqw;gap:.5cqw}
+.spend-stage #bands .thead div{text-align:right}
+.spend-stage #bands .thead div:first-child{text-align:left}
+.spend-stage #bands .thead{flex:0 0 auto}
+/* Three to five bands depending on the window, in a fixed-height panel: let the
+   rows share what is left rather than huddling at the top of it. */
+.spend-stage #bands .trow{flex:1 1 auto;padding:.5cqh .6cqw}
+.spend-stage #bands .pname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.spend-stage #bands .pname i{display:block;font-style:normal;font-weight:400;font-size:.95cqh;
+  color:var(--muted);letter-spacing:.02em}
+.spend-stage #bands .num{font-size:1.3cqh}
+
+/* The read-out: a big figure and the sentence it belongs to. Scrolls, because
+   the number of statements depends on how much history the window has. */
+.readout{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:.45cqh;
+  scrollbar-gutter:stable;padding-right:.2cqw}
+.rdrow{flex:0 0 auto;display:grid;grid-template-columns:7.5cqw 1fr;gap:.8cqw;align-items:baseline;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:.7cqh;padding:.5cqh .9cqw}
+.rdrow .rd-b{font-size:1.9cqh;font-weight:700;font-variant-numeric:tabular-nums;color:var(--dl-yellow);
+  line-height:1.05;text-align:right;white-space:nowrap}
+.rdrow .rd-t{font-size:1.08cqh;color:var(--muted);line-height:1.35}
+.rdrow .rd-t b{color:var(--dl-white);font-weight:700}
+.rdrow.empty .rd-b{color:var(--muted)}
+
+/* The break-even build-up: label, rate, and what it is in dollars. */
+/* Nine lines, from the revenue dollar down to the room left to spend, in the
+   same fixed panel. The last three are the ones the reader came for, so the
+   list is sized to show all nine rather than scroll them out of sight. */
+.elist{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:.15cqh;scrollbar-gutter:stable}
+.erow{flex:1 1 auto;display:grid;grid-template-columns:1fr 5.5cqw 1fr;gap:.7cqw;align-items:center;
+  padding:.2cqh .9cqw;border-bottom:1px solid rgba(255,255,255,.05)}
+.erow .e-l{font-size:1.12cqh;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.erow .e-v{font-size:1.38cqh;font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+.erow .e-s{font-size:.98cqh;color:var(--muted);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.erow.sub{background:rgba(255,255,255,.03)}
+.erow.tot{background:rgba(245,235,25,.07);border-bottom-color:var(--line)}
+.erow.tot .e-l,.erow.tot .e-v{color:var(--dl-yellow)}
+.erow.good .e-v{color:var(--good)} .erow.warn .e-v{color:var(--warn)} .erow.bad .e-v{color:var(--bad)}
+
+/* Header squeeze, matching the other dense pages: nine nav tabs and a date
+   range have to share one 9cqh row. */
+.spend-stage .daynav .datebox{min-width:0;max-width:13.5cqw;overflow:hidden;text-align:left;padding-right:.4cqw}
+.spend-stage .daynav .datebox .d{font-size:1.7cqh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.spend-stage .daynav .datebox .dow{font-size:1.05cqh;letter-spacing:.1em;white-space:nowrap;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis}
+.spend-stage .daynav .seg.small button{font-size:1.05cqh;padding:.45cqh .6cqw;letter-spacing:.04em}
+.spend-stage .status .freshness{max-width:14cqw}
+.spend-stage .status .freshness .pend{font-size:1cqh;color:var(--warn);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.spend-stage .status .freshness .val{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

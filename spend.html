@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DiggerLid — Meta Spend vs Revenue</title>
+<link rel="icon" href="./assets/favicon32.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300;400;500;700&family=League+Spartan:wght@400;700;900&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="./styles.css?v=1790918397" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div id="stageWrap">
+  <div id="stage" class="spend-stage">
+    <!-- HEADER -->
+    <header id="top">
+      <div class="hleft">
+        <div class="brand"><img src="./assets/dl_wordmark.png" alt="DiggerLid" /></div>
+        <nav class="topnav"><!-- rendered by DLcore.mountShell --></nav>
+      </div>
+
+      <div class="daynav">
+        <div class="datebox">
+          <div class="d" id="winLabel">LAST 26 WEEKS</div>
+          <div class="dow" id="winDates">—</div>
+        </div>
+        <!-- Whole weeks, because a day of this link is mostly the day of the week.
+             Labels come from DLcore.PERIOD_LABEL_WEEKS. -->
+        <div class="seg small" id="winSeg" data-period="weeks" role="group" aria-label="Select period">
+          <button data-win="13">13W</button>
+          <button data-win="26" class="active">26W</button>
+          <button data-win="52">52W</button>
+          <button data-win="ALL">ALL</button>
+        </div>
+      </div>
+
+      <div class="status">
+        <div class="freshness">
+          <div class="lbl" id="throughLbl">P&amp;L · through</div>
+          <div class="val" id="throughVal">—</div>
+          <div class="pend" id="throughPend"></div>
+        </div>
+        <div id="livePill"><!-- rendered by DLcore.mountShell --></div>
+      </div>
+    </header>
+
+    <!-- KPI STRIP: spend, what it brought, and whether that cleared the bar -->
+    <section id="kpis"></section>
+
+    <!-- MAIN -->
+    <section id="spMain">
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Spend and <span>Revenue</span></div>
+          <div class="p-note" id="seriesNote">—</div>
+        </div>
+        <div class="cwrap"><canvas id="seriesChart"></canvas></div>
+        <div class="p-note chartfoot" id="seriesFoot">one dollar axis · the dashed line is the revenue each week needed to break even</div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">How Tight the <span>Link</span></div>
+          <div class="p-note" id="scatterNote">—</div>
+        </div>
+        <div class="cwrap"><canvas id="scatterChart"></canvas></div>
+        <div class="p-note chartfoot" id="scatterFoot">—</div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">MER vs <span>Break-even</span></div>
+          <div class="p-note" id="merNote">—</div>
+        </div>
+        <div class="cwrap"><canvas id="merChart"></canvas></div>
+        <div class="p-note chartfoot" id="merFoot">—</div>
+      </div>
+    </section>
+
+    <!-- BOTTOM -->
+    <section id="spBottom">
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Spend <span>Bands</span></div>
+          <div class="p-note" id="bandNote">—</div>
+        </div>
+        <div class="ptable" id="bands"></div>
+        <div class="p-note chartfoot" id="bandFoot">—</div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title" id="readTitle">What the numbers <span>say</span></div>
+          <div class="p-head-right">
+            <div class="p-note" id="readNote">—</div>
+            <div class="seg tiny" id="readSeg" role="group" aria-label="Right panel view">
+              <button data-view="read" class="active">Read-out</button>
+              <button data-view="lag">Same day?</button>
+              <button data-view="econ">Economics</button>
+            </div>
+          </div>
+        </div>
+        <div class="readout" id="readout"></div>
+      </div>
+    </section>
+
+    <footer id="foot">
+      <div id="footSource">—</div>
+      <div id="footNote">Read-only · observational — these are the weeks the business ran, not an experiment</div>
+    </footer>
+
+    <div class="err" id="errBox">
+      <div><h2>No data loaded</h2><p>Couldn’t find <code>data.js</code>, or the book holds fewer than seven complete days — every figure on this page is measured over whole weeks.</p></div>
+    </div>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/animejs@4.0.0/lib/anime.iife.min.js"></script>
+<script src="./motion.js?v=1790918397"></script>
+<script src="./core.js?v=1790918397"></script>
+<script src="./lib/spend.js?v=1790918397"></script>
+<script src="./data.js?v=1790918397"></script>
+<script src="./prior_year.js?v=1790918397"></script>
+<script src="./spend.js?v=1790918397"></script>
+</body>
+</html>

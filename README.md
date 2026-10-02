@@ -5,16 +5,43 @@ pulled from the Ecommerce Equation sheet and Shopify, sized for a 16:9 desktop, 
 
 > We're diggin' the numbers so you don't have to.
 
-**Three pages, one selector:**
+**Nine pages, one nav** (the order here is the order in the nav, and it comes from
+`DLcore.NAV` in `core.js` — adding a page means adding a row there, not editing nine files):
 
 | Page | File | What it answers |
 |---|---|---|
 | **Daily Ops** | `index.html` / `app.js` | Are we profitable and on pace today? (P&L, breakeven, health lights) |
+| **Pulse** | `daily.html` / `daily.js` | What changed today against its own history? (problem signals) |
 | **Performance Marketing** | `performance.html` / `performance.js` | Is Meta working? (MER, ROAS, CPA, prospecting vs remarketing funnel) |
+| **Meta Ads** | `meta.html` / `meta.js` | How does the ad account read against the benchmark framework? |
+| **Spend ↔ Rev** | `spend.html` / `spend.js` | How tightly are spend, revenue, MER and profit tied — and does the next dollar clear break-even? |
+| **GPAM** | `gpam.html` / `gpam.js` | Gross profit after marketing: the bonus base, above and below the line |
 | **Products** | `products.html` / `products.js` | What's selling? (net sales by category + product, momentum) |
+| **Region** | `region.html` / `region.js` | Where is it selling? (states, countries, momentum) |
+| **Forecast** | `forecast.html` / `forecast_page.js` | What does the rest of the year look like, and how wrong has that been? |
 
-Every page shares one trailing-period selector: **3D · 7D · 30D · 90D · 12M**, ending yesterday,
-compared against the prior equal period. The `‹ ›` arrows step back one whole period at a time.
+Most pages share a trailing-period selector — **3D · 7D · 30D · 90D · 12M**, ending on the last
+complete day, compared against the prior equal period; the `‹ ›` arrows step back one whole
+period at a time. Pages whose data arrives in a different unit say so in their own
+vocabulary: GPAM in named periods (MTD/QTD/FYTD), Region and Products in whole months,
+Spend ↔ Rev in whole weeks. The labels come from `PERIOD_LABEL`, `PERIOD_LABEL_MONTHS` and
+`PERIOD_LABEL_WEEKS` in `core.js`, so a page can only use a spelling the board already has.
+
+### A trap worth knowing about: the sheet's `mer` column is not MER
+
+The workbook ships a column called `mer` that holds `totalAds / revenue` — an ad **cost
+ratio** (26.7%), the reciprocal of the media efficiency ratio (3.75×). The column called
+`roas` is the true MER. Both are checked against every row of `data.js` in
+`source/test_spend.js`, so if the sheet is ever renamed the test says so rather than the
+board quietly changing meaning. Nothing on Spend ↔ Rev reads `mer` as MER: `lib/spend.js`
+computes both from the raw sums and names them `adPct` and `mer`.
+
+Break-even on that page comes from the profit identity the book actually satisfies —
+`profit = revExGst − totalVC − totalAds − totalFC`, exact to the cent over the last 90 days
+and within $1.07 over all 527 — so the break-even MER can never disagree with the profit
+printed beside it. `returns` is already carried inside those lines; subtracting it again
+double-counts, and doing so is what made an earlier read of break-even 2.63× where the
+book says 3.27×.
 
 ---
 
@@ -32,7 +59,7 @@ python3 -m http.server 4173
 After editing any `.js`, `.css`, or data file, cache-bust so the browser refetches:
 
 ```bash
-./bump.sh            # bump ?v= to a fresh timestamp on all three pages
+./bump.sh            # bump ?v= to a fresh timestamp on every page (globbed, not listed)
 # then hard-reload (Cmd-Shift-R)
 ```
 

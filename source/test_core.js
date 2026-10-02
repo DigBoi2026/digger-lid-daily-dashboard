@@ -155,9 +155,19 @@ ok('period: days carry D', C.PERIOD_LABEL['3'] === '3D' && C.PERIOD_LABEL['90'] 
 ok('period: the same digits under a monthly source carry M',
    C.PERIOD_LABEL_MONTHS['3'] === '3M', C.PERIOD_LABEL_MONTHS['3']);
 ok('period: 3D and 3M are never the same string', C.PERIOD_LABEL['3'] !== C.PERIOD_LABEL_MONTHS['3']);
+/* Spend vs Revenue measures in whole weeks, so it gets a third map rather than
+   a '13' that could be read as days on the page next door. */
+ok('period: the same digits under a weekly source carry W',
+   C.PERIOD_LABEL_WEEKS['13'] === '13W' && C.PERIOD_LABEL_WEEKS['52'] === '52W',
+   [C.PERIOD_LABEL_WEEKS['13'], C.PERIOD_LABEL_WEEKS['52']]);
+ok('period: 13D and 13W are never the same string', C.PERIOD_LABEL['14'] !== C.PERIOD_LABEL_WEEKS['13']);
+ok('period: every weekly label names its unit or is a named period',
+   Object.entries(C.PERIOD_LABEL_WEEKS).every(([k, v]) => /^\d+$/.test(k) ? /W$/.test(v) : v === k),
+   C.PERIOD_LABEL_WEEKS);
 ok('period: named periods pass through unchanged',
    C.PERIOD_LABEL.MTD === 'MTD' && C.PERIOD_LABEL.FYTD === 'FYTD' && C.PERIOD_LABEL.YTD === 'YTD');
-ok('period: no label is a bare number', Object.values(C.PERIOD_LABEL).concat(Object.values(C.PERIOD_LABEL_MONTHS))
+ok('period: no label is a bare number', Object.values(C.PERIOD_LABEL)
+   .concat(Object.values(C.PERIOD_LABEL_MONTHS), Object.values(C.PERIOD_LABEL_WEEKS))
    .every(v => !/^\d+$/.test(v)));
 
 /* ---- page shell ---------------------------------------------------------
@@ -173,6 +183,13 @@ ok('navHtml: a query string does not break the match',
 ok('navHtml: an unknown path marks nothing active rather than guessing',
    (C.navHtml('/nope.html').match(/class="active"/g) || []) .length === 0);
 ok('navHtml: sets aria-current on the active tab', /aria-current="page"/.test(C.navHtml('/meta.html')));
+/* Spend vs Revenue is the Meta page's companion and is meant to sit beside it;
+   the order is part of the design, not an accident of the list. */
+ok('nav: Spend vs Rev sits immediately after Meta Ads',
+   C.NAV.findIndex(n => n[0] === 'spend.html') === C.NAV.findIndex(n => n[0] === 'meta.html') + 1,
+   C.NAV.map(n => n[0]));
+ok('nav: every page is listed once and has a label',
+   new Set(C.NAV.map(n => n[0])).size === C.NAV.length && C.NAV.every(n => n[1] && n[1].trim()));
 
 /* ---- formatters ---------------------------------------------------------
    One implementation for eight pages. The negative case is the reason: four
