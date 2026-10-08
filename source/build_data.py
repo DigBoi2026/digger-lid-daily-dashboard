@@ -142,8 +142,15 @@ def verify(payload):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('--url', default=os.environ.get('DASHBOARD_URL', DEFAULT_URL))
-    ap.add_argument('--user', default=os.environ.get('DASHBOARD_USER', DEFAULT_USER))
+    # `os.environ.get(KEY, DEFAULT)` returns the DEFAULT only when the key is
+    # ABSENT. GitHub Actions does not leave a mapped secret absent — it sets it
+    # to the empty string — so `DASHBOARD_USER: ${{ secrets.DASHBOARD_USER }}`
+    # with no such secret handed this script a username of '' and the gate
+    # answered 401 against `:password`. build_snapshots.js uses `||` and was
+    # never affected, which is exactly why region and pulse refreshed on the same
+    # run that this failed. `or` is the form that treats empty and absent alike.
+    ap.add_argument('--url', default=(os.environ.get('DASHBOARD_URL') or DEFAULT_URL))
+    ap.add_argument('--user', default=(os.environ.get('DASHBOARD_USER') or DEFAULT_USER))
     ap.add_argument('--out', default=OUT_DEFAULT)
     ap.add_argument('--no-merge', action='store_true',
                     help='discard existing history instead of merging over it')
@@ -153,7 +160,9 @@ def main():
     # Trimmed for the same reason build_snapshots.js trims: a trailing newline
     # off a copied password turns a correct secret into a 401 with nothing to see.
     password = (os.environ.get('DASHBOARD_PASSWORD') or '').strip()
-    args.user = (args.user or '').strip()
+    # Trimmed, and never allowed to end up empty: an explicit --user '  ' is the
+    # same mistake as an empty secret, and a blank username is never meant.
+    args.user = (args.user or '').strip() or DEFAULT_USER
     if not password:
         sys.exit('Set DASHBOARD_PASSWORD to the dashboard SITE_PASSWORD first.\n'
                  "  export DASHBOARD_PASSWORD='...'")
