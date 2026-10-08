@@ -10,19 +10,38 @@
    the bug, so a new snapshot cannot be added without someone saying how fresh it
    is expected to be. `static: true` is the one exemption and needs a reason.
 
-   Run: node source/check_snapshots.js   (exit 0 = every snapshot within budget)
-*/
+   Run: node source/check_snapshots.js          (exit 0 = everything within budget)
+        node source/check_snapshots.js --auto   (exit 0 = everything a JOB refreshes is within budget)
+
+   WHY --auto EXISTS. The nightly job can only fail on what it can fix. Two
+   snapshots have no scheduled builder at all — someone pulls them by hand — and
+   failing the nightly run on those every night for weeks is how a red badge
+   becomes wallpaper. With --auto they are still printed, and in CI they are
+   still raised as warnings; they just do not decide the exit code. A human
+   running the command bare sees the whole truth, which is the default. */
 const fs = require('fs');
 const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 const DLcore = require(path.join(ROOT, 'core.js'));
 
+/* `auto` says a SCHEDULED JOB refreshes this file. It is not decoration: it is
+   what --auto gates on, so marking something auto without wiring it into
+   .github/workflows/refresh-data.yml re-creates the original bug in a new
+   place. `by` is the command, and for a manual snapshot it is the instruction
+   a human needs when the warning fires. */
 const MANIFEST = [
-  { file: 'region_data.js',      global: 'DL_REGION',            budget: 7,  note: 'refreshed by build_snapshots.js' },
-  { file: 'pulse_data.js',       global: 'DL_PULSE',             budget: 7,  note: 'refreshed by build_snapshots.js' },
-  { file: 'data.js',             global: 'DL_DATA',              budget: 7,  note: 'refreshed by build_data.py' },
-  { file: 'products_history.js', global: 'DL_PRODUCTS_HISTORY',  budget: 21, note: 'immutable history; the page tops up the last 45 days live' },
-  { file: 'meta_snapshot.js',    global: 'DL_META_SNAPSHOT',     budget: 45, note: '90-day benchmark pull, not a daily figure' },
+  { file: 'region_data.js',      global: 'DL_REGION',            budget: 7,  auto: true,
+    by: 'node source/build_snapshots.js' },
+  { file: 'pulse_data.js',       global: 'DL_PULSE',             budget: 7,  auto: true,
+    by: 'node source/build_snapshots.js' },
+  { file: 'data.js',             global: 'DL_DATA',              budget: 7,  auto: true,
+    by: 'python3 source/build_data.py' },
+  { file: 'products_history.js', global: 'DL_PRODUCTS_HISTORY',  budget: 21, auto: false,
+    by: 'pull /api/shopify?dataset=productsHistory in halves, then node source/build_products_history.js <a.json> <b.json>',
+    note: 'immutable history; the page tops up the last 45 days live' },
+  { file: 'meta_snapshot.js',    global: 'DL_META_SNAPSHOT',     budget: 45, auto: false,
+    by: 'a 90-day Meta Ads benchmark pull, by hand',
+    note: '90-day benchmark pull, not a daily figure' },
   { file: 'prior_year.js',       global: 'DL_PRIOR',             static: true, note: '2025 is closed; static by design' },
   /* ORPHAN. No HTML loads it and no page reads DL_SHOPIFY — the Products page
      moved to products_history.js and left this behind. source/build_win3.js and
@@ -41,9 +60,15 @@ function load(file, global) {
   return { meta: obj.meta || {} };
 }
 
+const AUTO_ONLY = process.argv.includes('--auto');
+const CI = !!process.env.GITHUB_ACTIONS;
+/* A workflow annotation, so a stale snapshot is visible on the run's summary
+   page rather than only to whoever opens the log. */
+const annotate = (level, msg) => { if (CI) console.log(`::${level} title=snapshot freshness::${msg}`); };
+
 const today = DLcore.todayAEST();
-let fail = 0;
-console.log(`snapshot freshness · ${today}\n`);
+let fail = 0, warn = 0;
+console.log(`snapshot freshness · ${today}${AUTO_ONLY ? '  (gating on automated snapshots only)' : ''}\n`);
 
 for (const m of MANIFEST) {
   if (m.orphan) { console.log(`  ! ${m.file.padEnd(22)} ORPHAN — ${m.note}`); continue; }
@@ -56,8 +81,16 @@ for (const m of MANIFEST) {
     console.log(`  ✗ ${m.file.padEnd(22)} DECLARES NO DATE — add asOf/builtOn to its meta`); fail++; continue;
   }
   const over = a.level === 'stale';
-  console.log(`  ${over ? '✗' : '·'} ${m.file.padEnd(22)} ${String(a.days).padStart(3)}d old (budget ${m.budget}d) · asOf ${a.asOf}${over ? '  ← STALE: ' + m.note : ''}`);
-  if (over) fail++;
+  /* Stale and nobody's job to fix on a schedule: still shouted about, but it
+     cannot fail a run that was never able to refresh it. */
+  const soft = over && AUTO_ONLY && !m.auto;
+  const mark = !over ? '·' : soft ? '!' : '✗';
+  const tail = over ? `  ← STALE${m.auto ? '' : ' (manual)'}: ${m.by}` : '';
+  console.log(`  ${mark} ${m.file.padEnd(22)} ${String(a.days).padStart(3)}d old (budget ${m.budget}d) · asOf ${a.asOf}${tail}`);
+  if (over) {
+    annotate(soft ? 'warning' : 'error', `${m.file} is ${a.days}d old (budget ${m.budget}d). Refresh: ${m.by}`);
+    if (soft) warn++; else fail++;
+  }
 }
 
 /* A snapshot shipped but never registered is the same silence in a new file. */
@@ -70,5 +103,8 @@ if (strays.length) {
   fail += strays.length;
 }
 
-console.log(`\nsnapshots: ${fail ? fail + ' need attention' : 'all within budget'}`);
+const parts = [];
+if (fail) parts.push(`${fail} need attention`);
+if (warn) parts.push(`${warn} stale but refreshed by hand`);
+console.log(`\nsnapshots: ${parts.length ? parts.join(', ') : 'all within budget'}`);
 process.exit(fail ? 1 : 0);

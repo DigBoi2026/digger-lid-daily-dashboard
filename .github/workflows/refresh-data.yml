@@ -1,18 +1,34 @@
 # Keeps the board's fallback data honest. Two independent jobs, because they need
 # different credentials and either is useful without the other:
 #
-#   snapshots  the committed fallbacks each page ships (region_data.js,
-#              pulse_data.js). Pulled from the DEPLOYED API, so the only secret
-#              is DASHBOARD_PASSWORD — the site gate. This is the job that fixes
-#              the real failure: source/build_region.js made no network call at
-#              all, so region_data.js froze on 2026-07-02 and stayed frozen for
-#              eighty-one days while every page rendered it as current.
+#   snapshots  the committed fallbacks each page ships: data.js, region_data.js
+#              and pulse_data.js. All three come from the DEPLOYED API, so the
+#              only secret is DASHBOARD_PASSWORD — the site gate. This is the job
+#              that fixes the real failure: source/build_region.js made no
+#              network call at all, so region_data.js froze on 2026-07-02 and
+#              stayed frozen for eighty-one days while every page rendered it as
+#              current.
+#
+#              data.js joined this job late. It is the biggest snapshot on the
+#              board and nothing automated refreshed it — `npm run snapshot` was
+#              a command someone had to remember — so it drifted a month behind
+#              the sheet. Its builder already merges rather than replaces (the
+#              API returns four months; the board needs the year), and verifies
+#              three known-good anchors before writing, so a bad parse fails
+#              loudly instead of overwriting the year with nulls.
 #
 #   history    the immutable Shopify history the live routes serve instead of
 #              re-pulling two years on every cache miss. Needs SHOPIFY_TOKEN.
 #
-# Each job SKIPS cleanly when its secret is absent rather than failing, so adding
-# one secret gets you one working job instead of a red workflow.
+# Each job SKIPS its BUILD cleanly when its secret is absent rather than erroring,
+# so adding one secret gets you one working job instead of two broken ones.
+#
+# The FRESHNESS GATE runs either way, and that is deliberate. This workflow
+# reported success nineteen times in a row while region_data.js sat ninety-six
+# days out of date, because a run that does nothing exits 0. A green tick on a
+# job whose entire purpose went unperformed is worse than no job at all. The
+# gate asks the only question that matters — is the board's data actually fresh?
+# — so the run is red whenever the answer is no, whatever the reason.
 #
 # Secrets (Settings -> Secrets and variables -> Actions):
 #   DASHBOARD_PASSWORD   the current SITE_PASSWORD        -> snapshots job
@@ -40,6 +56,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      # build_data.py is standard library only — no pip install step needed.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Report freshness before
         run: node source/check_snapshots.js || true
@@ -51,18 +71,19 @@ jobs:
           DASHBOARD_USER: ${{ secrets.DASHBOARD_USER }}
         run: |
           if [ -z "${DASHBOARD_PASSWORD:-}" ]; then
-            echo "::notice title=snapshots skipped::DASHBOARD_PASSWORD is not set, so the committed snapshots cannot be refreshed."
+            echo "::warning title=snapshots skipped::DASHBOARD_PASSWORD is not set, so data.js, region_data.js and pulse_data.js cannot be refreshed. Add it under Settings -> Secrets and variables -> Actions."
             echo "skipped=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           node source/build_snapshots.js
+          python3 source/build_data.py
 
       - name: Commit any changes
         if: steps.build.outputs.skipped != 'true'
         run: |
           git config user.name "digboi-data-bot"
           git config user.email "bot@diggerlid.com"
-          git add region_data.js pulse_data.js
+          git add data.js region_data.js pulse_data.js
           if git diff --cached --quiet; then
             echo "No snapshot changes."
           else
@@ -70,11 +91,14 @@ jobs:
             git push
           fi
 
-      # After the refresh this must pass. A snapshot still over budget here means
-      # the rebuild did not actually move it, which is the thing worth shouting about.
+      # ALWAYS. Not "if the build ran" — a run that skipped its build and left
+      # the board a month stale is exactly the run that must not report success.
+      # --auto so the two snapshots nobody schedules (products_history,
+      # meta_snapshot) are raised as warnings rather than failing a job that
+      # could never have refreshed them.
       - name: Freshness gate
-        if: steps.build.outputs.skipped != 'true'
-        run: node source/check_snapshots.js
+        if: always()
+        run: node source/check_snapshots.js --auto
 
   history:
     name: Rebuild Shopify history cache

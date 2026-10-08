@@ -110,9 +110,11 @@ jobs:
         run: |
           set -uo pipefail
           if [ -z "${TOKEN:-}" ]; then
-            echo "No WATCHDOG_TOKEN secret set, so there is nothing to log with."
-            echo "Add one (the CRON_SECRET or an AI token from Vercel) under"
-            echo "Settings -> Secrets and variables -> Actions to start the log."
+            # Still exits clean — an alarm must not break on missing config —
+            # but no longer SILENTLY. 161 runs reported success while
+            # forecast_log.csv was never created, because a plain echo lives
+            # only in a log nobody opens. A warning shows on the run summary.
+            echo "::warning title=forecast log not recording::WATCHDOG_TOKEN is not set, so forecast_log.csv has never been written. Add it (the CRON_SECRET, or an AI token from Vercel) under Settings -> Secrets and variables -> Actions. Until then there is no record of what the forecast said, so it can only ever be checked by backtest."
             exit 0
           fi
 

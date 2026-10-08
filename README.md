@@ -194,11 +194,40 @@ curl -H "Authorization: Bearer $CRON_SECRET" \
      "https://<host>/api/watchdog?format=csv" >> forecast_log.csv
 ```
 
+## Keeping the snapshots fresh (two repository secrets)
+
+Every page ships a committed fallback and upgrades to the live route when it can
+reach it. The fallbacks are refreshed nightly by `.github/workflows/refresh-data.yml`
+(04:20 AEST), and the whole thing hangs on **one secret**:
+
+| Secret | Unlocks | Without it |
+|---|---|---|
+| `DASHBOARD_PASSWORD` | `data.js`, `region_data.js`, `pulse_data.js` — all three come from the deployed API, so one secret covers them | The build step skips and the freshness gate fails the run |
+| `WATCHDOG_TOKEN` | `forecast_log.csv` — one row a day recording what the forecast actually said | The log is never written, so the forecast can only ever be checked by backtest, never against what happened |
+
+Add them under **Settings → Secrets and variables → Actions → New repository
+secret**. `DASHBOARD_PASSWORD` is the current `SITE_PASSWORD` — the same one the
+board asks for in the browser. `WATCHDOG_TOKEN` is the `CRON_SECRET`, or an AI
+token from Vercel.
+
+**Why the gate runs even when the build skips.** This workflow reported success
+nineteen times in a row while `region_data.js` sat ninety-six days out of date,
+because a run that does nothing exits 0. A green tick on a job whose entire
+purpose went unperformed is worse than no job at all. The gate now runs with
+`if: always()` and asks the only question that matters — *is the board's data
+actually fresh?* — so the run is red whenever the answer is no, whatever the
+reason.
+
+`node source/check_snapshots.js` prints the whole picture; `--auto` gates only on
+the snapshots a scheduled job refreshes, so the two that are pulled by hand
+(`products_history.js`, `meta_snapshot.js`) are raised as warnings instead of
+failing a job that could never have fixed them.
+
 ## Data provenance — read this before trusting a number
 
 | Data | Source | Freshness | Notes |
 |---|---|---|---|
-| Daily P&L (Daily Ops, Performance) | `data.js` — Ecommerce Equation 7.1 sheet | **Snapshot** (Jan 1 – Jun 30 2026) | 181 daily rows + 6 monthly. Regenerate with `build_data.py`. |
+| Daily P&L (Daily Ops, Performance) | `data.js` — Ecommerce Equation 7.1 sheet, via `/api/data` | **Snapshot**, refreshed nightly | 251 daily rows + 9 monthly at the last refresh. `python3 source/build_data.py` merges the API's four months over the committed year and verifies three known-good anchors before writing, so a bad parse fails loudly instead of overwriting the year with nulls. Needs `DASHBOARD_PASSWORD`. |
 | Shopify product/category sales | `shopify_data.js` | **ORPHANED — not loaded** | No page includes this file and nothing reads `window.DL_SHOPIFY`; the Products page moved to `products_history.js`. `build_win3.js` and `build_cat_monthly.py` still write to it. Wire it up or delete it — `npm run snapshots:check` reports it every run. |
 | Category × month net sales (trend chart) | `shopify_data.js` → `catMonthly` | **ORPHANED — not loaded** | See above: the file is no longer included by any page. |
 | Live sheet pull (when deployed) | `api/data.js` (Vercel serverless) | Daily, up to yesterday | Merges into the embedded history so 90D/12M stay intact. |
