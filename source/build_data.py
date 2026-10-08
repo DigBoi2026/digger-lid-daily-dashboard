@@ -70,8 +70,10 @@ def fetch(url, user, password, timeout=60):
             return json.loads(r.read().decode('utf-8'))
     except urllib.error.HTTPError as e:
         if e.code == 401:
-            sys.exit('HTTP 401 — the gate rejected the credentials. '
-                     'Set DASHBOARD_PASSWORD to the current SITE_PASSWORD.')
+            sys.exit(f'HTTP 401 — the gate rejected user "{user}". Either DASHBOARD_PASSWORD is '
+                     'not the current SITE_PASSWORD (it was rotated on 2026-09-09), or SITE_USER '
+                     f'on the deployment is not "{user}" and needs a DASHBOARD_USER secret to '
+                     'match. The password is read trimmed, so stray whitespace is not the cause.')
         if e.code == 503:
             sys.exit('HTTP 503 — the deployment has no SITE_PASSWORD set, so it '
                      'is refusing every request. Fix that first.')
@@ -148,7 +150,10 @@ def main():
     ap.add_argument('--dry-run', action='store_true', help='verify only, write nothing')
     args = ap.parse_args()
 
-    password = os.environ.get('DASHBOARD_PASSWORD')
+    # Trimmed for the same reason build_snapshots.js trims: a trailing newline
+    # off a copied password turns a correct secret into a 401 with nothing to see.
+    password = (os.environ.get('DASHBOARD_PASSWORD') or '').strip()
+    args.user = (args.user or '').strip()
     if not password:
         sys.exit('Set DASHBOARD_PASSWORD to the dashboard SITE_PASSWORD first.\n'
                  "  export DASHBOARD_PASSWORD='...'")

@@ -12,6 +12,7 @@
 
    Run: node source/check_snapshots.js          (exit 0 = everything within budget)
         node source/check_snapshots.js --auto   (exit 0 = everything a JOB refreshes is within budget)
+        ... --no-annotate                        (print only; raise nothing on the CI summary)
 
    WHY --auto EXISTS. The nightly job can only fail on what it can fix. Two
    snapshots have no scheduled builder at all — someone pulls them by hand — and
@@ -61,7 +62,12 @@ function load(file, global) {
 }
 
 const AUTO_ONLY = process.argv.includes('--auto');
-const CI = !!process.env.GITHUB_ACTIONS;
+/* The workflow reports freshness twice: once before the rebuild and once after.
+   Annotating both put every stale file on the run summary TWICE, and the
+   before-run (which has no --auto) raised the two hand-pulled snapshots as
+   errors, so the run showed eight errors for three problems. Only the gate
+   annotates. */
+const CI = !!process.env.GITHUB_ACTIONS && !process.argv.includes('--no-annotate');
 /* A workflow annotation, so a stale snapshot is visible on the run's summary
    page rather than only to whoever opens the log. */
 const annotate = (level, msg) => { if (CI) console.log(`::${level} title=snapshot freshness::${msg}`); };

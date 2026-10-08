@@ -30,8 +30,13 @@ const ROOT = path.resolve(__dirname, '..');
 const DLcore = require(path.join(ROOT, 'core.js'));
 
 const BASE = process.env.DASHBOARD_URL || 'https://digboi-seven.vercel.app';
-const USER = process.env.DASHBOARD_USER || 'diggerlid';
-const PASS = process.env.DASHBOARD_PASSWORD || '';
+/* .trim() is not cosmetic. A secret pasted into GitHub's box carries whatever
+   came with it, and a trailing newline off the end of a copied password changes
+   the Basic-Auth header into one the gate rejects — a correct password that
+   401s, with nothing to see. Only the ENDS are trimmed: a password is allowed
+   to contain a space, just not to begin or end with one. */
+const USER = (process.env.DASHBOARD_USER || 'diggerlid').trim();
+const PASS = (process.env.DASHBOARD_PASSWORD || '').trim();
 
 /* target → where it comes from, what global it defines, and the banner to write. */
 const TARGETS = {
@@ -68,7 +73,10 @@ async function pull(route) {
   const headers = { Accept: 'application/json' };
   if (PASS) headers.Authorization = 'Basic ' + Buffer.from(`${USER}:${PASS}`).toString('base64');
   const r = await fetch(url, { headers });
-  if (r.status === 401) throw new Error('HTTP 401 — set DASHBOARD_PASSWORD to the current SITE_PASSWORD');
+  if (r.status === 401) throw new Error(
+    `HTTP 401 — the gate rejected user "${USER}". Either DASHBOARD_PASSWORD is not the current ` +
+    'SITE_PASSWORD (it was rotated on 2026-09-09), or SITE_USER on the deployment is not "' + USER +
+    '" and needs a DASHBOARD_USER secret to match. The password is read trimmed, so stray whitespace is not the cause.');
   if (r.status === 503) throw new Error('HTTP 503 — the route is refusing (rate limit, or no SITE_PASSWORD deployed)');
   if (!r.ok) throw new Error(`HTTP ${r.status} from ${route}`);
   const j = await r.json();

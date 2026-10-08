@@ -61,8 +61,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      # --no-annotate: this is the BEFORE picture, printed for the log. Only the
+      # gate at the end annotates, or every stale file lands on the run summary
+      # twice — which is how three problems showed up as eight errors.
       - name: Report freshness before
-        run: node source/check_snapshots.js || true
+        run: node source/check_snapshots.js --no-annotate || true
 
       - name: Rebuild from the live API
         id: build
@@ -70,13 +73,43 @@ jobs:
           DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
           DASHBOARD_USER: ${{ secrets.DASHBOARD_USER }}
         run: |
+          set -uo pipefail
           if [ -z "${DASHBOARD_PASSWORD:-}" ]; then
             echo "::warning title=snapshots skipped::DASHBOARD_PASSWORD is not set, so data.js, region_data.js and pulse_data.js cannot be refreshed. Add it under Settings -> Secrets and variables -> Actions."
             echo "skipped=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          node source/build_snapshots.js
-          python3 source/build_data.py
+
+          # Run each builder with its output CAPTURED, so a failure can be put
+          # where someone will read it. Run 20 failed here and the only thing on
+          # the summary was "Process completed with exit code 1" — the builder
+          # had said exactly what was wrong, in a log you have to download to
+          # see. A failure nobody can read is the same bug as a success nobody
+          # can doubt.
+          run_builder () {
+            local label="$1"; shift
+            local out rc
+            out="$("$@" 2>&1)"; rc=$?
+            printf '%s\n' "$out"
+            if [ $rc -ne 0 ]; then
+              {
+                echo "### ❌ $label failed"
+                echo ''
+                echo '```'
+                printf '%s\n' "$out"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              # One line, annotation-safe: %0A is how a newline survives.
+              echo "::error title=$label failed::$(printf '%s' "$out" | tail -4 | sed 's/::/:/g' | paste -sd '|' -)"
+              return 1
+            fi
+            return 0
+          }
+
+          fail=0
+          run_builder "region + pulse snapshot" node source/build_snapshots.js || fail=1
+          run_builder "data.js snapshot"        python3 source/build_data.py   || fail=1
+          exit $fail
 
       - name: Commit any changes
         if: steps.build.outputs.skipped != 'true'
