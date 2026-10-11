@@ -90,3 +90,12 @@ Countries are the one lens the model cannot carry: New Zealand and rest-of-world
 - **Fill the workbook's Country 2/3/4 columns** if a country forecast that ties to the P&L and carries profit matters. Until then the country lens is Shopify's measure and says so.
 - **Leave New Zealand and DiggerShield as scale, not forecast.** No model on 268 or 155 selling days a year will do better than ±50%, and a tighter-looking number would be a lie.
 - **Do not add a calibration constant.** The −7% bias is two events, not a drift, and the optimistic scenario already carries the upside case at −1% bias.
+
+## 7. Using the forecast to set a target (FY27 bonus plan, Oct 2026)
+
+The dashboard still carries no calibration constant (section 6). A *target* set off the forecast is a different job, and for the FY27 Head of Growth bonus plan the realistic case was lifted for the measured under-forecast (−12.1% at 60 days, Oct 2026 backtest). Two rules, learned by getting the first one wrong:
+
+- **Lift revenue and GPAM only, never profit.** Lifted profit = lift × GPAM − below-the-line, with lift = 1 / (1 − 0.121). Multiplying profit by the lift also scales fixed costs, which do not grow with sales; on FY27 it understated plan profit by about $99K ($510,338 instead of $609,445).
+- **Lift only the days not yet traded.** Banked quarters stay at actuals.
+
+Resulting FY27 plan: revenue $8,724,883, profit $609,445, below-the-line budget $978,842 — 69% of the way from the realistic to the optimistic case on revenue. The plan itself lives in the Claude Docs document "FY27 Bonus Plan — Head of Growth".
