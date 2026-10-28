@@ -99,3 +99,23 @@ The dashboard still carries no calibration constant (section 6). A *target* set 
 - **Lift only the days not yet traded.** Banked quarters stay at actuals.
 
 Resulting FY27 plan: revenue $8,724,883, profit $609,445, below-the-line budget $978,842 — 69% of the way from the realistic to the optimistic case on revenue. The plan itself lives in the Claude Docs document "FY27 Bonus Plan — Head of Growth".
+
+## 8. The seasonal engine misread October; a spend-led model (28 Oct 2026)
+
+**What happened.** Rebuilt as of 25 Sep 2026, the engine forecast the next 30 days at $605,683; actual was $496,171 (+22%, and 10% below even the pessimistic case). Revenue had been flat at ~$16.6K a day since August, with ad spend flat at ~$5K a day. Last October spend rose 80% on September and revenue 64%; the engine's one-year month index read that as October demand. Year-on-year revenue has tracked year-on-year spend every month (Aug ×2.02 / ×2.25, Sep ×2.37 / ×2.65, Oct ×1.45 / ×1.38). The realistic FY27 forecast fell from $7.83M to $6.83M ex GST between 8 and 25 Oct as flat October was read as falling demand.
+
+**The model.** `forecast_simple.js`: revenue for a period = the same days last year (364 days back, so weekdays, Father's Day and Black Friday line up) × today's 28-day year-on-year revenue growth × (planned spend growth ÷ today's spend growth). Elasticity e = 1 tested best (0.5: 11.5%, 1.25: 10.9% at 30 days), so this is planned spend × today's MER × last year's change in MER. Profit by the sheet's identity, with the 90-day contribution rate and the latest day's fixed cost.
+
+| from every day, 25 May – 25 Sep 2026 origins | 30d | 60d | 90d |
+|---|---|---|---|
+| seasonal engine | 12.9% (−8) | 10.7% (−10) | 9.6% (−9) |
+| spend-led, e = 1 | 9.1% (−4) | 9.4% (−8) | 11.1% (−10) |
+| spend-led without spend (e = 0) | 17.9% | 15.0% | 14.4% |
+
+Weekly origins are not enough to rank these: 8.1% or 9.7% at 30 days depending only on the starting weekday. The spend-led model is far better since July (6–8% against 10–24%), worse around EOFY (ran 11–17% low) and slightly worse at 90 days. It needs a spend plan, it is measured with the spend that was actually spent, and it has never been backtested through BFCM.
+
+**Dropped, because the ablation measured them at or near zero:** prior-year smoothing (0.0 pts), the event-scaling threshold (0.0), day-of-week (0.2–0.6 pts, and whole-week windows cancel it), the growth trend (today's YoY ratio is one), shape-mode level, observed ceiling, the monthly ad-rate index (spend is now an input). The fitted Father's Day modifier is unnecessary under 364-day alignment; only a change to a promotion is declared (`saleExtension`).
+
+**Not yet done:** the Forecast page still runs `forecast.js`. Four of `test_forecast.js`'s real-data assertions were already failing on the 28 Oct data before this change.
+
+Run the Nov–Jan forecast: `node source/forecast_simple_report.js [--trim 0.15] [--extra-days 3.5]`.
