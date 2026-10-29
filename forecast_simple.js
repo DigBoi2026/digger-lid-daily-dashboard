@@ -246,7 +246,7 @@ var DLforecastSimple = (function () {
                     profit: r ? revenue * contrib - pd.spend - r.fixedPerDay * p.days : null };
       });
       if (!base) return { name: pd.name, start: pd.start, end: pd.end, missing: true };
-      return Object.assign({ name: pd.name }, base, { scenarios: scen });
+      return Object.assign({ name: pd.name, sale: !!pd.sale }, base, { scenarios: scen });
     });
     return { from, rates: r, band, backtest: bt, periods: out };
   }

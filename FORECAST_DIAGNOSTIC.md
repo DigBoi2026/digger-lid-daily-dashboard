@@ -118,6 +118,8 @@ Weekly origins are not enough to rank these: 8.1% or 9.7% at 30 days depending o
 
 **Scenarios lean cautious (29 Oct 2026, at Matthew's request).** Realistic assumes spend above trend works at e = 0.75; the backtest's e = 1 was measured on spend within about 1.5× of trend, and the BFCM budget sits at 1.35×. Pessimistic takes the 95th-percentile backtest miss (actual = forecast / 1.147), e = 0.5 above trend, and the Scale planner's 44.2% sale-order margin on sale days (2025's sale held its margin, so only this case takes it). Optimistic takes the 10th-percentile miss and e = 1. A spend cut below trend costs its full share in every case. Realistic was already conservative against the median miss (−6%), so it now sits further below where the backtest centres.
 
+**Readiness checks (29 Oct 2026).** Out of sample (bands fitted on May–Jul origins, tested on 56 Aug–Sep origins): no actual fell below pessimistic, one rose above optimistic, and 73% beat realistic. Hindcast from a week before each 2026 sale with actual spend: EOFY came in 12% above realistic and Father's Day 25% above (near optimistic). Monte Carlo over the backtest misses, elasticity 0.5–1, the post-CM day at 1–2 middle days and sale margin 44.2–47.3%: realistic Nov–Jan revenue sits at the 29th percentile, pessimistic at the 2nd, optimistic at the 95th; P(sale ≥ $990K) 92%, P(Nov–Jan loss) 0.8%, P(December loss) 97%. The report adds actuals to the forecast as the data moves through November (`source/test_forecast_simple_report.js`).
+
 **Not yet done:** the Forecast page still runs `forecast.js`. Four of `test_forecast.js`'s real-data assertions were already failing on the 28 Oct data before this change.
 
 Run the Nov–Jan forecast: `node source/forecast_simple_report.js [--trim 0.15]`.
