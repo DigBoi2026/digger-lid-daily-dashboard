@@ -1,6 +1,8 @@
-# Forecast diagnostic — v3 (10 Sep 2026)
+# Forecast diagnostic — v4 (29 Oct 2026)
 
-Rollback point: branch `rollback/v2` (commit `0c58d8d`). `git checkout rollback/v2` restores the three-lens board exactly as it was before this pass.
+**v4** adds a spend-led planning model (`forecast_simple.js`, section 8) after the v3 engine over-forecast October by 22%. It plans BFCM 2026 and Nov–Jan. The Forecast page still runs the v3 engine (`forecast.js`); sections 1–7 describe that engine and stand as written. Rollback point for v4: `a1a5fa1`, `main` before the merge. v4 adds files and changes no page, so reverting the merge commit removes it cleanly.
+
+Rollback point for v3: branch `rollback/v2` (commit `0c58d8d`). `git checkout rollback/v2` restores the three-lens board exactly as it was before the v3 pass.
 
 Everything below is measured by walk-forward backtest on the real 2025 + 2026 books: rewind to a past date, forget everything after it, refit, forecast, compare. Origins every 7 days; 18 with a prior year to lean on, more without. "MAPE" is mean absolute percentage error over the horizon total; "bias" is the signed mean (negative = under-forecast). Re-run any time with `node source/ablate_forecast.js`.
 
@@ -120,6 +122,34 @@ Weekly origins are not enough to rank these: 8.1% or 9.7% at 30 days depending o
 
 **Readiness checks (29 Oct 2026).** Out of sample (bands fitted on May–Jul origins, tested on 56 Aug–Sep origins): no actual fell below pessimistic, one rose above optimistic, and 73% beat realistic. Hindcast from a week before each 2026 sale with actual spend: EOFY came in 12% above realistic and Father's Day 25% above (near optimistic). Monte Carlo over the backtest misses, elasticity 0.5–1, the post-CM day at 1–2 middle days and sale margin 44.2–47.3%: realistic Nov–Jan revenue sits at the 29th percentile, pessimistic at the 2nd, optimistic at the 95th; P(sale ≥ $990K) 92%, P(Nov–Jan loss) 0.8%, P(December loss) 97%. The report adds actuals to the forecast as the data moves through November (`source/test_forecast_simple_report.js`).
 
-**Not yet done:** the Forecast page still runs `forecast.js`. Four of `test_forecast.js`'s real-data assertions were already failing on the 28 Oct data before this change.
+**The forecast as merged (data to 25 Oct 2026).** Inputs:
 
-Run the Nov–Jan forecast: `node source/forecast_simple_report.js [--trim 0.15]`.
+- Sale dates from the BFCM 2026 Sale Plan: hype 17–18 Nov, sale 19 Nov – 1 Dec.
+- $230K across hype and sale.
+- $5,034 a day before the hype, $4,149 in December and $2,108 in January.
+- Grease is excluded from the discount but assumed to sell at last year's volume. Stock is not capped.
+
+Revenue includes GST:
+
+| | Ad spend | Pessimistic | Realistic | Optimistic |
+|---|---|---|---|---|
+| Nov 2026 revenue / profit | $293K | $1.04M / $93K | $1.27M / $229K | $1.58M / $375K |
+| Dec 2026 | $142K | $326K / −$73K | $393K / −$40K | $462K / −$7K |
+| Jan 2027 | $65K | $307K / −$4K | $352K / $17K | $410K / $45K |
+| Hype + sale, 17 Nov – 1 Dec | $230K | $888K / $122K | $1.12M / $258K | $1.40M / $394K |
+
+**Status.**
+
+- **Done:**
+  - the model, with cautious scenarios;
+  - BFCM 2026 dates;
+  - the report, which stays correct as the data moves through November;
+  - 57 tests in `npm test`, ahead of `test_forecast.js`.
+- **Open:**
+  - The Forecast page still runs `forecast.js`.
+  - Four of `test_forecast.js`'s real-data assertions were already failing on the 28 Oct data before this change.
+  - BFCM has never been backtested.
+  - The FY27 bonus-plan targets were set off the v3 engine plus a 12.1% lift, and need rebasing.
+  - After BFCM, compare the sale's actuals with the three cases above.
+
+Run the Nov–Jan forecast: `node source/forecast_simple_report.js [--sale-spend 230000] [--trim 0.15]`.

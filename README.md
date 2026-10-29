@@ -112,6 +112,12 @@ Origins without one scored ±27%. October to December are unvalidated at any hor
 no origin in the data reaches them — so BFCM rests on a single observed November, and
 the page says so on its face.
 
+**`forecast_simple.js` is the planning model (v4, Oct 2026)** — revenue = planned ad spend ×
+today's MER × last year's change in MER, because revenue here follows spend. It beat the
+engine at 30 and 60 days (9.1% / 9.4% against 12.9% / 10.7%) after the engine over-forecast
+October by 22%. It drives the BFCM and Nov–Jan plan (`node source/forecast_simple_report.js`),
+not the Forecast page. See `FORECAST_DIAGNOSTIC.md` section 8.
+
 **Sale periods** are the one thing the seasonality cannot carry. EOFY and BFCM are
 month-aligned, so the month index prices them exactly and declaring them again would
 double-count. Father's Day is not: it is the first Sunday of September, its run-up sits
