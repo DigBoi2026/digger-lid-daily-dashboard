@@ -116,6 +116,8 @@ Weekly origins are not enough to rank these: 8.1% or 9.7% at 30 days depending o
 
 **Dropped, because the ablation measured them at or near zero:** prior-year smoothing (0.0 pts), the event-scaling threshold (0.0), day-of-week (0.2–0.6 pts, and whole-week windows cancel it), the growth trend (today's YoY ratio is one), shape-mode level, observed ceiling, the monthly ad-rate index (spend is now an input). The fitted Father's Day modifier is unnecessary under 364-day alignment; only a sale whose dates change is declared (`saleMap`: BFCM 2026 moves to hype 17–18 Nov, sale 19 Nov – Tue 1 Dec, per the BFCM 2026 Sale Plan).
 
+**Scenarios lean cautious (29 Oct 2026, at Matthew's request).** Realistic assumes spend above trend works at e = 0.75; the backtest's e = 1 was measured on spend within about 1.5× of trend, and the BFCM budget sits at 1.35×. Pessimistic takes the 95th-percentile backtest miss (actual = forecast / 1.147), e = 0.5 above trend, and the Scale planner's 44.2% sale-order margin on sale days (2025's sale held its margin, so only this case takes it). Optimistic takes the 10th-percentile miss and e = 1. A spend cut below trend costs its full share in every case. Realistic was already conservative against the median miss (−6%), so it now sits further below where the backtest centres.
+
 **Not yet done:** the Forecast page still runs `forecast.js`. Four of `test_forecast.js`'s real-data assertions were already failing on the 28 Oct data before this change.
 
 Run the Nov–Jan forecast: `node source/forecast_simple_report.js [--trim 0.15]`.

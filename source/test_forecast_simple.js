@@ -66,15 +66,32 @@ function books(g, s) {
 /* --------------------------------------------------------------- P&L + band */
 {
   const rows = books(1.5, 2);
-  const fc = S.forecast(rows, { from: '2026-05-20', band: { p10: -0.2, p90: 0.1 },
-    periods: [{ name: 'Jun', start: '2026-06-01', end: '2026-06-30', spend: 30000 }] });
+  // spend well below trend, so elasticityUp does not apply and the band alone separates the cases
+  const fc = S.forecast(rows, { from: '2026-05-20', band: { p10: -0.2, p95: 0.1 },
+    periods: [{ name: 'Jun', start: '2026-06-01', end: '2026-06-30', spend: 3000 }] });
   const p = fc.periods[0], sc = p.scenarios;
   ok('contribution rate from the identity', near(fc.rates.contrib, 0.47, 1e-9), fc.rates.contrib);
   ok('fixed cost is the latest day, not a mean', fc.rates.fixedPerDay === 600);
-  ok('profit = revenue x contrib - spend - fixed', near(sc.realistic.profit, sc.realistic.revenue * 0.47 - 30000 - 600 * 30, 1e-6));
-  ok('band turned the right way: over-forecast at p90 -> pessimistic below', near(sc.pessimistic.revenue, p.revenue / 1.1, 1e-6));
+  ok('profit = revenue x contrib - spend - fixed', near(sc.realistic.profit, sc.realistic.revenue * 0.47 - 3000 - 600 * 30, 1e-6));
+  ok('band turned the right way: over-forecast at p95 -> pessimistic below', near(sc.pessimistic.revenue, p.revenue / 1.1, 1e-6));
   ok('under-forecast at p10 -> optimistic above', near(sc.optimistic.revenue, p.revenue / 0.8, 1e-6));
   ok('scenarios ordered', sc.pessimistic.revenue < sc.realistic.revenue && sc.realistic.revenue < sc.optimistic.revenue);
+
+  // spend above trend: extra dollars work at 0.5 / 0.75 / 1 across the cases
+  const up = S.forecast(rows, { from: '2026-05-20', band: {},
+    periods: [{ name: 'Jun', start: '2026-06-01', end: '2026-06-30', spend: 120000, sale: true }] }).periods[0];
+  const flat = S.period(S.index(rows), '2026-05-20', '2026-06-01', '2026-06-30', 120000, { elasticity: 0 }).revenue;
+  const rel = up.yoySpendPlan / up.yoySpendNow;
+  ok('above trend: realistic at e = 0.75', rel > 1 && near(up.scenarios.realistic.revenue, flat * Math.pow(rel, 0.75), 1e-6));
+  ok('above trend: pessimistic at e = 0.5, optimistic at e = 1',
+     near(up.scenarios.pessimistic.revenue, flat * Math.pow(rel, 0.5), 1e-6) && near(up.scenarios.optimistic.revenue, flat * rel, 1e-6));
+  ok('pessimistic sale margin capped at 44.2%', near(up.scenarios.pessimistic.profit,
+     up.scenarios.pessimistic.revenue * 0.442 - 120000 - 600 * 30, 1e-6));
+  ok('realistic sale margin left at the measured rate', near(up.scenarios.realistic.profit,
+     up.scenarios.realistic.revenue * 0.47 - 120000 - 600 * 30, 1e-6));
+  const down = S.forecast(rows, { from: '2026-05-20', band: {},
+    periods: [{ name: 'Jun', start: '2026-06-01', end: '2026-06-30', spend: 3000 }] }).periods[0];
+  ok('below trend: a cut costs its full share in every case', near(down.scenarios.pessimistic.revenue, down.scenarios.optimistic.revenue, 1e-6));
 }
 
 /* --------------------------------------------------------------- sale dates */

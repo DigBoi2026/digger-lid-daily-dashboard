@@ -49,17 +49,17 @@ const spend = (a, b) => { let s = 0; for (let d = a; d <= b; d = S.addDays(d, 1)
 /* Each stretch with its own spend is its own period, so a sale budget lifts
    the sale and not the quiet fortnight before it. */
 const monthEnd = S.addDays(S.addDays(octStart, 40).slice(0, 7) + '-01', -1);
-const stretch = (month, start, end) => ({ name: month, start, end, spend: spend(start, end) });
+const stretch = (month, start, end, sale) => ({ name: month, start, end, spend: spend(start, end), sale: !!sale });
 const fc = S.forecast(rows, { from, sale: SALE, periods: [
   stretch('Rest of Oct', S.addDays(from, 1), monthEnd),
   stretch('Nov 2026', '2026-11-01', S.addDays(SALE.ty.hype[0], -1)),
-  stretch('Nov 2026', SALE.ty.hype[0], '2026-11-30'),
-  stretch('Dec 2026', '2026-12-01', SALE.ty.sale[1]),
+  stretch('Nov 2026', SALE.ty.hype[0], '2026-11-30', true),
+  stretch('Dec 2026', '2026-12-01', SALE.ty.sale[1], true),
   stretch('Dec 2026', S.addDays(SALE.ty.sale[1], 1), '2026-12-31'),
   stretch('Jan 2027', '2027-01-01', '2027-01-31'),
 ] });
 const win = S.forecast(rows, { from, sale: SALE, band: fc.band, periods: [
-  stretch('Hype + sale, 17 Nov - 1 Dec', SALE.ty.hype[0], SALE.ty.sale[1])] }).periods[0];
+  stretch('Hype + sale, 17 Nov - 1 Dec', SALE.ty.hype[0], SALE.ty.sale[1], true)] }).periods[0];
 
 /* Add the stretches back up into months. */
 const months = [];
@@ -78,7 +78,7 @@ months.push(Object.assign(win, { name: win.name }));
 const $ = v => (v < 0 ? '-$' : '$') + Math.round(Math.abs(v)).toLocaleString();
 console.log(`Data to ${from}. Spend/day: ${$(now)} to ${SALE.ty.hype[0]}, hype ${$(hypeDay)}, sale ${$(saleDay)} x ${saleDays} days, then Dec ${$(dec)}, Jan ${$(jan)}`);
 console.log(`Backtest (30d, actual spend): MAPE ${(fc.backtest.mape * 100).toFixed(1)}%, bias ${(fc.backtest.bias * 100).toFixed(1)}%, n=${fc.backtest.n}; ` +
-            `band x${(1 / (1 + fc.band.p90)).toFixed(3)} .. x${(1 / (1 + fc.band.p10)).toFixed(3)}`);
+            `pessimistic x${(1 / (1 + fc.band.p95)).toFixed(3)}, optimistic x${(1 / (1 + fc.band.p10)).toFixed(3)}`);
 months.forEach(p => {
   console.log(`\n${p.name}  spend ${$(p.spend)}  MER ${(p.revenue / p.spend).toFixed(2)}  last-year equivalent ${$(p.lastYearRevenue)}`);
   for (const k of ['pessimistic', 'realistic', 'optimistic']) {

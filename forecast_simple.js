@@ -109,7 +109,12 @@ var DLforecastSimple = (function () {
     const yoyRevenue = rW.sum / rWly.sum;
     const yoySpendNow = sW.sum / sWly.sum;
     const yoySpendPlan = spend / sTly.sum;
-    const revenue = rTly.sum * yoyRevenue * Math.pow(yoySpendPlan / yoySpendNow, o.elasticity);
+    /* elasticityUp, when given, applies only to spend above trend: a dollar
+       added works less hard than an average one, while a dollar cut still
+       costs its full share. That one-sidedness is deliberate caution. */
+    const rel = yoySpendPlan / yoySpendNow;
+    const e = rel > 1 && o.elasticityUp != null ? o.elasticityUp : o.elasticity;
+    const revenue = rTly.sum * yoyRevenue * Math.pow(rel, e);
     return { start, end, days: n, spend, revenue, lastYearRevenue: rTly.sum, lastYearSpend: sTly.sum,
              yoyRevenue, yoySpendNow, yoySpendPlan, mer: spend ? revenue / spend : null };
   }
@@ -156,7 +161,7 @@ var DLforecastSimple = (function () {
     const q = p => sorted[Math.round(p * (sorted.length - 1))];
     const mean = a => a.reduce((x, v) => x + v, 0) / a.length;
     return { n: errors.length, mape: mean(errors.map(Math.abs)), bias: mean(errors),
-             p10: q(0.1), p90: q(0.9), errors, origins };
+             p05: q(0.05), p10: q(0.1), p90: q(0.9), p95: q(0.95), errors, origins };
   }
 
   /* A sale that moves or changes length from last year. 364-day matching
@@ -198,34 +203,47 @@ var DLforecastSimple = (function () {
     };
   }
 
-  /* periods: [{ name, start, end, spend }].
-     Scenarios come from the backtest, not from a guess: the measured 10th and
-     90th percentile errors, turned the right way round. A forecast that runs
-     +7% at the 90th percentile means actual comes in 1/1.07 of it.
-     sale: { ly, ty } for saleMap. The days after Cyber Monday have no 2025
-     equivalent, so they count as one middle day (pessimistic), one and a half
-     (realistic) or two (optimistic): a last-day deadline lifts a sale, but by
-     how much on a Tuesday after Cyber Monday is not measured. */
+  /* The three cases, deliberately leaning cautious (Matthew, 29 Oct 2026).
+
+     band: which measured backtest miss the case assumes, turned the right
+       way round. A forecast that ran +15% at the 95th percentile means actual
+       came in 1/1.15 of it. Realistic takes none.
+     elasticityUp: how hard spend above trend works (1 = as hard as average).
+       The backtest measured e = 1 best, but over spend within about 1.5x of
+       trend; the BFCM budget is 1.35x, at the edge of that.
+     lastWeight: the days after Cyber Monday have no 2025 equivalent, so they
+       count as one, one and a half or two average middle days.
+     saleContrib: a cap on contribution margin for periods marked `sale`. The
+       Scale planner puts sale orders at 44.2% (bundles and gifts); 2025's sale
+       held its margin, so only the pessimistic case takes it. */
+  const SCENARIOS = {
+    pessimistic: { band: 'p95', elasticityUp: 0.5, lastWeight: 1, saleContrib: 0.442 },
+    realistic:   { band: null, elasticityUp: 0.75, lastWeight: 1.5 },
+    optimistic:  { band: 'p10', elasticityUp: 1, lastWeight: 2 },
+  };
+
+  /* periods: [{ name, start, end, spend, sale }]. sale: { ly, ty } for saleMap. */
   function forecast(rows, opts) {
     const o = Object.assign({}, DEFAULTS, opts);
     const by = index(rows);
     const from = o.from || Object.keys(by).sort().pop();
     const r = rates(by, from, o.contribWindow);
     const bt = o.band ? null : backtest(rows, Object.assign({}, o, { horizon: 30, map: null }));
-    const band = o.band || (bt ? { p10: bt.p10, p90: bt.p90 } : { p10: 0, p90: 0 });
-    const factor = { pessimistic: 1 / (1 + band.p90), realistic: 1, optimistic: 1 / (1 + band.p10) };
-    const lastWeight = { pessimistic: 1, realistic: 1.5, optimistic: 2 };
+    const band = o.band || (bt ? { p05: bt.p05, p10: bt.p10, p90: bt.p90, p95: bt.p95 } : {});
+    const cases = o.scenarios || SCENARIOS;
     const out = (o.periods || []).map(pd => {
       const scen = {};
       let base = null;
-      Object.keys(factor).forEach(k => {
-        const map = o.sale ? saleMap(o.sale.ly, o.sale.ty, { lastWeight: lastWeight[k] }) : null;
-        const p = period(by, from, pd.start, pd.end, pd.spend, Object.assign({}, o, { map }));
+      Object.keys(cases).forEach(k => {
+        const c = cases[k];
+        const map = o.sale ? saleMap(o.sale.ly, o.sale.ty, { lastWeight: c.lastWeight }) : null;
+        const p = period(by, from, pd.start, pd.end, pd.spend, Object.assign({}, o, { map, elasticityUp: c.elasticityUp }));
         if (!p) return;
         if (k === 'realistic') base = p;
-        const revenue = p.revenue * factor[k];
+        const revenue = p.revenue / (1 + (c.band ? band[c.band] || 0 : 0));
+        const contrib = r && pd.sale && c.saleContrib != null ? Math.min(r.contrib, c.saleContrib) : r && r.contrib;
         scen[k] = { revenue, revExGst: r ? revenue * r.exGst : null, spend: pd.spend,
-                    profit: r ? revenue * r.contrib - pd.spend - r.fixedPerDay * p.days : null };
+                    profit: r ? revenue * contrib - pd.spend - r.fixedPerDay * p.days : null };
       });
       if (!base) return { name: pd.name, start: pd.start, end: pd.end, missing: true };
       return Object.assign({ name: pd.name }, base, { scenarios: scen });
@@ -248,7 +266,7 @@ var DLforecastSimple = (function () {
     return out;
   }
 
-  return { DEFAULTS, addDays, daysBetween, index, total, lastYear, period, rates, backtest, saleMap, forecast, spendPlan };
+  return { DEFAULTS, SCENARIOS, addDays, daysBetween, index, total, lastYear, period, rates, backtest, saleMap, forecast, spendPlan };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = DLforecastSimple;
