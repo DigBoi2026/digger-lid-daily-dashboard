@@ -45,8 +45,8 @@
 
    Days are matched to last year 364 days back, so weekdays line up and so do
    Father's Day (first Sunday of September) and Black Friday. A fitted sale
-   modifier is therefore not needed; only a CHANGE to a promotion is declared
-   (see saleExtension).
+   modifier is therefore not needed; only a sale whose dates CHANGE is
+   declared (see saleMap).
 
    What it cannot do: forecast without a spend plan, or a period whose
    same-days-last-year are missing (Feb-Apr 2025 are not in the book). It was
@@ -81,6 +81,19 @@ var DLforecastSimple = (function () {
     return { sum: s, days: n };
   }
 
+  /* Last year's equivalent of days [a, b]: each day is its own date `lag`
+     back, unless `map` (from saleMap) says it stands for something else. */
+  function lastYear(by, a, b, key, lag, map) {
+    let s = 0, n = 0;
+    for (let d = a; d <= b; d = addDays(d, 1)) {
+      const parts = (map && map(d)) || [{ date: addDays(d, -lag), w: 1 }];
+      let ok = true, v = 0;
+      parts.forEach(p => { const r = by[p.date]; if (r) v += p.w * (+r[key] || 0); else ok = false; });
+      if (ok) { s += v; n++; }
+    }
+    return { sum: s, days: n };
+  }
+
   /* Revenue for one period [start, end] given its planned ad spend, as seen
      from `from` (the last finished day). Null when last year's days are not
      there to lean on: a guess dressed as a forecast is worse than a blank. */
@@ -91,7 +104,7 @@ var DLforecastSimple = (function () {
     const n = daysBetween(start, end);
     const rW = total(by, w0, from, 'revenue'), rWly = total(by, ly(w0), ly(from), 'revenue');
     const sW = total(by, w0, from, 'totalAds'), sWly = total(by, ly(w0), ly(from), 'totalAds');
-    const rTly = total(by, ly(start), ly(end), 'revenue'), sTly = total(by, ly(start), ly(end), 'totalAds');
+    const rTly = lastYear(by, start, end, 'revenue', o.lag, o.map), sTly = lastYear(by, start, end, 'totalAds', o.lag, o.map);
     if (rWly.days < o.window * 0.9 || rTly.days < n * 0.9 || !sW.sum || !sWly.sum || !sTly.sum) return null;
     const yoyRevenue = rW.sum / rWly.sum;
     const yoySpendNow = sW.sum / sWly.sum;
@@ -146,45 +159,76 @@ var DLforecastSimple = (function () {
              p10: q(0.1), p90: q(0.9), errors, origins };
   }
 
-  /* A promotion that runs longer than last year's. The extra days were, last
-     year, the lull before the sale (customers waiting for it); they become sale
-     days. Returned at last year's scale. How much of it is new money rather
-     than the same sales spread wider is not measurable from one BFCM, so the
-     forecast books none of it in the pessimistic case, half in the realistic
-     case and all of it in the optimistic case. */
-  function saleExtension(rows, o) {
-    const by = index(rows);
-    const lull = total(by, o.lull[0], o.lull[1], 'revenue'), sale = total(by, o.sale[0], o.sale[1], 'revenue');
-    if (!lull.days || !sale.days) return 0;
-    return o.days * (sale.sum / sale.days - lull.sum / lull.days);
+  /* A sale that moves or changes length from last year. 364-day matching
+     carries last year's sale onto this year's calendar unchanged; when the
+     dates are different, each day of this year's sale is matched to the day of
+     last year's that played the same part:
+
+       hype days        <- last year's hype days, in order, with the days
+                           running up to them (the pre-sale lull) moved too
+       first two days   <- last year's first two (the launch: 31% of 2025)
+       Black Friday, the weekend after it, Cyber Monday <- the same days
+       days after CM    <- lastWeight x an average middle day (2025 ended on
+                           Cyber Monday, so nothing measured stands for them)
+       other days       <- an average of last year's middle days
+       after the sale   <- the same calendar date (holidays are fixed dates)
+
+     Last year's middle days have no counterpart this year if the sale is
+     shorter, so a shorter sale books fewer middle days. Each argument is
+     { hype: [first, last], sale: [first, last], bf, cm } in ISO dates. */
+  function saleMap(ly, ty, opts) {
+    const o = Object.assign({ lead: 4, lastWeight: 1 }, opts);
+    const lyLaunch = [ly.sale[0], addDays(ly.sale[0], 1)];
+    const role = (s, d) => d === s.bf || d === s.cm || (d > s.bf && d < s.cm) || d === s.sale[0] || d === addDays(s.sale[0], 1);
+    const middle = [];
+    for (let d = ly.sale[0]; d <= ly.sale[1]; d = addDays(d, 1)) if (!role(ly, d)) middle.push(d);
+    const avgMiddle = w => middle.map(date => ({ date, w: w / middle.length }));
+    const hypeShift = daysBetween(ly.hype[0], ty.hype[0]) - 1;      // days this year's hype sits after last year's
+    const afterShift = daysBetween(ly.sale[1], ty.sale[1]) - 1;
+    const leadFrom = addDays(ty.hype[0], -o.lead);
+    return function (d) {
+      if (d >= leadFrom && d <= ty.hype[1]) return [{ date: addDays(d, -hypeShift), w: 1 }];
+      if (d > ty.sale[1]) return d <= addDays(ty.sale[1], 62) ? [{ date: addDays(d, -afterShift), w: 1 }] : null;
+      if (d < ty.sale[0]) return null;
+      if (d === ty.sale[0]) return [{ date: lyLaunch[0], w: 1 }];
+      if (d === addDays(ty.sale[0], 1)) return [{ date: lyLaunch[1], w: 1 }];
+      if (d === ty.bf || d === ty.cm || (d > ty.bf && d < ty.cm)) return [{ date: addDays(d, daysBetween(ty.bf, ly.bf) - 1), w: 1 }];
+      if (d > ty.cm) return avgMiddle(o.lastWeight);
+      return avgMiddle(1);
+    };
   }
 
-  /* periods: [{ name, start, end, spend, extension }] where `extension` is
-     last-year-scale revenue from saleExtension (optional).
+  /* periods: [{ name, start, end, spend }].
      Scenarios come from the backtest, not from a guess: the measured 10th and
      90th percentile errors, turned the right way round. A forecast that runs
-     +7% at the 90th percentile means actual comes in 1/1.07 of it. */
+     +7% at the 90th percentile means actual comes in 1/1.07 of it.
+     sale: { ly, ty } for saleMap. The days after Cyber Monday have no 2025
+     equivalent, so they count as one middle day (pessimistic), one and a half
+     (realistic) or two (optimistic): a last-day deadline lifts a sale, but by
+     how much on a Tuesday after Cyber Monday is not measured. */
   function forecast(rows, opts) {
     const o = Object.assign({}, DEFAULTS, opts);
     const by = index(rows);
     const from = o.from || Object.keys(by).sort().pop();
     const r = rates(by, from, o.contribWindow);
-    const bt = o.band ? null : backtest(rows, Object.assign({}, o, { horizon: 30 }));
+    const bt = o.band ? null : backtest(rows, Object.assign({}, o, { horizon: 30, map: null }));
     const band = o.band || (bt ? { p10: bt.p10, p90: bt.p90 } : { p10: 0, p90: 0 });
     const factor = { pessimistic: 1 / (1 + band.p90), realistic: 1, optimistic: 1 / (1 + band.p10) };
-    const share = { pessimistic: 0, realistic: 0.5, optimistic: 1 };
+    const lastWeight = { pessimistic: 1, realistic: 1.5, optimistic: 2 };
     const out = (o.periods || []).map(pd => {
-      const p = period(by, from, pd.start, pd.end, pd.spend, o);
-      if (!p) return { name: pd.name, start: pd.start, end: pd.end, missing: true };
-      const scale = p.revenue / p.lastYearRevenue;
-      const ext = (pd.extension || 0) * scale;
       const scen = {};
+      let base = null;
       Object.keys(factor).forEach(k => {
-        const revenue = p.revenue * factor[k] + ext * share[k];
+        const map = o.sale ? saleMap(o.sale.ly, o.sale.ty, { lastWeight: lastWeight[k] }) : null;
+        const p = period(by, from, pd.start, pd.end, pd.spend, Object.assign({}, o, { map }));
+        if (!p) return;
+        if (k === 'realistic') base = p;
+        const revenue = p.revenue * factor[k];
         scen[k] = { revenue, revExGst: r ? revenue * r.exGst : null, spend: pd.spend,
                     profit: r ? revenue * r.contrib - pd.spend - r.fixedPerDay * p.days : null };
       });
-      return Object.assign({ name: pd.name, extension: ext }, p, { scenarios: scen });
+      if (!base) return { name: pd.name, start: pd.start, end: pd.end, missing: true };
+      return Object.assign({ name: pd.name }, base, { scenarios: scen });
     });
     return { from, rates: r, band, backtest: bt, periods: out };
   }
@@ -204,7 +248,7 @@ var DLforecastSimple = (function () {
     return out;
   }
 
-  return { DEFAULTS, addDays, daysBetween, index, total, period, rates, backtest, saleExtension, forecast, spendPlan };
+  return { DEFAULTS, addDays, daysBetween, index, total, lastYear, period, rates, backtest, saleMap, forecast, spendPlan };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = DLforecastSimple;

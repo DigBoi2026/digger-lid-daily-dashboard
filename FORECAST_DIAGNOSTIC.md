@@ -114,8 +114,8 @@ Resulting FY27 plan: revenue $8,724,883, profit $609,445, below-the-line budget 
 
 Weekly origins are not enough to rank these: 8.1% or 9.7% at 30 days depending only on the starting weekday. The spend-led model is far better since July (6–8% against 10–24%), worse around EOFY (ran 11–17% low) and slightly worse at 90 days. It needs a spend plan, it is measured with the spend that was actually spent, and it has never been backtested through BFCM.
 
-**Dropped, because the ablation measured them at or near zero:** prior-year smoothing (0.0 pts), the event-scaling threshold (0.0), day-of-week (0.2–0.6 pts, and whole-week windows cancel it), the growth trend (today's YoY ratio is one), shape-mode level, observed ceiling, the monthly ad-rate index (spend is now an input). The fitted Father's Day modifier is unnecessary under 364-day alignment; only a change to a promotion is declared (`saleExtension`).
+**Dropped, because the ablation measured them at or near zero:** prior-year smoothing (0.0 pts), the event-scaling threshold (0.0), day-of-week (0.2–0.6 pts, and whole-week windows cancel it), the growth trend (today's YoY ratio is one), shape-mode level, observed ceiling, the monthly ad-rate index (spend is now an input). The fitted Father's Day modifier is unnecessary under 364-day alignment; only a sale whose dates change is declared (`saleMap`: BFCM 2026 moves to hype 17–18 Nov, sale 19 Nov – Tue 1 Dec, per the BFCM 2026 Sale Plan).
 
 **Not yet done:** the Forecast page still runs `forecast.js`. Four of `test_forecast.js`'s real-data assertions were already failing on the 28 Oct data before this change.
 
-Run the Nov–Jan forecast: `node source/forecast_simple_report.js [--trim 0.15] [--extra-days 3.5]`.
+Run the Nov–Jan forecast: `node source/forecast_simple_report.js [--trim 0.15]`.

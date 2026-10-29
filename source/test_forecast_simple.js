@@ -75,12 +75,32 @@ function books(g, s) {
   ok('band turned the right way: over-forecast at p90 -> pessimistic below', near(sc.pessimistic.revenue, p.revenue / 1.1, 1e-6));
   ok('under-forecast at p10 -> optimistic above', near(sc.optimistic.revenue, p.revenue / 0.8, 1e-6));
   ok('scenarios ordered', sc.pessimistic.revenue < sc.realistic.revenue && sc.realistic.revenue < sc.optimistic.revenue);
-  const ext = S.forecast(rows, { from: '2026-05-20', band: { p10: 0, p90: 0 },
-    periods: [{ name: 'Jun', start: '2026-06-01', end: '2026-06-30', spend: 30000, extension: 1000 }] }).periods[0];
-  ok('sale extension: none / half / all of it', near(ext.scenarios.pessimistic.revenue, ext.revenue, 1e-6) &&
-     near(ext.scenarios.realistic.revenue - ext.revenue, ext.extension / 2, 1e-6) &&
-     near(ext.scenarios.optimistic.revenue - ext.revenue, ext.extension, 1e-6));
-  ok('extension scaled to this year', near(ext.extension, 1000 * ext.revenue / ext.lastYearRevenue, 1e-6));
+}
+
+/* --------------------------------------------------------------- sale dates */
+/* BFCM 2025 (hype 16-17 Nov, sale 18 Nov - CM 1 Dec, 14 days) onto the 2026
+   plan (hype 17-18 Nov, sale 19 Nov - Tue 1 Dec, 13 days). */
+{
+  const LY = { hype: ['2025-11-16', '2025-11-17'], sale: ['2025-11-18', '2025-12-01'], bf: '2025-11-28', cm: '2025-12-01' };
+  const TY = { hype: ['2026-11-17', '2026-11-18'], sale: ['2026-11-19', '2026-12-01'], bf: '2026-11-27', cm: '2026-11-30' };
+  const m = S.saleMap(LY, TY, { lastWeight: 1.5 });
+  const one = d => { const p = m(d); return p && p.length === 1 && p[0].w === 1 ? p[0].date : p; };
+  ok('hype day 1 <- last year\'s hype day 1', one('2026-11-17') === '2025-11-16', m('2026-11-17'));
+  ok('the run-up lull moves with the hype', one('2026-11-15') === '2025-11-14');
+  ok('before the run-up: plain 364-day match', m('2026-11-05') === null);
+  ok('launch day <- last year\'s launch day', one('2026-11-19') === '2025-11-18');
+  ok('launch day 2 <- last year\'s day 2', one('2026-11-20') === '2025-11-19');
+  ok('Black Friday <- Black Friday', one('2026-11-27') === '2025-11-28');
+  ok('the weekend after it <- the same weekend', one('2026-11-28') === '2025-11-29' && one('2026-11-29') === '2025-11-30');
+  ok('Cyber Monday <- Cyber Monday', one('2026-11-30') === '2025-12-01');
+  const mid = m('2026-11-23');
+  ok('a middle day <- the average of 2025\'s eight middle days', mid.length === 8 && near(mid.reduce((s, p) => s + p.w, 0), 1, 1e-9) &&
+     mid[0].date === '2025-11-20' && mid[7].date === '2025-11-27', mid);
+  ok('the day after Cyber Monday <- 1.5 middle days', near(m('2026-12-01').reduce((s, p) => s + p.w, 0), 1.5, 1e-9));
+  ok('after the sale: same calendar date', one('2026-12-25') === '2025-12-25' && one('2027-01-15') === '2026-01-15');
+  // sale-equivalent length: 2 launch + 6 middle + BF + 2 weekend + CM + 1.5 = 13.5 of 2025's 14
+  let w = 0; for (let d = TY.sale[0]; d <= TY.sale[1]; d = S.addDays(d, 1)) w += m(d).reduce((s, p) => s + p.w, 0);
+  ok('a shorter sale books fewer middle days', near(w, 13.5, 1e-9), w);
 }
 
 /* --------------------------------------------------------------- spend plan */
@@ -89,12 +109,6 @@ function books(g, s) {
   ok('increase trimmed by 15%', near(plan[0], 5000 * (1 + 0.85 * 0.6), 1e-6), plan[0]);
   ok('decrease kept as last year', near(plan[1], plan[0] * 0.55, 1e-6) && near(plan[2], plan[1] * 0.5, 1e-6));
   ok('trim 0 = last year\'s shape exactly', near(S.spendPlan(5000, [3500, 5600], 0)[0], 8000, 1e-6));
-}
-{
-  const rows = [{ date: '2025-11-14', revenue: 100 }, { date: '2025-11-15', revenue: 300 },
-                { date: '2025-11-20', revenue: 1000 }, { date: '2025-11-21', revenue: 2000 }];
-  ok('sale extension = extra days x (sale day - lull day)',
-     near(S.saleExtension(rows, { days: 3, lull: ['2025-11-14', '2025-11-15'], sale: ['2025-11-20', '2025-11-21'] }), 3 * (1500 - 200), 1e-9));
 }
 
 /* --------------------------------------------------------------- real books */
