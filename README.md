@@ -19,6 +19,7 @@ pulled from the Ecommerce Equation sheet and Shopify, sized for a 16:9 desktop, 
 | **Products** | `products.html` / `products.js` | What's selling? (net sales by category + product, momentum) |
 | **Region** | `region.html` / `region.js` | Where is it selling? (states, countries, momentum) |
 | **Forecast** | `forecast.html` / `forecast_page.js` | What does the rest of the year look like, and how wrong has that been? |
+| **Plan** | `plan.html` / `plan.js` | The FY27 plan: last month against forecast, the next three months and the year by case, the month in progress paced live. A month-end snapshot (`plan_data.js`), rebuilt with `npm run plan -- --from <month end>` at each monthly reforecast |
 
 Most pages share a trailing-period selector — **3D · 7D · 30D · 90D · 12M**, ending on the last
 complete day, compared against the prior equal period; the `‹ ›` arrows step back one whole

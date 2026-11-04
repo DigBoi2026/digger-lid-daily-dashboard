@@ -283,6 +283,7 @@ var DLcore = (function () {
     ['products.html',    'Products'],
     ['region.html',      'Region'],
     ['forecast.html',    'Forecast'],
+    ['plan.html',        'Plan'],
   ];
   /* One vocabulary for every period button on the board.
 

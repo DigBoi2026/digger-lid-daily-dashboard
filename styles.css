@@ -48,7 +48,9 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
    The binding constraint is GPAM, whose header gives .hleft the least room:
    728px of 1600. At these values the nav measures 555px there, and the same
    margin holds down to a 1280 stage. */
-.topnav a{padding-left:.32cqw;padding-right:.32cqw;gap:.3cqw;font-size:1.05cqh;letter-spacing:.035em}
+/* Ten tabs since Plan joined (Nov 2026): padding and tracking trimmed so the
+   nav still clears GPAM's centre block; measured on every page at 1600 and 1280. */
+.topnav a{padding-left:.26cqw;padding-right:.26cqw;gap:.3cqw;font-size:1.05cqh;letter-spacing:.02em}
 .topnav{gap:.1cqw;padding:.28cqh}
 .topnav a.active{background:var(--dl-yellow);color:var(--dl-black)}
 .topnav a:hover:not(.active){color:var(--dl-white)}
@@ -1237,3 +1239,34 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .spend-stage .status .freshness{max-width:14cqw}
 .spend-stage .status .freshness .pend{font-size:1cqh;color:var(--warn);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .spend-stage .status .freshness .val{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ============ FY27 PLAN ============
+   The forecast report's first part on one board: the month just closed, the
+   next three months and the year by case, and how the forecast is made. Three
+   panels of tables and short text, so the rows are the same as every page but
+   the main row takes the space a chart row would. */
+#stage.plan-stage{grid-template-rows:9cqh 15cqh minmax(0,1fr) 2.8cqh}
+.plan-stage #kpis{grid-template-columns:repeat(5,1fr)}
+#plMain{display:grid;grid-template-columns:1.05fr 1.1fr .85fr;gap:.9cqw;min-height:0}
+#plMain .panel{display:flex;flex-direction:column;min-height:0;padding:1cqh 1.1cqw}
+.pl-scroll{flex:1;min-height:0;overflow-y:auto;scrollbar-gutter:stable;padding-right:.3cqw}
+.pl-table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;margin-bottom:1.1cqh}
+.pl-table th{font-size:1.1cqh;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:500;
+  text-align:right;padding:.35cqh .4cqw;border-bottom:1px solid var(--line)}
+.pl-table th:first-child{text-align:left}
+.pl-table td{font-size:1.45cqh;text-align:right;padding:.45cqh .4cqw;border-bottom:1px solid rgba(255,255,255,.05);white-space:nowrap}
+.pl-table td.nm{text-align:left;font-weight:700;white-space:normal}
+.pl-table td.nm i{color:var(--muted);font-style:normal;font-weight:400;font-size:1.15cqh}
+.pl-table td.dim{color:var(--muted)}
+.pl-table td.hi{color:var(--dl-yellow);font-weight:700}
+.pl-table tr.tot td{border-top:1px solid var(--line);font-weight:700}
+.pl-q td{vertical-align:top}
+.pl-p{display:block;font-size:1.2cqh;color:var(--muted);font-weight:400}
+.pl-table td.hi .pl-p{color:var(--dl-yellow-70)}
+.pl-sub{font-size:1.15cqh;color:var(--dl-yellow);text-transform:uppercase;letter-spacing:.14em;font-weight:700;margin:.4cqh 0 .5cqh}
+.pl-note{font-size:1.3cqh;color:var(--muted);line-height:1.45;margin-bottom:1cqh}
+.pl-note b{color:var(--dl-white)}
+.pl-text ol.pl-steps{margin:0 0 1cqh 1.2cqw;font-size:1.32cqh;line-height:1.45;color:var(--muted)}
+.pl-text ol.pl-steps li{margin-bottom:.55cqh}
+.pl-text ol.pl-steps b{color:var(--dl-white)}
+.pl-text ul.pl-watch{margin:0 0 0 1.1cqw;font-size:1.3cqh;line-height:1.45;color:var(--muted)}
