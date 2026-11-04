@@ -31,6 +31,7 @@ ok('the sale line is the same days as the months', near(dayTot(sale.start, sale.
 ok('forecast days run 1 Nov to 31 Jan, once each', p.daily.length === 92 && p.daily[0][0] === '2026-11-01' && p.daily.at(-1)[0] === '2027-01-31');
 for (const c of ['pessimistic', 'realistic', 'optimistic'])
   ok(`FY27 ${c} = its quarters`, p.fy[c].FY.profit === sum(['Q1', 'Q2', 'Q3', 'Q4'], q => p.fy[c][q].profit));
+ok('FY26 read from the books and adds up', p.fy26.revExGst === sum(Object.values(p.fy26.q), v => v[0]) && p.fy26.revExGst > 4e6);
 ok('Q1 is actual in every case', p.fy.pessimistic.Q1.profit === p.fy.optimistic.Q1.profit);
 ok('accuracy carried from the backtest', p.accuracy.n30 >= 100 && p.accuracy.mape30 > 0 && p.accuracy.mape30 < 0.15);
 ok('the committed snapshot carries no personal terms', !/bonus|hurdle|payout/i.test(JSON.stringify(p)));

@@ -14,8 +14,10 @@ const F = require('../forecast.js');
 const R = require('./forecast_simple_report.js');
 const fs = require('fs'), path = require('path');
 
-const FY26 = { revExGst: 4389290, profit: 229272,
-  q: { Q1: [700545, -39711], Q2: [1267923, 92503], Q3: [858451, 54867], Q4: [1562370, 121613] } };
+/* Last year's quarters, read from the books rather than typed in: the sheet
+   restates closed days (Q3 FY26 moved by $1,285 after 7 Oct 2026). */
+const FY26_QUARTERS = { Q1: ['2025-07-01', '2025-09-30'], Q2: ['2025-10-01', '2025-12-31'],
+                        Q3: ['2026-01-01', '2026-03-31'], Q4: ['2026-04-01', '2026-06-30'] };
 const QUARTERS = { Q1: ['2026-07-01', '2026-09-30'], Q2: ['2026-10-01', '2026-12-31'],
                    Q3: ['2027-01-01', '2027-03-31'], Q4: ['2027-04-01', '2027-06-30'] };
 const CASES = ['pessimistic', 'realistic', 'optimistic'];
@@ -26,6 +28,10 @@ function build(allRows, from) {
   const rows = allRows.filter(r => r.date <= from);
   const by = S.index(rows);
   const T = (a, b, k) => S.total(by, a, b, k).sum;
+  const FY26 = { q: {} };
+  for (const q in FY26_QUARTERS) FY26.q[q] = [r0(T(...FY26_QUARTERS[q], 'revExGst')), r0(T(...FY26_QUARTERS[q], 'profit'))];
+  FY26.revExGst = Object.values(FY26.q).reduce((s, v) => s + v[0], 0);
+  FY26.profit = Object.values(FY26.q).reduce((s, v) => s + v[1], 0);
   const month = from.slice(0, 7);
   const lyMonth = (+month.slice(0, 4) - 1) + month.slice(4);
 
