@@ -1,16 +1,15 @@
-/* FY27 Plan page data — the forecast part of the monthly forecast report.
+/* FY27 Plan page data — the forecast part of the forecast report.
    Run: node source/build_plan_data.js [--from 2026-10-31]   (writes plan_data.js)
 
-   A snapshot, rebuilt at each monthly reforecast: the page shows the forecast
-   as it stood at month end, and paces the month in progress against it from
-   the live data. The forecast is the spend-led model (forecast_simple.js) with
-   the BFCM 2026 plan (source/forecast_simple_report.js); the October scorecard
-   also reruns the seasonal engine (forecast.js) as it stood on 30 September.
+   A snapshot, rebuilt at each quarterly reforecast: the page shows the forecast
+   as it stood at the snapshot date, paces the month in progress against it and
+   tracks the quarterly profit targets from the live data. The forecast is the
+   spend-led model (forecast_simple.js) with the BFCM 2026 plan
+   (source/forecast_simple_report.js).
 
    Personal terms (the bonus) are deliberately not in here: this file is
    committed and the page is shared with the team. */
 const S = require('../forecast_simple.js');
-const F = require('../forecast.js');
 const R = require('./forecast_simple_report.js');
 const fs = require('fs'), path = require('path');
 
@@ -21,6 +20,11 @@ const FY26_QUARTERS = { Q1: ['2025-07-01', '2025-09-30'], Q2: ['2025-10-01', '20
 const QUARTERS = { Q1: ['2026-07-01', '2026-09-30'], Q2: ['2026-10-01', '2026-12-31'],
                    Q3: ['2027-01-01', '2027-03-31'], Q4: ['2027-04-01', '2027-06-30'] };
 const CASES = ['pessimistic', 'realistic', 'optimistic'];
+/* Quarterly profit targets (proposal agreed on the 31 Oct 2026 snapshot): the
+   realistic case, counted year to date from 1 October; the stretch sits 40%
+   above it; year-to-date sales must stay at or above 85% of plan. */
+const TARGET_QUARTERS = ['Q2', 'Q3', 'Q4'];
+const STRETCH = 1.4, SALES_FLOOR = 0.85;
 const monthEnd = m => S.addDays(S.addDays(m + '-01', 32).slice(0, 7) + '-01', -1);
 const r0 = v => Math.round(v);
 
@@ -39,20 +43,6 @@ function build(allRows, from) {
   const closed = m => ({ revenue: r0(T(m + '-01', monthEnd(m), 'revenue')), adSpend: r0(T(m + '-01', monthEnd(m), 'totalAds')),
                          orders: r0(T(m + '-01', monthEnd(m), 'orders')), profit: r0(T(m + '-01', monthEnd(m), 'profit')) });
   const lastMonth = { month, actual: closed(month), lastYear: closed(lyMonth) };
-
-  /* Scorecard: the month as each model saw it the day before it began. The
-     spend-led model is given the spend that was actually spent; the seasonal
-     engine brings its own. */
-  const eve = S.addDays(month + '-01', -1), days = S.daysBetween(month + '-01', monthEnd(month));
-  const past = rows.filter(r => r.date <= eve && r.revenue > 0 && !r.pending);
-  const mods = F.salePeriodModifiers(past, { years: ['2025', '2026', '2027'] });
-  const engine = F.projectPnl({ rows: past, from: eve, horizon: days, scenario: 'realistic', modifiers: mods, observedCeiling: F.observedCeiling(past) });
-  const spendLed = S.forecast(rows, { from: eve, periods: [{ name: month, start: month + '-01', end: monthEnd(month), spend: lastMonth.actual.adSpend }] }).periods[0];
-  const scorecard = {
-    madeOn: eve,
-    engine: { revenue: r0(engine.total), profit: r0(engine.profit), adSpend: r0(engine.adSpend) },
-    spendLed: Object.fromEntries(CASES.map(k => [k, { revenue: r0(spendLed.scenarios[k].revenue), profit: r0(spendLed.scenarios[k].profit) }])),
-  };
 
   /* The forecast from month end: Nov, Dec, Jan and the sale, by case. */
   const rep = R.build(rows, { from });
@@ -103,16 +93,34 @@ function build(allRows, from) {
                  profit: Object.keys(QUARTERS).reduce((s, q) => s + fy[k][q].profit, 0) };
   });
 
+  /* Quarterly profit targets, year to date from 1 October, with last year's
+     same stretch for reference. */
+  const targets = [];
+  TARGET_QUARTERS.forEach((q, i) => {
+    const prev = targets[i - 1] || { profit: 0, sales: 0, lastYear: 0 };
+    const profit = prev.profit + fy.realistic[q].profit, sales = prev.sales + fy.realistic[q].revExGst;
+    targets.push({ q, start: QUARTERS.Q2[0], qStart: QUARTERS[q][0], end: QUARTERS[q][1],
+                   quarter: fy.realistic[q].profit, profit, sales, stretch: r0(profit * STRETCH), salesFloor: r0(sales * SALES_FLOOR),
+                   lastYear: prev.lastYear + FY26.q[q][1] });
+  });
+  targets.forEach(t => { delete t.sales; });
+
+  /* Growth now and what it is worth: the forecast holds today's same-day
+     growth for every forecast day, so a fade is the main risk to Nov-Jan. */
+  const growth = rep.periods[0].yoyRevenue;
+  const nearMonths = months.filter(m => !/Hype/.test(m.name));
+  const growthSensitivity = r0(nearMonths.reduce((s, m) => s + m.cases.realistic.revenue, 0) * rep.fc.rates.contrib * 0.1 / growth);
+
   const bt = rep.fc.backtest;
   return {
     meta: { asOf: from, builtOn: new Date().toISOString().slice(0, 10) },
     asOf: from, builtFrom: 'forecast_simple.js · source/build_plan_data.js',
-    lastMonth, scorecard, months, daily, fy, fy26: FY26,
+    lastMonth, months, daily, fy, fy26: FY26, targets, growthSensitivity,
     spendPlan: { preSale: r0(rep.rates.now), hype: r0(rep.rates.hypeDay), sale: r0(rep.rates.saleDay), saleDays: rep.rates.saleDays,
                  dec: r0(rep.rates.dec), jan: r0(rep.rates.jan), febToJun: plan.map(r0), saleBudget: 230000 },
     accuracy: { mape30: +bt.mape.toFixed(4), bias30: +bt.bias.toFixed(4), n30: bt.n,
                 pessimisticBelow: +(1 - 1 / (1 + bt.p95)).toFixed(4), optimisticAbove: +(1 / (1 + bt.p10) - 1).toFixed(4) },
-    rates: { contribution: +rep.fc.rates.contrib.toFixed(4), fixedPerDay: r0(rep.fc.rates.fixedPerDay) },
+    rates: { contribution: +rep.fc.rates.contrib.toFixed(4), fixedPerDay: r0(rep.fc.rates.fixedPerDay), growth: +growth.toFixed(3) },
     sale: R.SALE.ty,
   };
 }
@@ -127,7 +135,7 @@ if (require.main === module) {
   const out = build(rows, from);
   const file = path.join(__dirname, '..', 'plan_data.js');
   fs.writeFileSync(file, '// Auto-generated by source/build_plan_data.js. Do not hand-edit.\n' +
-    `// Forecast as at ${from}; rebuild at each monthly reforecast.\n` +
+    `// Forecast as at ${from}; rebuild at each quarterly reforecast.\n` +
     'window.DL_PLAN = ' + JSON.stringify(out) + ';\n');
   console.log(`plan_data.js written: forecast as at ${from}, ${out.daily.length} forecast days`);
 }

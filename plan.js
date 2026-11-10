@@ -1,12 +1,12 @@
 /* =========================================================================
    DiggerLid — FY27 Plan page.
 
-   The forecast part of the monthly forecast report, condensed onto the board:
-   the month just closed against last year and against what each model said
-   the day before it began, the next three months and the year by case, and
-   how the forecast is made. The numbers are a month-end snapshot
-   (plan_data.js, rebuilt by `npm run plan` at each reforecast); the one live
-   figure is the month in progress, paced against that snapshot from data.js.
+   The forecast part of the forecast report, condensed onto the board: the
+   month just closed against last year, the next three months and the year by
+   case, the quarterly profit targets, and how the forecast is made. The numbers
+   are a snapshot (plan_data.js, rebuilt by `npm run plan` at each quarterly
+   reforecast); the live figures are the month in progress, paced against that
+   snapshot, and the profit targets, tracked year to date, both from data.js.
    ========================================================================= */
 const PLAN = typeof window !== 'undefined' ? window.DL_PLAN : null;
 const DATA = typeof window !== 'undefined' ? window.DL_DATA : null;
@@ -29,6 +29,25 @@ function pace(plan, daily) {
   });
   return n ? { days: n, through: last, actual: act, pessimistic: lo, realistic: mid, optimistic: hi,
                vsRealistic: act / mid - 1, band: act < lo ? 'below' : act > hi ? 'above' : 'inside' } : null;
+}
+
+/* The quarterly profit targets against the books: year-to-date profit and
+   sales (ex GST) from 1 October, finished days only. A quarter is judged once
+   the books reach its last day. Pure, so it is testable without a DOM. */
+function targetStatus(plan, daily) {
+  const rows = (daily || []).filter(r => r && r.date && !r.pending && r.revenue > 0);
+  return ((plan && plan.targets) || []).map(t => {
+    const own = rows.filter(r => r.date >= t.start && r.date <= t.end);
+    const through = own.reduce((m, r) => (r.date > m ? r.date : m), '') || null;
+    const actual = own.length ? own.reduce((s, r) => s + (+r.profit || 0), 0) : null;
+    const sales = own.length ? own.reduce((s, r) => s + (+r.revExGst || 0), 0) : null;
+    const status = !through || through < t.qStart ? 'not started'
+      : through < t.end ? 'in progress'
+      : sales < t.salesFloor ? 'below sales floor'
+      : actual >= t.stretch ? 'beat stretch'
+      : actual >= t.profit ? 'met' : 'missed';
+    return Object.assign({}, t, { days: own.length, actual, sales, through, status });
+  });
 }
 
 function kpiTile(lbl, val, sub, foot, cls) {
@@ -60,17 +79,24 @@ const trio = (o, k) => CASES.map(c => `<td class="${c === 'realistic' ? 'hi' : '
 function renderMonths(p) {
   const rows = k => p.months.map(m => `<tr><td class="nm">${esc(m.name.replace(' 2026', '').replace(' 2027', '').replace(', 17 Nov - 1 Dec', ' 17 Nov–1 Dec'))}</td>` +
     `${k === 'revenue' ? `<td class="dim">${money(m.adSpend)}</td>` : ''}${trio(m, k)}<td class="dim">${money(m.lastYear[k])}</td></tr>`).join('');
-  const s = p.scorecard, a = p.lastMonth.actual;
-  const err = v => ((v / a.revenue - 1) * 100).toFixed(0) + '%';
   document.getElementById('months').innerHTML =
     `<table class="pl-table"><thead><tr><th>Revenue</th><th>Ads</th><th>Pess</th><th>Real</th><th>Opt</th><th>LY</th></tr></thead><tbody>${rows('revenue')}</tbody></table>` +
-    `<table class="pl-table"><thead><tr><th>Profit</th><th>Pess</th><th>Real</th><th>Opt</th><th>LY</th></tr></thead><tbody>${rows('profit')}</tbody></table>` +
-    `<div class="pl-sub">Scorecard · ${esc(p.lastMonth.month)} forecast made ${esc(s.madeOn)}</div>` +
-    `<table class="pl-table"><tbody>` +
-    `<tr><td class="nm">Old engine (Forecast page)</td><td>${money(s.engine.revenue)}</td><td class="dim">${err(s.engine.revenue)}</td></tr>` +
-    `<tr><td class="nm">Spend-led, realistic</td><td>${money(s.spendLed.realistic.revenue)}</td><td class="dim">${err(s.spendLed.realistic.revenue)}</td></tr>` +
-    `<tr><td class="nm">Spend-led, optimistic</td><td>${money(s.spendLed.optimistic.revenue)}</td><td class="dim">${err(s.spendLed.optimistic.revenue)}</td></tr>` +
-    `<tr><td class="nm hi">Actual</td><td class="hi">${money(a.revenue)}</td><td></td></tr></tbody></table>`;
+    `<table class="pl-table"><thead><tr><th>Profit</th><th>Pess</th><th>Real</th><th>Opt</th><th>LY</th></tr></thead><tbody>${rows('profit')}</tbody></table>`;
+}
+
+function renderTargets(p) {
+  const st = targetStatus(p, DATA && DATA.daily);
+  if (!st.length) return '';
+  const label = { Q2: 'Q2 to 31 Dec', Q3: 'Q3 to 31 Mar', Q4: 'Q4 to 30 Jun' };
+  const cls = s => (s === 'beat stretch' || s === 'met' ? 'hi' : s === 'missed' || s === 'below sales floor' ? 'bad' : 'dim');
+  const body = st.map(t => `<tr><td class="nm">${esc(label[t.q] || t.q)}</td><td>${money(t.profit)}</td><td class="dim">${money(t.stretch)}</td>` +
+    `<td class="dim">${money(t.salesFloor)}</td><td>${t.actual == null || t.status === 'not started' ? '—' : money(t.actual)}</td><td class="${cls(t.status)}">${esc(t.status)}</td></tr>`).join('');
+  const now = st.find(t => t.status === 'in progress');
+  const nice = d => esc(C.isoToNice ? C.isoToNice(d) : d);
+  return `<div class="pl-sub">Profit targets · year to date from 1 Oct</div>` +
+    `<table class="pl-table pl-t"><thead><tr><th></th><th>Target</th><th>Stretch</th><th>Sales floor</th><th>Actual</th><th></th></tr></thead><tbody>${body}</tbody></table>` +
+    (now ? `<div class="pl-note">To ${nice(now.through)}: <b>${money(now.actual)}</b> profit and ${money(now.sales)} sales (ex GST) against a ${money(now.profit)} target by ${nice(now.end)}. ` +
+           `Targets are the realistic case at ${nice(p.asOf)}, stretch +40%, sales floor 85% of plan; fixed for the year.</div>` : '');
 }
 
 function renderQuarters(p) {
@@ -90,7 +116,8 @@ function renderQuarters(p) {
     `<div class="pl-note">Realistic is <b>${x(r.revExGst, p.fy26.revExGst)}</b> FY26 revenue and <b>${x(r.profit, p.fy26.profit)}</b> FY26 profit. ` +
     `Across ${acc.n30} forecasts since May the model misses by <b>${(acc.mape30 * 100).toFixed(1)}%</b> at 30 days and runs ` +
     `${(Math.abs(acc.bias30) * 100).toFixed(1)}% ${acc.bias30 < 0 ? 'low' : 'high'}: actual has come in up to ` +
-    `${(acc.pessimisticBelow * 100).toFixed(0)}% below and ${(acc.optimisticAbove * 100).toFixed(0)}% above it.</div>`;
+    `${(acc.pessimisticBelow * 100).toFixed(0)}% below and ${(acc.optimisticAbove * 100).toFixed(0)}% above it.</div>` +
+    renderTargets(p);
 }
 
 function renderHow(p) {
@@ -105,6 +132,8 @@ function renderHow(p) {
     `<div class="pl-sub">Spend plan</div><div class="pl-note">${money(sp.preSale)} a day to the hype · ${money(sp.saleBudget)} for BFCM ` +
     `(${esc(p.sale.hype[0].slice(5))} to ${esc(p.sale.sale[1].slice(5))}) · ${money(sp.dec)} a day in Dec · ${money(sp.jan)} in Jan · last year's pattern to EOFY.</div>` +
     `<div class="pl-sub">Watch</div><ul class="pl-watch">` +
+    (rt.growth ? `<li>Growth fading: the forecast holds today's ${((rt.growth - 1) * 100).toFixed(0)}% same-day growth through January; ` +
+      `each 10 points less is about ${money(p.growthSensitivity)} less Nov–Jan profit.</li>` : '') +
     `<li>The spend plan: each $10K off the BFCM budget is about $37K less revenue.</li>` +
     `<li>BFCM has never been backtested; the range is wide for that reason.</li>` +
     `<li>December loses money in all but the optimistic case: fixed costs, not the ads.</li></ul>`;
@@ -116,9 +145,9 @@ function render() {
   document.getElementById('asOfLbl').textContent = 'Forecast as at ' + (C.isoToNice ? C.isoToNice(PLAN.asOf) : PLAN.asOf);
   document.getElementById('throughVal').textContent = through ? (C.isoToNice ? C.isoToNice(through) : through) : '—';
   renderKpis(PLAN); renderMonths(PLAN); renderQuarters(PLAN); renderHow(PLAN);
-  document.getElementById('footSource').textContent = `Month-end snapshot ${PLAN.asOf} · ${PLAN.builtFrom}`;
+  document.getElementById('footSource').textContent = `Forecast snapshot ${PLAN.asOf} · ${PLAN.builtFrom}`;
   if (DATA && DATA.meta && C.stampSnapshotAge) C.stampSnapshotAge(DATA.meta);
 }
 
 if (typeof document !== 'undefined') render();
-if (typeof module !== 'undefined' && module.exports) module.exports = { pace };
+if (typeof module !== 'undefined' && module.exports) module.exports = { pace, targetStatus };

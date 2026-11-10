@@ -1259,6 +1259,8 @@ header#top{display:grid;grid-template-columns:auto 1fr auto;align-items:center;g
 .pl-table td.nm i{color:var(--muted);font-style:normal;font-weight:400;font-size:1.15cqh}
 .pl-table td.dim{color:var(--muted)}
 .pl-table td.hi{color:var(--dl-yellow);font-weight:700}
+.pl-table td.bad{color:var(--bad);font-weight:700}
+.pl-t td:last-child{text-transform:uppercase;letter-spacing:.06em;font-size:1.15cqh}
 .pl-table tr.tot td{border-top:1px solid var(--line);font-weight:700}
 .pl-q td{vertical-align:top}
 .pl-p{display:block;font-size:1.2cqh;color:var(--muted);font-weight:400}
