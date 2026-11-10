@@ -153,3 +153,5 @@ Revenue includes GST:
   - After BFCM, compare the sale's actuals with the three cases above.
 
 Run the Nov–Jan forecast: `node source/forecast_simple_report.js [--sale-spend 230000] [--trim 0.15]`.
+
+**Plan page (4 Nov 2026).** `plan.html` shows the month-end forecast on the board (October results, the October scorecard, Nov–Jan and FY27 by case, how the model works) and paces the month in progress against it from live data. October, forecast on 30 Sep: the old engine +24% ($658K against $530K, assuming $246K of spend where $158K was spent), the spend-led model −19% at realistic and −3% at optimistic. Reforecast monthly, in the first week after the books close: `npm run plan -- --from <last day of the month>`; `check_snapshots.js` flags the page after 40 days.

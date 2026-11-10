@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>DiggerLid — FY27 Plan</title>
+<link rel="icon" href="./assets/favicon32.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@300;400;500;700&family=League+Spartan:wght@400;700;900&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="./styles.css?v=1790919564" />
+</head>
+<body>
+<div id="stageWrap">
+  <div id="stage" class="plan-stage">
+    <!-- HEADER -->
+    <header id="top">
+      <div class="hleft">
+        <div class="brand"><img src="./assets/dl_wordmark.png" alt="DiggerLid" /></div>
+        <nav class="topnav"><!-- rendered by DLcore.mountShell --></nav>
+      </div>
+      <div class="daynav">
+        <div class="datebox">
+          <div class="d">FY27 PLAN</div>
+          <div class="dow" id="asOfLbl">—</div>
+        </div>
+      </div>
+      <div class="status">
+        <div class="freshness">
+          <div class="lbl">Data · through</div>
+          <div class="val" id="throughVal">—</div>
+          <div class="pend" id="throughPend"></div>
+        </div>
+        <div id="livePill"><!-- rendered by DLcore.mountShell --></div>
+      </div>
+    </header>
+
+    <!-- KPI STRIP: the month just closed, the month in progress, the year -->
+    <section id="kpis"></section>
+
+    <!-- MAIN -->
+    <section id="plMain">
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">Next three <span>months</span></div>
+          <div class="p-note">incl GST · pessimistic / realistic / optimistic</div>
+        </div>
+        <div class="pl-scroll" id="months"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">FY27 by <span>quarter</span></div>
+          <div class="p-note">ex GST · revenue / profit</div>
+        </div>
+        <div class="pl-scroll" id="quarters"></div>
+      </div>
+
+      <div class="panel">
+        <div class="p-head">
+          <div class="p-title">How it <span>works</span></div>
+          <div class="p-note">spend-led model</div>
+        </div>
+        <div class="pl-scroll pl-text" id="howto"></div>
+      </div>
+    </section>
+
+    <footer id="foot">
+      <div id="footSource">—</div>
+      <div id="footNote">Reforecast quarterly after the books close · targets fixed for the year</div>
+    </footer>
+
+    <div class="err" id="errBox">
+      <div><h2>No plan loaded</h2><p>Couldn’t find <code>plan_data.js</code>. Rebuild it with <code>npm run plan</code>.</p></div>
+    </div>
+  </div>
+</div>
+
+<script src="./core.js?v=1790919564"></script>
+<script src="./data.js?v=1790919564"></script>
+<script src="./plan_data.js?v=1790919564"></script>
+<script src="./plan.js?v=1790919564"></script>
+</body>
+</html>
