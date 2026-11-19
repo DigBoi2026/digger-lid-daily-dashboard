@@ -43,6 +43,11 @@ const MANIFEST = [
   { file: 'meta_snapshot.js',    global: 'DL_META_SNAPSHOT',     budget: 45, auto: false,
     by: 'a 90-day Meta Ads benchmark pull, by hand',
     note: '90-day benchmark pull, not a daily figure' },
+  /* A forecast snapshot, rebuilt at each quarterly reforecast; 100 days lets one
+     quarter pass and flags the next. */
+  { file: 'plan_data.js',        global: 'DL_PLAN',              budget: 100, auto: false,
+    by: 'npm run plan -- --from <last day of the quarter> (quarterly reforecast)',
+    note: 'FY27 Plan page; forecast snapshot and profit targets' },
   { file: 'prior_year.js',       global: 'DL_PRIOR',             static: true, note: '2025 is closed; static by design' },
   /* ORPHAN. No HTML loads it and no page reads DL_SHOPIFY — the Products page
      moved to products_history.js and left this behind. source/build_win3.js and
